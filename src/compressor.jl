@@ -12,7 +12,7 @@ function getcompressedmatrixview(
     compressor.maxrank == 0 ? compressor.maxrank = Int(
         round(length(lm.τ)*length(lm.σ)/(length(lm.τ)+length(lm.σ)))
     ) : maxrank=compressor.maxrank
-
+    
     U, V, rows, cols = aca(
         lm,
         am;

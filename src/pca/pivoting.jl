@@ -5,16 +5,16 @@ struct PCAPivoting{F<:Real} <: FastBEAST.FD
 end
 
 function PCAPivoting(ref::SVector{3,F}, pos::Vector{SVector{3,F}}) where {F<:Real}
-    weights = zeros(F, length(pos))
+    weights = ones(F, length(pos))
     for i in eachindex(pos)
         weights[i] = (norm(pos[i] - ref))
     end
-    weights = weights .^ -2 * maximum(weights)
+    weights = 1 ./ (weights).^2
     return PCAPivoting(weights, zeros(F, length(pos)), pos)
 end
 
 function PCAPivoting(pos::Vector{SVector{3,F}}) where {F<:Real}
-    weights = zeros(F, length(pos))
+    weights = ones(F, length(pos))
 
     return PCAPivoting(weights, zeros(F, length(pos)), pos)
 end
@@ -24,7 +24,8 @@ function FastBEAST.filldistance(
     usedidcs::Union{Vector{Bool},SubArray{Bool,1,Vector{Bool},Tuple{UnitRange{Int}},true}},
 ) where {F<:Real}
     h = fdmemory.h .* fdmemory.weights
-    return [argmax(h)]
+    return [argmax(
+        (fdmemory.h ) .* fdmemory.weights)]
 end
 
 """

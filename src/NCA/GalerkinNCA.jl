@@ -55,14 +55,15 @@ function GalerkinNCA(
     space; 
     tree=create_tree(space.pos, KMeansTreeOptions()),
     nearinteractionquadstrat=BEAST.defaultquadstrat(operator, space, space),
-    momentquadstrat=BEAST.DoubleNumQStrat(2, 2),
-    compressor=FastBEAST.ACAOptions(; tol=1e-4),
+    momentquadstrat=BEAST.DoubleNumQStrat(2, 3),
+    compressor=FastBEAST.ACAOptions(; tol=1e-3),
     multithreading=true,
-    verbose=true
+    verbose=true,
+    η=1.0
 )
     
     blktree = ClusterTrees.BlockTrees.BlockTree(tree, tree)
-    nears, fars = computeinteractions(blktree)
+    nears, fars = computeinteractions(blktree,  η=η)
 
     nearinteractions = FastBEAST.assemble(
         operator,

@@ -42,28 +42,16 @@ end
     for idx in eachindex(A.momentcollection)
         if isassigned(A.momentcollection, idx)
             nb = A.momentcollection[idx]
-            if nb.children == []
-                xhat[idx] = transpose(nb.T) * x[nb.τ]
-            else
-                println("youshouldnotbehere")
-                xhat[idx] = nb.T[1] * xhat[nb.children[1]]
-                for nchd in 2:length(nb.children)
-                    xhat[idx] += transpose(nb.T[nchd]) * xhat[nb.children[nchd]]
-                end
-            end
+            xhat[idx] = transpose(nb.T) * x[nb.τ]
         end
     end
-    for idx in eachindex(A.translator)
+
+    for idx in reverse(eachindex(A.translator))
         if isassigned(A.translator, idx)
             nb = A.translator[idx]
-            if nb.children == []
-                println("youshouldnotbehere")
-                xhat[idx] = transpose(nb.T) * x[nb.τ]
-            else
-                xhat[idx] = transpose(nb.T[1]) * xhat[nb.children[1]]
-                for nchd in 2:length(nb.children)
-                    xhat[idx] += transpose(nb.T[nchd]) * xhat[nb.children[nchd]]
-                end
+            xhat[idx] = transpose(nb.T[1]) * xhat[nb.children[1]]
+            for nchd in 2:length(nb.children)
+                xhat[idx] += transpose(nb.T[nchd]) * xhat[nb.children[nchd]]
             end
         end
     end
@@ -88,16 +76,11 @@ end
     for idx in eachindex(A.translator)
         if isassigned(A.translator, idx)
             nb = A.translator[idx]
-            if nb.children == []
-                println("youshouldnotbehere")
-                y[nb.τ] = nb.T * yhat[idx]
-            else
-                for chd in eachindex(nb.children)
-                    if isassigned(yhat, nb.children[chd])
-                        yhat[nb.children[chd]] += nb.T[chd] * yhat[idx]
-                    else
-                        yhat[nb.children[chd]] = nb.T[chd] * yhat[idx]
-                    end
+            for chd in eachindex(nb.children)
+                if isassigned(yhat, nb.children[chd])
+                    yhat[nb.children[chd]] += nb.T[chd] * yhat[idx]
+                else
+                    yhat[nb.children[chd]] = nb.T[chd] * yhat[idx]
                 end
             end
         end
@@ -105,18 +88,7 @@ end
     for idx in eachindex(A.momentcollection)
         if isassigned(A.momentcollection, idx)
             nb = A.momentcollection[idx]
-            if nb.children == []
-                y[nb.τ] = nb.T * yhat[idx]
-            else
-                println("youshouldnotbehere")
-                for chd in eachindex(nb.children)
-                    if isassigned(yhat, nb.children[chd])
-                        yhat[nb.children[chd]] += nb.T[chd] * yhat[idx]
-                    else
-                        yhat[nb.children[chd]] = nb.T[chd] * yhat[idx]
-                    end
-                end
-            end
+            y[nb.τ] = nb.T * yhat[idx]
         end
     end
     
@@ -152,29 +124,16 @@ yhat = Vector{Vector{eltype(y)}}(
     for idx in eachindex(A.lmap.momentcollection)
         if isassigned(A.lmap.momentcollection, idx)
             nb = A.lmap.momentcollection[idx]
-            if nb.children == []
-                xhat[idx] = adjoint(nb.T) * x[nb.τ]
-            else
-                println("youshouldnotbehere")
-                xhat[idx] = nb.T[1] * xhat[nb.children[1]]
-                for nchd in 2:length(nb.children)
-                    xhat[idx] += adjoint(nb.T[nchd]) * xhat[nb.children[nchd]]
-                end
-            end
+            xhat[idx] = adjoint(nb.T) * x[nb.τ]
         end
     end
 
-    for idx in eachindex(A.lmap.translator)
+    for idx in reverse(eachindex(A.lmap.translator))
         if isassigned(A.lmap.translator, idx)
             nb = A.lmap.translator[idx]
-            if nb.children == []
-                println("youshouldnotbehere")
-                xhat[idx] = adjoint(nb.T) * x[nb.τ]
-            else
-                xhat[idx] = adjoint(nb.T[1]) * xhat[nb.children[1]]
-                for nchd in 2:length(nb.children)
-                    xhat[idx] += adjoint(nb.T[nchd]) * xhat[nb.children[nchd]]
-                end
+            xhat[idx] = adjoint(nb.T[1]) * xhat[nb.children[1]]
+            for nchd in 2:length(nb.children)
+                xhat[idx] += adjoint(nb.T[nchd]) * xhat[nb.children[nchd]]
             end
         end
     end

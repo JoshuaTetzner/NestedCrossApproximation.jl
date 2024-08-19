@@ -11,7 +11,7 @@ function assemble_couplingmatrices(
     fars = reduce(vcat, fars)
     lowrankblocks = Vector{H2MatrixBlock{I, K}}(undef, length(fars))
     if verbose
-        p = Progress(length(fars), desc="Assemble column bases: ")
+        p = Progress(length(fars), desc="Assemble i2o bases: ")
     end
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
     _foreach(enumerate(fars)) do (idx, far)

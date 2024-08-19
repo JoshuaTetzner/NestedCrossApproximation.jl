@@ -16,9 +16,9 @@ function getcompressedmatrix_rm(
         K
     )
 
-    maxrank = max(Int(round(
+    maxrank = min(Int(round(
         length(test_idcs) * length(trial_idcs)/(length(test_idcs) + length(trial_idcs)))),
-        1
+        compressor.maxrank
     )
     if noadm
         maxrank = min(length(test_idcs), length(trial_idcs))

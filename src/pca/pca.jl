@@ -1,3 +1,5 @@
+using Statistics
+
 mutable struct PCAOptions{B, I, F}
     rowpivstrat::FastBEAST.PivStrat
     columnpivstrat::FastBEAST.PivStrat
@@ -12,7 +14,7 @@ function PCAOptions(
     columnpivstrat;
     convergcrit=FastBEAST.Standard(),
     maxrank=50,
-    tol=1e-14,
+    tol=1e-4,
     svdrecompress=false
 )
     return PCAOptions(rowpivstrat, columnpivstrat, convergcrit, maxrank, tol, svdrecompress)
@@ -43,16 +45,26 @@ function pivoting(
     end
 end
 
+function checklinearconvergence(oldnorms::Vector{F}, refnorm::F) where F
+    meany = mean(log10.(oldnorms))
+    x = Vector(1:length(oldnorms))
+    meanx = mean(x)
+
+    β = sum((x .- meanx).*(log10.(oldnorms) .- meany)) / sum((x.-meanx).^2)
+    α = meany - β*meanx
+    #println((α + β*(length(oldnorms))), " > ", refnorm)
+    return (α + β*(length(oldnorms))) > log10(refnorm)
+end
 
 function pca_rm(
     M::LazyMatrix{I, K},
     am::PCAGlobalMemory{K},
     columnpivstrat::FastBEAST.FD;
     maxrank=Int(round(length(M.τ)*length(M.σ)/(length(M.τ)+length(M.σ)))),
-    tol=1e-14
+    tol=1e-4
 ) where {I, K}
-    
     clear!(am)  
+    oldnorms = Float64[]
 
     (maxrows, maxcolumns) = size(M)
 
@@ -78,6 +90,7 @@ function pca_rm(
     norm(am.U[1:maxrows, am.npivots]) == 0.0 && return Matrix[], Int[], Int[]
 
     @views normU = norm(am.U[1:maxrows, 1])
+    push!(oldnorms, normU)
     convergence = true
     while convergence && am.npivots < maxrank
         am.npivots += 1
@@ -85,8 +98,7 @@ function pca_rm(
         @views nextcolumn = pivoting(columnpivstrat, am.used_J[1:maxcolumns])
         am.used_J[nextcolumn] = true
         if length(am.J) < am.npivots
-            println(size(M))
-            println(am.npivots)
+            println(size(M), am.npivots)
         end
         am.J[am.npivots] = nextcolumn
 
@@ -111,8 +123,12 @@ function pca_rm(
         am.used_I[nextrow] = true
         am.I[am.npivots] = nextrow
         normUV = norm(am.U[1:maxrows, am.npivots])
-
-        @views convergence = normUV > am.npivots/maxcolumns * tol * normU
+        
+        push!(oldnorms, normUV)
+        @views convergence = normUV > tol * normU 
+        if !convergence
+            convergence = convergence || checklinearconvergence(oldnorms, tol * normU)
+        end
     end
     
     if am.npivots == maxrank

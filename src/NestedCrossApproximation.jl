@@ -7,6 +7,7 @@ using FastBEAST
 using LinearAlgebra
 using LinearMaps
 using StaticArrays
+using Statistics
 using SparseArrays
 
 include("NCA/AbstractNCA.jl")

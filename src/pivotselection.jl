@@ -94,6 +94,7 @@ function row_pivot_selection(
 
             if tindices != []
                 sindices = value(test_tree, nodeidx)
+                
                 if compressor isa FastBEAST.ACAOptions
                     clusterblocks[nodeidx] = PivotBlocks(
                         getcompressedmatrixview(
@@ -103,9 +104,10 @@ function row_pivot_selection(
                         childrange
                     )
                 else
+                    refcenter = test_tree.nodes[nodeidx].node.data.ct
                     clusterblocks[nodeidx] = PivotBlocks(
                         getcompressedmatrix_rm(
-                            matrixassembler, sindices, tindices, K, am[Threads.threadid()], compressor
+                            matrixassembler, sindices, tindices, K, am[Threads.threadid()], compressor, refcenter=refcenter
                         ),
                         tclustermaps,
                         childrange
@@ -186,9 +188,10 @@ function column_pivot_selection(
                         childrange
                     )
                 else
+                    refcenter = trial_tree.nodes[nodeidx].node.data.ct
                     clusterblocks[nodeidx] = PivotBlocks(
                         getcompressedmatrix_cm(
-                            matrixassembler, sindices, tindices, K, am[Threads.threadid()], compressor
+                            matrixassembler, sindices, tindices, K, am[Threads.threadid()], compressor, refcenter=refcenter
                         ),
                         sclustermaps,
                         childrange
