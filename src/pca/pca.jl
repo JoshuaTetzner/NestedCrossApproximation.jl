@@ -63,7 +63,7 @@ function pca_rm(
     maxrank=Int(round(length(M.τ)*length(M.σ)/(length(M.τ)+length(M.σ)))),
     tol=1e-4
 ) where {I, K}
-    clear!(am)  
+    #clear!(am)  
     oldnorms = Float64[]
 
     (maxrows, maxcolumns) = size(M)
@@ -131,12 +131,25 @@ function pca_rm(
         end
     end
     
-    if am.npivots == maxrank
-        println(size(M))
-        println("Aborted after maxrank.")
-    end
+    #if am.npivots == maxrank
+    #    println(size(M))
+    #    println("Aborted after maxrank.")
+    #end
+    retU = am.U[1:maxrows, 1:am.npivots]
+    retV = am.V[1:am.npivots, 1:am.npivots]
+    rpivots = am.I[1:am.npivots]
+    cpivots = am.J[1:am.npivots]
+    am.I[1:am.npivots] .= 0
+    am.J[1:am.npivots] .= 0
+    am.U[1:maxrows, 1:am.npivots] .= 0.0
+    am.V[1:am.npivots, 1:am.npivots] .= 0.0
+    am.used_I[rpivots] .= false
+    am.used_J[cpivots] .= false
+    am.npivots = 1 
 
-    return am.U[1:maxrows, 1:am.npivots], am.V[1:am.npivots, 1:am.npivots], am.I[1:am.npivots], am.J[1:am.npivots]
+    return retU, retV, rpivots, cpivots
+
+    return retU, retV, rpivots, cpivots
     
 end
 
@@ -148,7 +161,7 @@ function pca_cm(
     tol=1e-14
 ) where {I, K}
     
-    clear!(am)  
+    #clear!(am)  
 
     (maxrows, maxcolumns) = size(M)
 

@@ -70,10 +70,11 @@ function PetrovGalerkinNCA(
     momentquadstrat=BEAST.DoubleNumQStrat(2, 2),
     compressor=FastBEAST.ACAOptions(; tol=1e-4),
     multithreading=true,
-    verbose=true
+    verbose=true,
+    η
 )
     blktree = ClusterTrees.BlockTrees.BlockTree(testtree, trialtree)
-    nears, fars = computeinteractions(blktree)
+    nears, fars = computeinteractions(blktree, η=η)
     
     nearinteractions = FastBEAST.assemble(
         operator,

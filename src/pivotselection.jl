@@ -57,8 +57,6 @@ function row_pivot_selection(
     if verbose
         p = Progress(sum(length.(clusterlink)), desc="Computing row pivots: ")
     end
-
-    _foreach = multithreading ? ThreadsX.foreach : Base.foreach
     if compressor isa FastBEAST.ACAOptions
         am = allocate_aca_memory(
             K, 
@@ -77,15 +75,21 @@ function row_pivot_selection(
         )
     end
 
+    _foreach = multithreading ? ThreadsX.foreach : Base.foreach
     for level in clusterlink
         _foreach(level) do (nodeidx) 
             childrange = FastBEAST.child_link(test_tree, nodeidx)
-
+            
             parent = ClusterTrees.parent(test_tree, nodeidx)
             if parent != 0 && isassigned(clusterblocks, parent)
                 inheritedpivots = clusterblocks[parent].M.σ[clusterblocks[parent].M.M.σ]
             else
                 inheritedpivots = Int[]
+            end
+
+            noadm=false
+            if interactionlist[nodeidx] == 0.0
+                noadm = true
             end
 
             tindices, tclustermaps = interactionindices(
@@ -98,7 +102,13 @@ function row_pivot_selection(
                 if compressor isa FastBEAST.ACAOptions
                     clusterblocks[nodeidx] = PivotBlocks(
                         getcompressedmatrixview(
-                            matrixassembler, sindices, tindices, K, am[Threads.threadid()], compressor
+                            matrixassembler,
+                            sindices,
+                            tindices,
+                            K,
+                            am[Threads.threadid()],
+                            compressor;
+                            noadm=noadm
                         ),
                         tclustermaps,
                         childrange
@@ -107,7 +117,14 @@ function row_pivot_selection(
                     refcenter = test_tree.nodes[nodeidx].node.data.ct
                     clusterblocks[nodeidx] = PivotBlocks(
                         getcompressedmatrix_rm(
-                            matrixassembler, sindices, tindices, K, am[Threads.threadid()], compressor, refcenter=refcenter
+                            matrixassembler,
+                            sindices,
+                            tindices,
+                            K,
+                            am[Threads.threadid()],
+                            compressor;
+                            refcenter=refcenter,
+                            noadm=noadm
                         ),
                         tclustermaps,
                         childrange
@@ -143,8 +160,7 @@ function column_pivot_selection(
     if verbose
         p = Progress(sum(length.(clusterlink)), desc="Computing column pivots: ")
     end
-
-    _foreach = multithreading ? ThreadsX.foreach : Base.foreach
+    
     if compressor isa FastBEAST.ACAOptions
         am = allocate_aca_memory(
             K, 
@@ -162,6 +178,8 @@ function column_pivot_selection(
             maxrank=compressor.maxrank, 
         )
     end
+
+    _foreach = multithreading ? ThreadsX.foreach : Base.foreach
     for level in clusterlink
         _foreach(level) do (nodeidx) 
             childrange = FastBEAST.child_link(trial_tree, nodeidx)
@@ -173,6 +191,11 @@ function column_pivot_selection(
                 inheritedpivots = Int[]
             end
 
+            noadm=false
+            if interactionlist[nodeidx] == 0.0
+                noadm = true
+            end
+
             sindices, sclustermaps = interactionindices(
                 test_tree, nodeidx, interactionlist[nodeidx], inheritedpivots
             )
@@ -182,7 +205,13 @@ function column_pivot_selection(
                 if compressor isa FastBEAST.ACAOptions
                     clusterblocks[nodeidx] = PivotBlocks(
                         getcompressedmatrixview(
-                            matrixassembler, sindices, tindices, K, am[Threads.threadid()], compressor
+                            matrixassembler,
+                            sindices,
+                            tindices,
+                            K,
+                            am[Threads.threadid()],
+                            compressor;
+                            noadm=noadm
                         ),
                         sclustermaps,
                         childrange
@@ -191,7 +220,14 @@ function column_pivot_selection(
                     refcenter = trial_tree.nodes[nodeidx].node.data.ct
                     clusterblocks[nodeidx] = PivotBlocks(
                         getcompressedmatrix_cm(
-                            matrixassembler, sindices, tindices, K, am[Threads.threadid()], compressor, refcenter=refcenter
+                            matrixassembler,
+                            sindices,
+                            tindices,
+                            K,
+                            am[Threadsthreadid()],
+                            compressor,
+                            refcenter=refcenter,
+                            noadm=noadm
                         ),
                         sclustermaps,
                         childrange

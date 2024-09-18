@@ -1,0 +1,119 @@
+2024-08-26 18:29:27
+NCA: 
+ level: 9, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+13485	(0.217799752, 0.14971506125607642)	11.125061977	0.0714040502
+ 
+2024-08-26 18:30:00
+NCA: 
+ level: 10, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+26538	(0.461716632, 0.08195003672507323)	29.769588758	0.08133406800000001
+ 
+2024-08-26 18:31:31
+NCA: 
+ level: 11, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+53184	(0.8816433520000001, 0.038961974210890676)	84.460048601	0.23142743919999997
+ 
+2024-08-26 18:35:11
+NCA: 
+ level: 12, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+107643	(1.800161992, 0.01942003529644211)	204.168499194	0.6162696132
+ 
+2024-08-26 18:45:19
+NCA: 
+ level: 13, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+215025	(3.53900492, 0.009567825957621727)	575.111232744	1.1062318343999997
+ 
+2024-08-26 19:10:01
+NCA: 
+ level: 14, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+433986	(7.062053968000001, 0.004686942283781731)	1411.061420257	2.9564970136
+ 
+2024-08-26 20:13:52
+NCA: 
+ level: 15, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+865296	(13.585888808, 0.0022681338318054)	3683.413101936	6.545988455200001
+2024-08-27 15:06:10
+NCA: 
+ level: 4, tol: 0.001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+13485	(0.35002696, 0.2406077476051406)	12.263691164	0.031379522800000004
+ 
+2024-08-27 15:06:56
+NCA: 
+ level: 5, tol: 0.001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+29400	(1.2238786560000001, 0.17699203109815353)	40.844060405	0.11394055
+ 
+2024-08-27 15:11:39
+NCA: 
+ level: 6, tol: 0.001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+113400	(4.51881236, 0.04392464011210337)	267.58738723	0.3924296356
+ 
+2024-08-27 15:18:16
+NCA: 
+ level: 6, tol: 0.001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+146781	(3.8788590000000003, 0.022504756671405914)	377.435578837	0.5944022837999999
+ 
+2024-08-27 15:27:24
+NCA: 
+ level: 6, tol: 0.001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+199881	(5.148782792, 0.016109110363304535)	519.960146288	0.5821954018
+ 
+2024-08-27 15:42:31
+NCA: 
+ level: 7, tol: 0.001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+287073	(9.899496336, 0.01501545222721449)	867.857959523	0.8274741667999999
+ 
+2024-08-27 16:10:26
+NCA: 
+ level: 7, tol: 0.001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+451035	(16.555356248000002, 0.010172508357627676)	1610.408488474	1.2848727298
+ 
+2024-09-01 15:57:30
+NCA: 
+ level: 9, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+13485	(0.262159888, 0.1802081192948564)	110.7462716	0.051857551
+ 
+2024-09-01 16:02:22
+NCA: 
+ level: 10, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+26538	(0.521717936, 0.09259966189680038)	288.453411874	0.1492763246
+ 
+2024-09-01 16:14:42
+NCA: 
+ level: 11, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+53184	(0.9642501280000001, 0.04261256950983512)	732.338742595	0.2031369534
+ 
+2024-09-01 16:45:20
+NCA: 
+ level: 12, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+107643	(1.9457329280000002, 0.02099044547498126)	1822.204995265	0.6704261684
+ 
+2024-09-01 17:59:11
+NCA: 
+ level: 13, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+215025	(3.748900152, 0.010135285199557632)	4159.021766844	0.8876941398
+ 
+2024-09-01 20:45:21
+NCA: 
+ level: 14, tol: 0.0001, η: 1.0
+N 	 storcomp-aca 	 fulltime-aca 	 time-mv pca 	 err_pca 	 err_aca 	 lrb err_pca 	 lrb err_aca
+433986	(7.447186816, 0.004942547159975518)	9897.822695019	2.913031977
+ 

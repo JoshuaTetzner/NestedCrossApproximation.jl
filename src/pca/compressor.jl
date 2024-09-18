@@ -3,19 +3,12 @@ function getcompressedmatrix_rm(
     test_idcs::Vector{I},
     trial_idcs::Vector{I},
     ::Type{K},
-    am,
+    am::PCAGlobalMemory{K},
     compressor::PCAOptions{B, I, F};
     refcenter = SVector(0.0, 0.0, 0.0),
     noadm=false
 ) where {B, I, F, K}
-
-    lm = FastBEAST.LazyMatrix(
-        matrixassembler,
-        test_idcs,
-        trial_idcs,
-        K
-    )
-
+    
     maxrank = min(Int(round(
         length(test_idcs) * length(trial_idcs)/(length(test_idcs) + length(trial_idcs)))),
         compressor.maxrank
@@ -23,6 +16,14 @@ function getcompressedmatrix_rm(
     if noadm
         maxrank = min(length(test_idcs), length(trial_idcs))
     end
+
+    #am = allocate_pca_memory_rm(K, length(test_idcs), length(trial_idcs); maxrank=maxrank)
+    lm = FastBEAST.LazyMatrix(
+        matrixassembler,
+        test_idcs,
+        trial_idcs,
+        K
+    )
 
     pivstrat = compressor.columnpivstrat
     if compressor.columnpivstrat isa PCAPivoting
@@ -57,20 +58,20 @@ function getcompressedmatrix_cm(
     noadm=false
 ) where {B, I, F, K}
 
+    maxrank = min(Int(round(
+        length(test_idcs) * length(trial_idcs)/(length(test_idcs) + length(trial_idcs)))),
+        compressor.maxrank
+    )
+    if noadm
+        maxrank = min(length(test_idcs), length(trial_idcs))
+    end
+    #am = allocate_pca_memory_cm(K, length(test_idcs), length(trial_idcs); maxrank=maxrank)
     lm = FastBEAST.LazyMatrix(
         matrixassembler,
         test_idcs,
         trial_idcs,
         K
     )
-
-    maxrank = max(Int(round(
-        length(test_idcs) * length(trial_idcs)/(length(test_idcs) + length(trial_idcs)))),
-        1
-    )
-    if noadm
-        maxrank = min(length(test_idcs), length(trial_idcs))
-    end
 
     pivstrat = compressor.rowpivstrat
     if compressor.rowpivstrat isa PCAPivoting

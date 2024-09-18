@@ -9,7 +9,7 @@ function PCAPivoting(ref::SVector{3,F}, pos::Vector{SVector{3,F}}) where {F<:Rea
     for i in eachindex(pos)
         weights[i] = (norm(pos[i] - ref))
     end
-    weights = 1 ./ (weights).^2
+    weights = 1 ./ (weights).^3 .+ 1 ./ (weights)
     return PCAPivoting(weights, zeros(F, length(pos)), pos)
 end
 

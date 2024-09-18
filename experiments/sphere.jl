@@ -1,5 +1,5 @@
 using BEAST
-
+using JLD2
 using CompScienceMeshes
 using Dates
 
@@ -88,3 +88,16 @@ for η in ηs
         end
     end
 end
+##
+
+using Plots
+
+x = Vector(0.5:0.01:1)
+
+f(x) = 1/x
+f2(x) = 1/x^3
+f3(x) = 1/x + 1/x^3
+
+plot(x, f.(x))
+plot!(x, f2.(x))
+plot!(x, f3.(x))

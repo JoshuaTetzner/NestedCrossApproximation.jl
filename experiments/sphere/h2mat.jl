@@ -1,6 +1,7 @@
 using BEAST
 using FastBEAST
 using NestedCrossApproximation
+using BenchmarkTools
 
 function storage(h2mat)
     ref = size(h2mat, 1)*size(h2mat, 2)
@@ -38,7 +39,7 @@ function storage(h2mat)
             end
         end
     end
-    
+
     return h2stor * 8 * 10^-9, h2stor/ref
 end
 
@@ -58,53 +59,60 @@ function lowrankmatrix(h2mat::NestedCrossApproximation.GalerkinNCA, ::Type{K}) w
     )    
 end
 
-function lowrankmatrix(mat, h2mat::NestedCrossApproximation.GalerkinNCA, ::Type{K}) where K
-    lrbmat = zeros(eltype(mat), size(mat, 1), size(mat, 2))
-
-    for i2o in h2mat.i2otranslator
-        lrbmat[i2o.τ, i2o.σ] = mat[i2o.τ, i2o.σ]
-    end
-
-    return lrbmat
-end
-
-function compare(op, space::BEAST.Space, filename; η=1.0, tol=1e-3)
+function compare(op, space::BEAST.Space, filename; η=1.0, tol=1e-4, maxrank=70, nmin=100)
    
     compressor = NestedCrossApproximation.PCAOptions(
         NestedCrossApproximation.PCAPivoting(space.pos),
         NestedCrossApproximation.PCAPivoting(space.pos),
-        tol=tol,
-        maxrank=150
+        tol=0.1*tol,
+        maxrank=maxrank
     );
     
-    tree = create_tree(space.pos, KMeansTreeOptions(nmin=50, nchildren=2))
+    tree = create_tree(space.pos, KMeansTreeOptions(nmin=nmin, nchildren=2))
     println("PCA")
-    tpca = @elapsed h2matpca = NestedCrossApproximation.PetrovGalerkinNCA(
-        op, space, space, compressor=compressor, testree=tree, trialtree=tree, η=η
+    tpca = @elapsed h2matpca = NestedCrossApproximation.GalerkinNCA(
+        op, space, compressor=compressor, tree=tree, η=η
     );
     println("ACA")
-    taca = @elapsed h2mataca = NestedCrossApproximation.PetrovGalerkinNCA(
-        op, space, space, compressor=FastBEAST.ACAOptions(tol=tol, maxrank=150), testtree=tree, trialtree, η=η
+    taca = @elapsed h2mataca = NestedCrossApproximation.GalerkinNCA(
+        op, space, compressor=FastBEAST.ACAOptions(tol=tol, maxrank=50), tree=tree, η=η
     );
     println("ref")
-    ref = load("sphere_HH3D.HS_0.02.jld2")["A"]#NestedCrossApproximation.GalerkinNCA(op, space, compressor=FastBEAST.ACAOptions(tol=1e-10, maxrank=150), tree=tree, η=η);
+    ref = NestedCrossApproximation.GalerkinNCA(
+        op, space, compressor=FastBEAST.ACAOptions(tol=1e-8, maxrank=150), tree=tree, η=η
+    );
 
     spca = storage(h2matpca)
     saca = storage(h2mataca)
 
     lrbpca = lowrankmatrix(h2matpca, scalartype(op))
     lrbaca = lowrankmatrix(h2mataca, scalartype(op))
-    lrbref = lowrankmatrix(ref, h2matpca, scalartype(op))
+    lrbref = lowrankmatrix(ref, scalartype(op))
 
+    #fmat = assemble(op, space, space)
     println("RelDif")
-    relaca = estimate_reldifference(h2mataca, ref, tol=1e-4)
-    relpca = estimate_reldifference(h2matpca, ref, tol=1e-4)
-    rellrbaca = estimate_reldifference(lrbaca, lrbref, tol=1e-4)
-    rellrbpca = estimate_reldifference(lrbpca, lrbref, tol=1e-4)
+    relaca = estimate_reldifference(h2mataca, ref, tol=1e-3)
+    relpca = estimate_reldifference(h2matpca, ref, tol=1e-3)
+    rellrbaca = estimate_reldifference(lrbaca, lrbref, tol=1e-3)
+    rellrbpca = estimate_reldifference(lrbpca, lrbref, tol=1e-3)
+
+    x = rand(ComplexF64, size(ref, 2))
+    mvaca = @elapsed y = h2mataca*x
+    mvaca += @elapsed y = h2mataca*x
+    mvaca += @elapsed y = h2mataca*x
+    mvaca += @elapsed y = h2mataca*x
+    mvaca += @elapsed y = h2mataca*x
+    mvaca = mvaca/5
+    mvpca = @elapsed y = h2matpca*x
+    mvpca += @elapsed y = h2matpca*x
+    mvpca += @elapsed y = h2matpca*x
+    mvpca += @elapsed y = h2matpca*x
+    mvpca += @elapsed y = h2matpca*x
+    mvpca = mvpca/5
 
     results = Dates.format(now(), "yyyy-mm-dd HH:MM:SS") * "\n"
     results = results * "level: " * string(length(tree.levels)) * ", tol: " * string(tol) * ", η: " * string(η)
-    results = results * "\nN \t storcomp-pca \t fulltime-pca \t storcomp-aca \t fulltime-aca \t err_pca \t err_aca \t lrb err_pca \t lrb err_aca\n"
+    results = results * "\nN \t storcomp-pca \t fulltime-pca \t time-mv pca \t storcomp-aca \t fulltime-aca \t time-mv pca \t err_pca \t err_aca \t lrb err_pca \t lrb err_aca\n"
     #---------------------------------------
     # Write data
     #---------------------------------------
@@ -115,8 +123,10 @@ function compare(op, space::BEAST.Space, filename; η=1.0, tol=1e-3)
     results = oldresults * results * string(length(space.pos)) * "\t" * 
         string(spca)* "\t" *
         string(tpca) * "\t" *
+        string(mvpca) * "\t" *
         string(saca) * "\t" * 
         string(taca)* "\t" *
+        string(mvaca) * "\t" *
         string(relpca) * "\t" *
         string(relaca) * "\t" *
         string(rellrbpca) * "\t" * 

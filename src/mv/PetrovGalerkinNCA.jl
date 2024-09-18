@@ -42,26 +42,15 @@ end
     for idx in eachindex(A.trialmomentcollection)
         if isassigned(A.trialmomentcollection, idx)
             nb = A.trialmomentcollection[idx]
-            if nb.children == []
-                xhat[idx] = nb.T * x[nb.σ]
-            else
-                xhat[idx] = nb.T[1] * xhat[nb.children[1]]
-                for nchd in 2:length(nb.children)
-                    xhat[idx] +=nb.T[nchd] * xhat[nb.children[nchd]]
-                end
-            end
+            xhat[idx] = nb.T * x[nb.σ]
         end
     end
-    for idx in eachindex(A.i2itranslator)
+    for idx in reverse(eachindex(A.i2itranslator))
         if isassigned(A.i2itranslator, idx)
             nb = A.i2itranslator[idx]
-            if nb.children == []
-                xhat[idx] = nb.T * x[nb.σ]
-            else
-                xhat[idx] = nb.T[1] * xhat[nb.children[1]]
-                for nchd in 2:length(nb.children)
-                    xhat[idx] +=nb.T[nchd] * xhat[nb.children[nchd]]
-                end
+            xhat[idx] = nb.T[1] * xhat[nb.children[1]]
+            for nchd in 2:length(nb.children)
+                xhat[idx] +=nb.T[nchd] * xhat[nb.children[nchd]]
             end
         end
     end
@@ -201,7 +190,7 @@ end
         end
     end
 
-    for idx in eachindex(A.lmap.o2otranslator)
+    for idx in reverse(eachindex(A.lmap.o2otranslator))
         if isassigned(A.lmap.o2otranslator, idx)
             nb = A.lmap.o2otranslator[idx]
             xhat[idx] = adjoint(nb.T[1]) * xhat[nb.children[1]]

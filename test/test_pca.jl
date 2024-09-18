@@ -52,4 +52,9 @@ pivstrat = NestedCrossApproximation.PCAPivoting(
     tol=1e-4,
 );
 
-U
+##
+
+x = rand(10, 5)
+y = Matrix{eltype(x)}(I, 5, 5)  
+
+x*y
