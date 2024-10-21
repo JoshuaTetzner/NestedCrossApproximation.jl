@@ -28,7 +28,7 @@ function getcompressedmatrix_rm(
     pivstrat = compressor.columnpivstrat
     if compressor.columnpivstrat isa PCAPivoting
         pivstrat = PCAPivoting(
-            refcenter, compressor.columnpivstrat.pos[trial_idcs]
+            compressor.columnpivstrat.fct, refcenter, compressor.columnpivstrat.pos[trial_idcs]
         )
     end
 
@@ -76,7 +76,7 @@ function getcompressedmatrix_cm(
     pivstrat = compressor.rowpivstrat
     if compressor.rowpivstrat isa PCAPivoting
         pivstrat = PCAPivoting(
-            refcenter, compressor.rowpivstrat.pos[test_idcs]
+            compressor.rowpivstrat.fct, refcenter, compressor.rowpivstrat.pos[test_idcs]
         )
     end
 

@@ -9,6 +9,7 @@ function assemble_couplingmatrices(
     verbose=true
 ) where {B, I, F, K}
     fars = reduce(vcat, fars)
+
     lowrankblocks = Vector{H2MatrixBlock{I, K}}(undef, length(fars))
     if verbose
         p = Progress(length(fars), desc="Assemble i2o bases: ")

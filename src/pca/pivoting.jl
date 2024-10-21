@@ -1,31 +1,56 @@
 struct PCAPivoting{F<:Real} <: FastBEAST.FD
+    fct::Function
     weights::Vector{F}
     h::Vector{F}
     pos::Vector{SVector{3,F}}
 end
 
+function PCAPivoting(
+    fct::Function, ref::SVector{3,F}, pos::Vector{SVector{3,F}};
+) where {F<:Real}
+
+    weights = ones(F, length(pos))
+    for i in eachindex(pos)
+        weights[i] = (norm(pos[i] - ref))
+    end
+    weights = fct.(weights)
+
+    return PCAPivoting(fct, weights, zeros(F, length(pos)), pos)
+end
+
+#=
 function PCAPivoting(ref::SVector{3,F}, pos::Vector{SVector{3,F}}) where {F<:Real}
     weights = ones(F, length(pos))
     for i in eachindex(pos)
         weights[i] = (norm(pos[i] - ref))
     end
     weights = 1 ./ (weights).^3 .+ 1 ./ (weights)
-    return PCAPivoting(weights, zeros(F, length(pos)), pos)
-end
+    return PCAPivoting(fct, weights, zeros(F, length(pos)), pos)
+end=#
 
-function PCAPivoting(pos::Vector{SVector{3,F}}) where {F<:Real}
+function PCAPivoting(fct::Function, pos::Vector{SVector{3,F}}) where {F<:Real}
     weights = ones(F, length(pos))
 
-    return PCAPivoting(weights, zeros(F, length(pos)), pos)
+    return PCAPivoting(fct, weights, zeros(F, length(pos)), pos)
+end
+
+function weightedrandom(weights::Vector{F}) where F <: Real
+    cs = cumsum(weights)
+    rv = rand(minimum(weights)/2:(cs[end]/(10length(cs))):cs[end])
+    for (ind, val) in enumerate(cs)
+        if rv <= val
+            return ind
+            break
+        end
+    end
 end
 
 function FastBEAST.filldistance(
     fdmemory::PCAPivoting{F},
     usedidcs::Union{Vector{Bool},SubArray{Bool,1,Vector{Bool},Tuple{UnitRange{Int}},true}},
 ) where {F<:Real}
-    h = fdmemory.h .* fdmemory.weights
-    return [argmax(
-        (fdmemory.h ) .* fdmemory.weights)]
+
+    return argmax(fdmemory.h .* fdmemory.weights)
 end
 
 """
@@ -43,21 +68,12 @@ basis function closest to the center of the distribution.
 function FastBEAST.firstpivot(pivstrat::PCAPivoting{F}, globalidcs::Vector{Int}) where F
 
     localpos = pivstrat.pos
-    center = sum(localpos) / length(localpos)
-
-    firstidcs = 0
-    minimum = 0
-    for (ind, pos) in enumerate(localpos)
-        if ind == 1 || minimum > norm(pos - center)
-            firstidcs = ind
-            minimum = norm(pos-center)
-        end
-    end
+    firstidcs = argmax(pivstrat.weights)
 
     h = zeros(eltype(pivstrat.h), length(localpos))
     for i in eachindex(h)
         h[i] = norm(localpos[i] - localpos[firstidcs])
     end
     
-     return PCAPivoting(pivstrat.weights, h, localpos), firstidcs
+    return PCAPivoting(pivstrat.fct, pivstrat.weights, h, localpos), firstidcs
 end

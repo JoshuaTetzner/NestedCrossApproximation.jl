@@ -20,8 +20,8 @@ struct H2MatrixBlock{I,K}
     Z::FastBEAST.MatrixBlock{I,K,Matrix{K}}
     τ::Vector{I}
     σ::Vector{I}
-    row_basis::I#Vector{I}
-    col_basis::I#Vector{I}
+    row_basis::I
+    col_basis::I
 end
 
 struct H2BasisBlock{I,K}

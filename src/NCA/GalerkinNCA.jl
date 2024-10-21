@@ -64,8 +64,8 @@ function GalerkinNCA(
     
     blktree = ClusterTrees.BlockTrees.BlockTree(tree, tree)
     nears, fars = computeinteractions(blktree,  η=η)
-    println("Nears")
-    @time nearinteractions = FastBEAST.assemble(
+   # println("Nears")
+     nearinteractions = FastBEAST.assemble(
         operator,
         space,
         blktree,
@@ -84,8 +84,8 @@ function GalerkinNCA(
         farblkassembler(tdata,sdata,store)
     end
 
-    println("Fars")
-    @time test_fars = row_pivot_selection(
+    #println("Fars")
+    test_fars = row_pivot_selection(
         tree,
         tree,
         fars,
@@ -93,7 +93,7 @@ function GalerkinNCA(
         scalartype(operator);
         compressor=compressor,
         verbose=verbose,
-        multithreading=multithreading
+        multithreading=false
     )
     
     momentcollection, translator = build_test_bases(

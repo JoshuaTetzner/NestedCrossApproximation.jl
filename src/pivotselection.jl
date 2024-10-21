@@ -76,7 +76,10 @@ function row_pivot_selection(
     end
 
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
-    for level in clusterlink
+    for ilevel in eachindex(clusterlink)
+        
+        tolmult = 1.0/(length(clusterlink)-ilevel)
+        level = clusterlink[ilevel]
         _foreach(level) do (nodeidx) 
             childrange = FastBEAST.child_link(test_tree, nodeidx)
             
@@ -108,7 +111,8 @@ function row_pivot_selection(
                             K,
                             am[Threads.threadid()],
                             compressor;
-                            noadm=noadm
+                            noadm=noadm,
+                            tolmult=tolmult
                         ),
                         tclustermaps,
                         childrange
@@ -180,7 +184,9 @@ function column_pivot_selection(
     end
 
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
-    for level in clusterlink
+    for ilevel in eachindex(clusterlink)
+        tolmult = 1.0/(length(clusterlink)-ilevel)
+        level = clusterlink[ilevel]
         _foreach(level) do (nodeidx) 
             childrange = FastBEAST.child_link(trial_tree, nodeidx)
 
@@ -211,7 +217,8 @@ function column_pivot_selection(
                             K,
                             am[Threads.threadid()],
                             compressor;
-                            noadm=noadm
+                            noadm=noadm,
+                            tolmult=tolmult
                         ),
                         sclustermaps,
                         childrange

@@ -23,6 +23,7 @@ include("NCA/GalerkinNCA.jl")
 include("mv/GalerkinNCA.jl")
 include("NCA/PetrovGalerkinNCA.jl")
 include("mv/PetrovGalerkinNCA.jl")
+include("utils.jl")
 
 
 export row_pivot_selection
@@ -30,5 +31,6 @@ export column_pivot_selection
 export build_test_bases
 export build_test_bases
 export assemble_couplingmatrices
+export storage
 
 end 

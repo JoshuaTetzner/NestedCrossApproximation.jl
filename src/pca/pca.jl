@@ -25,9 +25,15 @@ function pivoting(
     pivstrat::FastBEAST.FD,
     usedidcs::SubArray{Bool, 1, Vector{Bool}, Tuple{UnitRange{Int64}}, true}
 )
-    nextpivots::Vector{Int} = FastBEAST.filldistance(pivstrat, usedidcs)
+    #nextpivots::Vector{Int} = FastBEAST.filldistance(pivstrat, usedidcs)
 
-    nextpivot = rand(nextpivots)
+    #nextpivot = rand(nextpivots)
+
+    nextpivot = FastBEAST.filldistance(pivstrat, usedidcs)
+    while usedidcs[nextpivot][1]
+        nextpivot -= 1
+    end
+
     FastBEAST.update_filldistance!(pivstrat, nextpivot)
     
     return nextpivot
@@ -52,7 +58,7 @@ function checklinearconvergence(oldnorms::Vector{F}, refnorm::F) where F
 
     β = sum((x .- meanx).*(log10.(oldnorms) .- meany)) / sum((x.-meanx).^2)
     α = meany - β*meanx
-    #println((α + β*(length(oldnorms))), " > ", refnorm)
+
     return (α + β*(length(oldnorms))) > log10(refnorm)
 end
 
@@ -78,7 +84,7 @@ function pca_rm(
         M.σ[nextcolumn:nextcolumn]
     )
     
-    am.V[1, 1] = 1
+    am.V[1, 1] = 1.0
 
     @views nextrow = pivoting(
         abs.(am.U[1:maxrows, am.npivots]),
@@ -108,7 +114,7 @@ function pca_rm(
             M.σ[nextcolumn:nextcolumn]
         )
         
-        am.V[am.npivots, am.npivots] = 1
+        am.V[am.npivots, am.npivots] = 1.0
         for k = 1:am.npivots-1
            @views  am.V[k, am.npivots] = (1/am.U[am.I[k], k]) * am.U[am.I[k], am.npivots]
             for kk = 1:maxrows
@@ -125,16 +131,13 @@ function pca_rm(
         normUV = norm(am.U[1:maxrows, am.npivots])
         
         push!(oldnorms, normUV)
+        normU = norm(am.U[1:maxrows, 1])*norm(am.V[1, 1:am.npivots])
         @views convergence = normUV > tol * normU 
         if !convergence
             convergence = convergence || checklinearconvergence(oldnorms, tol * normU)
         end
     end
-    
-    #if am.npivots == maxrank
-    #    println(size(M))
-    #    println("Aborted after maxrank.")
-    #end
+
     retU = am.U[1:maxrows, 1:am.npivots]
     retV = am.V[1:am.npivots, 1:am.npivots]
     rpivots = am.I[1:am.npivots]
@@ -146,8 +149,6 @@ function pca_rm(
     am.used_I[rpivots] .= false
     am.used_J[cpivots] .= false
     am.npivots = 1 
-
-    return retU, retV, rpivots, cpivots
 
     return retU, retV, rpivots, cpivots
     

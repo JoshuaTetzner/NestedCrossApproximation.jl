@@ -71,11 +71,10 @@ function PetrovGalerkinNCA(
     compressor=FastBEAST.ACAOptions(; tol=1e-4),
     multithreading=true,
     verbose=true,
-    η
+    η=1.0
 )
     blktree = ClusterTrees.BlockTrees.BlockTree(testtree, trialtree)
     nears, fars = computeinteractions(blktree, η=η)
-    
     nearinteractions = FastBEAST.assemble(
         operator,
         testspace,
@@ -106,7 +105,7 @@ function PetrovGalerkinNCA(
         scalartype(operator);
         compressor=compressor,
         verbose=verbose,
-        multithreading=multithreading
+        multithreading=false
     )
 
     trial_fars = column_pivot_selection(
@@ -117,7 +116,7 @@ function PetrovGalerkinNCA(
         scalartype(operator);
         compressor=compressor,
         verbose=verbose,
-        multithreading=multithreading
+        multithreading=false
     )
 
     testmomentcollection, o2otranslator = build_test_bases(
