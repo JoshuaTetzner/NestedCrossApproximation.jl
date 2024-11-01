@@ -19,11 +19,11 @@ function sort_interactions(
 end
 
 function interactionindices(
-    tree::ClusterTrees.NminTrees.NminTree{D},
+    tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
     nodeidx::I,
     interactions::Vector{I},
     inheritedpivots::Vector{I}
-) where {I, D}
+) where {I}
 
     index_set = Int[]
     cluster_maps = (zeros(I, length(interactions)+1), interactions)
@@ -37,16 +37,18 @@ function interactionindices(
     return index_set, cluster_maps
 end
 
+
+
 function row_pivot_selection(
-    test_tree::ClusterTrees.NminTrees.NminTree{D},
-    trial_tree::ClusterTrees.NminTrees.NminTree{D},
+    test_tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
+    trial_tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
     fars::Vector{Vector{Tuple{I, I}}},
     matrixassembler,
     ::Type{K};
     compressor=FastBEAST.ACAOptions(; tol=1e-4),
     verbose=false,
     multithreading=true,
-) where {I, K, D}
+) where {I, K}
     
     clusterblocks = Vector{PivotBlocks{I, K}}(undef, length(test_tree.nodes))
     interactionlist = sort_interactions(
@@ -145,15 +147,15 @@ end
 
 
 function column_pivot_selection(
-    test_tree::ClusterTrees.NminTrees.NminTree{D},
-    trial_tree::ClusterTrees.NminTrees.NminTree{D},
+    test_tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
+    trial_tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
     fars::Vector{Vector{Tuple{I, I}}},
     matrixassembler,
     ::Type{K};
     compressor=FastBEAST.ACAOptions(; tol=1e-4),
     verbose=false,
     multithreading=true,
-) where {I, K, D}
+) where {I, K}sclustermaps
 
     clusterblocks = Vector{PivotBlocks{I, K}}(undef, length(trial_tree.nodes))
     interactionlist = sort_interactions(
@@ -249,3 +251,15 @@ function column_pivot_selection(
     return clusterblocks
 end
 
+##
+
+function tester()
+
+    @time begin
+        x=rand(1000)
+        z = svd(x)
+    end
+    return 1
+end
+
+tester()

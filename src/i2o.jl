@@ -22,13 +22,14 @@ function assemble_couplingmatrices(
         blk = test_fars[far[1]].M.M.V[:, range][:, trial_fars[far[2]].M.M.σ]
 
         lowrankblocks[idx] = H2MatrixBlock(
-            MatrixBlock(
-                blk,
-                test_fars[far[1]].M.τ[test_fars[far[1]].M.M.τ],
-                trial_fars[far[2]].M.σ[trial_fars[far[2]].M.M.σ],
-            ),
-            test_fars[far[1]].M.τ,
-            trial_fars[far[2]].M.σ,
+            #MatrixBlock(
+            #    blk,
+            #    test_fars[far[1]].M.τ[test_fars[far[1]].M.M.τ],
+            #    trial_fars[far[2]].M.σ[trial_fars[far[2]].M.M.σ],
+            #),
+            #test_fars[far[1]].M.τ,
+            #trial_fars[far[2]].M.σ,
+            blk,
             far[1],
             far[2],
         )
@@ -61,13 +62,14 @@ function assemble_couplingmatrices(
         blk = test_fars[far[1]].M.M.V[:, range][:, test_fars[far[2]].M.M.τ]
 
         lowrankblocks[idx] = H2MatrixBlock(
-            MatrixBlock(
-                blk,
-                test_fars[far[1]].M.τ[test_fars[far[1]].M.M.τ],
-                test_fars[far[2]].M.τ[test_fars[far[2]].M.M.τ],
-            ),
-            test_fars[far[1]].M.τ,
-            test_fars[far[2]].M.τ,
+            #MatrixBlock(
+            #    blk,
+            #    test_fars[far[1]].M.τ[test_fars[far[1]].M.M.τ],
+            #    test_fars[far[2]].M.τ[test_fars[far[2]].M.M.τ],
+            #),
+            #test_fars[far[1]].M.τ,
+            #test_fars[far[2]].M.τ,
+            blk,
             far[1],
             far[2],
         )
@@ -108,13 +110,14 @@ function assemble_couplingmatrices(
             trial_fars[far[2]].M.σ[trial_fars[far[2]].M.M.σ],
         )
         lowrankblocks[idx] = H2MatrixBlock(
-            MatrixBlock(
-                blk,
-                test_fars[far[1]].M.τ[test_fars[far[1]].M.M.τ],
-                trial_fars[far[2]].M.σ[trial_fars[far[2]].M.M.σ],
-            ),
-            test_fars[far[1]].M.τ,
-            trial_fars[far[2]].M.σ,
+            #MatrixBlock(
+            #    blk,
+            #    test_fars[far[1]].M.τ[test_fars[far[1]].M.M.τ],
+            #    trial_fars[far[2]].M.σ[trial_fars[far[2]].M.M.σ],
+            #),
+            #test_fars[far[1]].M.τ,
+            #trial_fars[far[2]].M.σ,
+            blk,
             far[1],
             far[2],
         )
@@ -131,7 +134,7 @@ function assemble_couplingmatrices(
     ::Type{K},
     fars::Vector{Vector{Tuple{I,I}}},
     test_fars::Vector{PivotBlocks{I, K}},
-    compressor::PCAOptions{B, I, F};
+    compressor::Union{PCAOptions{B, I, F}, PCA2Options};
     multithreading=true, 
     verbose=true
 ) where {B, I, F, K}
@@ -154,13 +157,14 @@ function assemble_couplingmatrices(
             test_fars[far[2]].M.τ[test_fars[far[2]].M.M.τ],
         )
         lowrankblocks[idx] = H2MatrixBlock(
-            MatrixBlock(
-                blk,
-                test_fars[far[1]].M.τ[test_fars[far[1]].M.M.τ],
-                test_fars[far[2]].M.τ[test_fars[far[2]].M.M.τ],
-            ),
-            test_fars[far[1]].M.τ,
-            test_fars[far[2]].M.τ,
+            #MatrixBlock(
+            #    blk,
+            #    test_fars[far[1]].M.τ[test_fars[far[1]].M.M.τ],
+            #    test_fars[far[2]].M.τ[test_fars[far[2]].M.M.τ],
+            #),
+            #test_fars[far[1]].M.τ,
+            #test_fars[far[2]].M.τ,
+            blk,
             far[1],
             far[2],
         )

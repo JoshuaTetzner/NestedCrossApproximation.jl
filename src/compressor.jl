@@ -30,6 +30,7 @@ function getcompressedmatrixview(
         svdrecompress=compressor.svdrecompress,
         maxrank=maxrank
     )
+    println(trialidcs[cols])
     @views MU = U * V[:, cols]
     @views MV = U[rows, :] * V
     #MV = V

@@ -58,21 +58,13 @@ end
 
     for lrb in A.i2otranslator
         if isassigned(yhat, lrb.row_basis)
-            yhat[lrb.row_basis] += lrb.Z.M * xhat[lrb.col_basis]
+            yhat[lrb.row_basis] += lrb.Z * xhat[lrb.col_basis]
         else
-            holder = lrb.Z.M * xhat[lrb.col_basis]
+            holder = lrb.Z * xhat[lrb.col_basis]
             yhat[lrb.row_basis] = holder
         end
     end
-    #=
-    for lrb in A.i2otranslator
-        if isassigned(yhat, lrb.row_basis)
-            yhat[lrb.col_basis] += transpose(lrb.Z.M) * xhat[lrb.row_basis]
-        else
-            yhat[lrb.col_basis] = transpose(lrb.Z.M) * xhat[lrb.row_basis]
-        end
-    end
-    =#
+
     for idx in eachindex(A.translator)
         if isassigned(A.translator, idx)
             nb = A.translator[idx]
@@ -140,20 +132,12 @@ yhat = Vector{Vector{eltype(y)}}(
 
     for lrb in A.lmap.i2otranslator
         if isassigned(yhat, lrb.row_basis)
-            yhat[lrb.row_basis] += conj(lrb.Z.M) * xhat[lrb.col_basis]
+            yhat[lrb.row_basis] += conj(lrb.Z) * xhat[lrb.col_basis]
         else
-            yhat[lrb.row_basis] = conj(lrb.Z.M) * xhat[lrb.col_basis]
+            yhat[lrb.row_basis] = conj(lrb.Z) * xhat[lrb.col_basis]
         end
     end
-    #=
-    for lrb in A.lmap.i2otranslator
-        if isassigned(yhat, lrb.row_basis)
-            yhat[lrb.col_basis] += transpose(lrb.Z.M) * xhat[lrb.row_basis]
-        else
-            yhat[lrb.col_basis] = transpose(lrb.Z.M) * xhat[lrb.row_basis]
-        end
-    end
-    =#
+
     for idx in eachindex(A.lmap.translator)
         if isassigned(A.lmap.translator, idx)
             nb = A.lmap.translator[idx]

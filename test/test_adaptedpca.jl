@@ -17,7 +17,7 @@ function StoM(vec)
 end
 ##
 sp = meshrectangle(1.0, 1.0, 0.1)
-tp = translate(meshrectangle(1.0, 1.0, 0.1), SVector(3.0, 0.0, 0.0))
+tp = translate(meshrectangle(3.0, 1.0, 0.1), SVector(3.0, 0.0, 0.0))
 
 ##
 k = 10.0
@@ -34,23 +34,71 @@ println("Rank: ", rank(T))
     blkasm(tdata, sdata, store)
 end
 
-##
+
 lm = FastBEAST.LazyMatrix(assembler, Vector(1:numfunctions(X1)), Vector(1:numfunctions(X2)), ComplexF64)
+##
 am_rm = NestedCrossApproximation.allocate_pca_memory_rm(ComplexF64, numfunctions(X1), numfunctions(X2), maxrank=200)
 
+fct(x) = 1/x^3 + 1/x
 pivstrat = NestedCrossApproximation.PCAPivoting(
-    SVector(0.5,0.5,0.0), X2.pos
-)
+    fct, SVector(0.5,0.5,0.0), X2.pos
+);
+
+##
+
 @time U, V, r, c = NestedCrossApproximation.pca_rm(
     lm,
     am_rm,
     pivstrat,
     tol=1e-4,
 );
+##
+rows = zeros(Int, length(X1.pos))
+cols = zeros(Int, length(X2.pos))
+
+colbuffer = zeros(ComplexF64, length(X1.pos), 20)
+cpivstrat = NestedCrossApproximation.MyPivoting(fct, X2.pos, ref=SVector(0.5, 0.5, 0.0))
+rpivstrat = NestedCrossApproximation.MaximumValue()
+
+
+cpivots = Int[]
+for i = 1:20
+    push!(cpivots, cpivstrat())
+end
+##
+lm2 = FastBEAST.LazyMatrix(assembler, Vector(1:numfunctions(X1)), cpivots, ComplexF64)
+
+
+@time r2 = NestedCrossApproximation.pca(
+    lm, rows, rowbuffer, colbuffer, rpivstrat; tol=1e-4);
+##
+r
+r2
+##
+@views farblkassembler = BEAST.blockassembler(
+    SL, X1, X2
+)
+@views function farassembler(Z, tdata, sdata)
+    @views store(v,m,n) = (Z[m,n] += v)
+    farblkassembler(tdata,sdata,store)
+end
+
+lm = FastBEAST.LazyMatrix(
+    farassembler, Vector(1:numfunctions(X1)), Vector(1:numfunctions(X2)), ComplexF64
+)
 
 ##
+X = zeros(ComplexF64, numfunctions(X1),numfunctions(X2))
 
-x = rand(10, 5)
-y = Matrix{eltype(x)}(I, 5, 5)  
+@time for i = 1:100
+    lm.μ(X, Vector(1:numfunctions(X1)), Vector(1:i))
+end
 
-x*y
+XX = zeros(ComplexF64, numfunctions(X1),numfunctions(X2))
+@time for i = 1:100
+    farassembler(XX, Vector(1:numfunctions(X1)), Vector(1:i))
+end
+
+#
+##
+ClusterTrees.leaves(tree)

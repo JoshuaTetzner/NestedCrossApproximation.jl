@@ -83,7 +83,6 @@ function PetrovGalerkinNCA(
         nears,
         scalartype(operator);
         quadstrat=nearinteractionquadstrat,
-        verbose=verbose,
         multithreading=multithreading
     ) 
 

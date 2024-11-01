@@ -58,21 +58,20 @@ function GalerkinNCA(
     momentquadstrat=BEAST.DoubleNumQStrat(2, 3),
     compressor=FastBEAST.ACAOptions(; tol=1e-3),
     multithreading=true,
-    verbose=true,
+    verbose=false,
     η=1.0
 )
     
     blktree = ClusterTrees.BlockTrees.BlockTree(tree, tree)
-    nears, fars = computeinteractions(blktree,  η=η)
+    nears, fars = FastBEAST.computeinteractions(blktree,  η=η)
    # println("Nears")
-     nearinteractions = FastBEAST.assemble(
+    nearinteractions = FastBEAST.assemble(
         operator,
         space,
         blktree,
         nears, 
         scalartype(operator);
         quadstrat=nearinteractionquadstrat,
-        verbose=verbose,
         multithreading=multithreading
     )
 
@@ -85,6 +84,7 @@ function GalerkinNCA(
     end
 
     #println("Fars")
+
     test_fars = row_pivot_selection(
         tree,
         tree,
@@ -93,23 +93,14 @@ function GalerkinNCA(
         scalartype(operator);
         compressor=compressor,
         verbose=verbose,
-        multithreading=false
+        multithreading=multithreading
     )
     
     momentcollection, translator = build_test_bases(
         tree, test_fars, scalartype(operator), verbose=verbose, multithreading=multithreading
     )
-
-    sfars = Vector{Tuple{Int, Int}}[]
-    for lfars in fars
-        levelfars= Tuple{Int, Int}[]
-        for far in lfars
-            if far[1]<far[2]
-                push!(levelfars, far)
-            end
-        end
-        push!(sfars, levelfars)
-    end
+    
+   
 
     i2otranslator = assemble_couplingmatrices(
         farassembler,
@@ -133,7 +124,6 @@ function GalerkinNCA(
         multithreading
     )
 end
-
 
 function assemble(operator, space; kwargs...)
     return GalerkinNCA(operator, space; kwargs...)

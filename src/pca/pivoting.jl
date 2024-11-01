@@ -11,9 +11,8 @@ function PCAPivoting(
 
     weights = ones(F, length(pos))
     for i in eachindex(pos)
-        weights[i] = (norm(pos[i] - ref))
+        weights[i] = fct(norm(pos[i] - ref))
     end
-    weights = fct.(weights)
 
     return PCAPivoting(fct, weights, zeros(F, length(pos)), pos)
 end
@@ -53,6 +52,13 @@ function FastBEAST.filldistance(
     return argmax(fdmemory.h .* fdmemory.weights)
 end
 
+function FastBEAST.filldistance(
+    fdmemory::NestedCrossApproximation.PCAPivoting{F}
+    #sedidcs::Union{Vector{Bool},SubArray{Bool,1,Vector{Bool},Tuple{UnitRange{Int}},true}},
+) where {F<:Real}
+
+    return argmax(fdmemory.h .* fdmemory.weights)
+end
 """
     function firstpivot(pivstrat::FD, globalidcs::Vector{Int})
 

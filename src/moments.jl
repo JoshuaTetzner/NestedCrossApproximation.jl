@@ -1,10 +1,10 @@
 function build_test_bases(
-    tree::ClusterTrees.NminTrees.NminTree{T},
+    tree,#::ClusterTrees.NminTrees.NminTree{T},
     test_fars::Vector{PivotBlocks{I, K}},
     ::Type{K};
     multithreading=true,
     verbose=false
-) where {I,T,K}
+) where {I,K}
 
     test_basis = Vector{H2BasisBlock{I,K}}(undef, length(tree.nodes))
     test_transfer = Vector{H2BasisBlock{I,K}}(undef, length(tree.nodes))
@@ -45,12 +45,12 @@ end
 
 
 function build_trial_bases(
-    tree::ClusterTrees.NminTrees.NminTree{T},
+    tree,#::ClusterTrees.NminTrees.NminTree{T},
     trial_fars::Vector{PivotBlocks{I, K}},
     ::Type{K};
     multithreading=true,
     verbose=false
-) where {I,T,K}
+) where {I,K}
 
     trial_basis = Vector{H2BasisBlock{I,K}}(undef, length(tree.nodes))
     trial_transfer = Vector{H2BasisBlock{I,K}}(undef, length(tree.nodes))

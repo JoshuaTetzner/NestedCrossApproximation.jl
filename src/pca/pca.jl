@@ -17,6 +17,7 @@ function PCAOptions(
     tol=1e-4,
     svdrecompress=false
 )
+
     return PCAOptions(rowpivstrat, columnpivstrat, convergcrit, maxrank, tol, svdrecompress)
 end
 
@@ -25,9 +26,6 @@ function pivoting(
     pivstrat::FastBEAST.FD,
     usedidcs::SubArray{Bool, 1, Vector{Bool}, Tuple{UnitRange{Int64}}, true}
 )
-    #nextpivots::Vector{Int} = FastBEAST.filldistance(pivstrat, usedidcs)
-
-    #nextpivot = rand(nextpivots)
 
     nextpivot = FastBEAST.filldistance(pivstrat, usedidcs)
     while usedidcs[nextpivot][1]
@@ -43,7 +41,6 @@ function pivoting(
     roworcolumn::Vector{K},
     acausedindices::SubArray{Bool, 1, Vector{Bool}, Tuple{UnitRange{Int64}}, true}
 ) where K
-
     if maximum(roworcolumn) != 0 
         return argmax(roworcolumn .* (.!acausedindices))
     else 
@@ -70,10 +67,9 @@ function pca_rm(
     tol=1e-4
 ) where {I, K}
     #clear!(am)  
-    oldnorms = Float64[]
+    #oldnorms = Float64[]
 
     (maxrows, maxcolumns) = size(M)
-
     columnpivstrat, nextcolumn = FastBEAST.firstpivot(columnpivstrat, M.σ)
     am.used_J[nextcolumn] = true
     am.J[am.npivots] = nextcolumn
@@ -83,9 +79,8 @@ function pca_rm(
         M.τ[1:maxrows],
         M.σ[nextcolumn:nextcolumn]
     )
-    
-    am.V[1, 1] = 1.0
 
+    am.V[1, 1] = 1.0
     @views nextrow = pivoting(
         abs.(am.U[1:maxrows, am.npivots]),
         am.used_I[1:maxrows],
@@ -96,7 +91,6 @@ function pca_rm(
     norm(am.U[1:maxrows, am.npivots]) == 0.0 && return Matrix[], Int[], Int[]
 
     @views normU = norm(am.U[1:maxrows, 1])
-    push!(oldnorms, normU)
     convergence = true
     while convergence && am.npivots < maxrank
         am.npivots += 1
@@ -130,26 +124,25 @@ function pca_rm(
         am.I[am.npivots] = nextrow
         normUV = norm(am.U[1:maxrows, am.npivots])
         
-        push!(oldnorms, normUV)
-        normU = norm(am.U[1:maxrows, 1])*norm(am.V[1, 1:am.npivots])
-        @views convergence = normUV > tol * normU 
-        if !convergence
-            convergence = convergence || checklinearconvergence(oldnorms, tol * normU)
-        end
+        #push!(oldnorms, normUV)
+        #normU = norm(am.U[1:maxrows, 1])*norm(am.V[1, 1:am.npivots])
+        @views convergence = normUV > tol * normU * norm(am.V[1, 1:am.npivots])
+        #if !convergence
+        #    convergence = convergence || checklinearconvergence(oldnorms, tol * normU)
+        #end
     end
 
     retU = am.U[1:maxrows, 1:am.npivots]
     retV = am.V[1:am.npivots, 1:am.npivots]
     rpivots = am.I[1:am.npivots]
     cpivots = am.J[1:am.npivots]
-    am.I[1:am.npivots] .= 0
-    am.J[1:am.npivots] .= 0
+    #am.I[1:am.npivots] .= 0
+    #am.J[1:am.npivots] .= 0
     am.U[1:maxrows, 1:am.npivots] .= 0.0
     am.V[1:am.npivots, 1:am.npivots] .= 0.0
     am.used_I[rpivots] .= false
     am.used_J[cpivots] .= false
     am.npivots = 1 
-
     return retU, retV, rpivots, cpivots
     
 end

@@ -1,111 +1,135 @@
-struct PCAMemory{K}
-    M::Matrix{K}
-    N::Vector{K}
-    #used_I::Vector{Bool}
-    I::Vector{Int}
-    #used_J::Vector{Bool}
-    J::Vector{Int}
-    #npivots::Int
+using Test
+
+abstract type PivStrat end 
+
+mutable struct PCA2Options{I, F}
+    rpivstrat::NestedCrossApproximation.PivStrat
+    cpivstrat::NestedCrossApproximation.PivStrat
+    maxrank::I
+    tol::F
 end
 
-function pivoting(
-    pivstrat::FastBEAST.FD,
-)
-    nextpivot = FastBEAST.filldistance(pivstrat, usedidcs)
-    while usedidcs[nextpivot][1]
-        nextpivot -= 1
+struct MaximumValue <: PivStrat end
+
+function (::MaximumValue)(row::Vector{K}) where K 
+    return argmax(row)
+end
+
+struct MyPivoting{F, T} <: PivStrat 
+    fct::Function
+    w::Vector{F}
+    h::Vector{F}
+    pos::Vector{T}
+end
+
+function MyPivoting(fct::Function, pos::Vector{SVector{3, F}}; ref=SVector(0.0, 0.0, 0.0)) where F
+    w = zeros(F, length(pos))
+    h = zeros(F, length(pos))
+    for (i, val) in enumerate(pos)
+        w[i] = fct(norm(val - ref))
     end
+    h .= 1/minimum(w)
+    return MyPivoting(fct, w, h, pos)
+end
 
-    FastBEAST.update_filldistance!(pivstrat, nextpivot)
+function (strat::MyPivoting{F, T})(idcs::Vector{Int}, ref::SVector{3, F}) where {F, T}
+    w = zeros(F, length(idcs))
+    h = zeros(F, length(idcs))
+    for (i, val) in enumerate(strat.pos[idcs])
+        w[i] = 1.0/norm(val - ref)#strat.fct(norm(val - ref))::F
+    end
+    h .= 1/minimum(w)
+
+    return MyPivoting(strat.fct, w, h, strat.pos[idcs])
+end
+
+function updatefd!(strat::MyPivoting{F, T}, pivot::Int) where {F, T}
+    for k in eachindex(strat.h)
+        if strat.h[k] > norm(strat.pos[k] - strat.pos[pivot])
+            strat.h[k] = norm(strat.pos[k] - strat.pos[pivot])
+        end
+    end
+end
+
+function (pivstrat::MyPivoting)()
+    pivot = argmax(pivstrat.h .* pivstrat.w)
+    updatefd!(pivstrat, pivot)
     
-    return nextpivot
-end
-
-function pivoting(
-    roworcolumn::Vector{K},
-) where K
-
-    return argmax(roworcolumn)
+    return pivot
 end
 
 
-function pca_rm2(
+function pca(
     M::LazyMatrix{I, K},
-    am::Matrix{K},
-    pivstrat::FastBEAST.FD;
-    maxrank=min(size(am, 2), length(M.σ)),#Int(round(length(M.τ)*length(M.σ)/(length(M.τ)+length(M.σ)))),
+    rows::Union{SubArray, Array},
+    #cols::SubArray,
+    rowbuffer::Union{SubArray, Array},
+    colbuffer::Union{SubArray, Array},
+    #cpivots::Vector{Int},
+    rpivstrat::PivStrat;
     tol=1e-4
 ) where {I, K}
-    npivots = 1
-    maxrows = size(M, 1)
+    #@test norm(rowbuffer) == 0.0
+    #@test norm(colbuffer) == 0.0
+    colbuffer .= 0
 
-    columnpivstrat, nextcolumn = FastBEAST.firstpivot(pivstrat, M.σ)
-    am.J[npivots] = nextcolumn
-
+    (maxrows, maxcolumns) = size(M)
+    maxrank = size(colbuffer, 2)
+    npivot=1
+    usedrows = zeros(Bool, length(rows))
+   
     @views M.μ(
-        am.M[1:maxrows, am.npivots:am.npivots], 
+        colbuffer[1:maxrows, npivot:npivot], 
         M.τ[1:maxrows],
-        M.σ[nextcolumn:nextcolumn]
+        M.σ[npivot:npivot]
     )
-    
-    #am.V[1, 1] = 1.0
+    rowbuffer[1, 1] = 1.0
 
-    @views nextrow = pivoting(
-        abs.(am.M[1:maxrows, am.npivots])
-    )
-    am.I[am.npivots] = nextrow
-    
-    norm(am.M[1:maxrows, am.npivots]) == 0.0 && return Matrix[], Int[], Int[]
+    rows[npivot] = rpivstrat(abs.(colbuffer[1:maxrows, npivot]))
+    if usedrows[rows[npivot]]
+        println("fail")
+    end
+    usedrows[rows[npivot]]=true
 
-    @views normU = norm(am.M[1:maxrows, 1])
-    normV = 1.0
+
+
+    norm(colbuffer[1:maxrows, 1]) == 0.0 && return Matrix[], Int[], Int[]
+
+    @views normU = norm(colbuffer[1:maxrows, 1])
+    #println("normU", normU)
+
     convergence = true
-    while convergence && am.npivots < maxrank
-        am.npivots += 1
+    while convergence && npivot < maxrank
+        npivot += 1
         
-        @views nextcolumn = pivoting(columnpivstrat)
-        am.J[am.npivots] = nextcolumn
-
         @views M.μ(
-            am.M[1:maxrows, am.npivots:am.npivots], 
+            colbuffer[1:maxrows, npivot:npivot], 
             M.τ[1:maxrows],
-            M.σ[nextcolumn:nextcolumn]
+            M.σ[npivot:npivot]
         )
         
-        normV += ((1/am.M[am.I[1], 1]) * am.M[am.I[1], am.npivots])^2
-        for k = 1:am.npivots-1
-           #@views  am.V[k, am.npivots] = (1/am.M[am.I[k], k]) * am.M[am.I[k], am.npivots]
+        rowbuffer[npivot, npivot] = 1.0
+        for k = 1:npivot-1
+            @views rowbuffer[k, npivot] = (1/colbuffer[rows[k], k]) * colbuffer[rows[k], npivot]
             for kk = 1:maxrows
-                @views am.M[kk, am.npivots] -= am.M[kk, k] * 
-                    (1/am.M[am.I[k], k]) * am.M[am.I[k], am.npivots]#am.V[k, am.npivots]
+                @views colbuffer[kk, npivot] -= colbuffer[kk, k] * rowbuffer[k, npivot]
             end
         end
         
-        @views nextrow = pivoting(
-            abs.(am.M[1:maxrows, am.npivots]),
-        )
-        am.I[am.npivots] = nextrow
-        #normUV = norm(am.M[1:maxrows, am.npivots])
+        rows[npivot] = rpivstrat(abs.(colbuffer[1:maxrows, npivot]))
+        if usedrows[rows[npivot]]
+            println("fail")
+        end
+        usedrows[rows[npivot]]=true
+        normUV = norm(colbuffer[1:maxrows, npivot])
+        convergence = normUV > tol * normU * norm(rowbuffer[1, 1:npivot])
         
-        #push!(oldnorms, normUV)
-        #normU = norm(am.M[1:maxrows, 1])*norm(am.V[1, 1:am.npivots])
-        @views convergence = norm(am.M[1:maxrows, am.npivots]) > tol * normU *sqrt(normV)
-        #if !convergence
-        #    convergence = convergence || checklinearconvergence(oldnorms, tol * normU)
-        #end
+     #   println(normUV," > ",tol * normU * norm(rowbuffer[1, 1:npivot]))
     end
+    #println("notmV", rowbuffer[npivot, npivot])
+    @views colbuffer[1:maxrows, 1:npivot]*rowbuffer[1:npivot, 1:npivot]
+    rpivots = rows[1:npivot]
+    rowbuffer[1:npivot, 1:npivot] .= 0.0
 
-    retU = am.M[1:maxrows, 1:am.npivots]
-    rpivots = am.I[1:am.npivots]
-    cpivots = am.J[1:am.npivots]
-    am.I[1:am.npivots] .= 0
-    am.J[1:am.npivots] .= 0
-    am.M[1:maxrows, 1:am.npivots] .= 0.0
-    #am.V[1:am.npivots, 1:am.npivots] .= 0.0
-    #am.Msed_I[rpivots] .= false
-    #am.Msed_J[cpivots] .= false
-    am.npivots = 1 
-
-    return U, rpivots, cpivots
-    
+    return rpivots
 end

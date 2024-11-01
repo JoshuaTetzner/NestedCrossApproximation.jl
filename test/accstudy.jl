@@ -6,7 +6,7 @@ using CompScienceMeshes
 using LinearAlgebra
 using FLoops
 using ClusterTrees
-
+ 
 function oneoverR(x, y)
     if x == y
         return 0
@@ -142,5 +142,12 @@ println("Error ACA: ", norm(Uf*Vf - A[:, cols])/norm(A[:, cols]))
 TV = Uf[rf, :] * Vf
 Vb = (TV[:, cf])^-1 * TV 
 norm((TV[:, cf])^-1*TV[:, cf]-I(size(TV, 1)))/norm(I(size(TV, 2)))
+
+U, Σ, V = svd(TV[:, cf])
+iTV = V*inv(diagm(Σ))*U'
+tiTV = TV[:, cf]^-1
+norm(tiTV*TV[:, cf]-I(size(TV, 1)))/norm(I(size(TV, 2)))
+norm(iTV*TV[:, cf]-I(size(TV, 1)))/norm(I(size(TV, 2)))
+
 
 norm(Ub*A[r, cols[cf]]*Vb - A[:, cols])/norm(A[:, cols])
