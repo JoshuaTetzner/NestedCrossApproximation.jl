@@ -44,39 +44,56 @@ function fulltrialblock(h2mat, idx::I) where {I}
 end
 
 function fullmat(h2mat)
-    A_h2 = zeros(Float64, size(A, 1), size(A, 2))
-    for M in h2mat.nearinteractions.M
-        A_h2[M.τ, M.σ] = M.M
+    A_h2 = zeros(ComplexF64, size(A, 1), size(A, 2))
+    for M in h2mat.nearinteractions.blocks
+        A_h2[M.rowindices, M.colindices] = M.matrix
     end
 
     for i2o in h2mat.i2otranslator
-        A_h2[i2o.τ, i2o.σ] = fulltestblock(h2mat, i2o.row_basis) * i2o.Z.M * fulltrialblock(
+        A_h2[value(h2mat.tree.test_cluster, i2o.row_basis), value(h2mat.tree.trial_cluster, i2o.col_basis)] = 
+        fulltestblock(h2mat, i2o.row_basis) * i2o.Z * fulltrialblock(
             h2mat, i2o.col_basis
         )
     end
     return A_h2
 end
 ##
+λ = 4.0
+k = 2 * π / λ
 
-Γ = meshrectangle(2.0, 0.2, 0.009)
-Γ.faces
+Γ = meshsphere(1.0, 0.04)
 
-op = Helmholtz3D.singlelayer()
-cxd0 = lagrangec0d1(Γ);
+op = Maxwell3D.singlelayer(wavenumber=k)
+space = raviartthomas(Γ);
 
-A = assemble(op, cxd0, cxd0)
+A = assemble(op, space, space)
 ##
-tree = create_tree(cxd0.pos, KMeansTreeOptions(nmin=30, maxlevel=20))
+tree = create_tree(space.pos, KMeansTreeOptions(nmin=50, maxlevel=20))
 ##
-@time h2mat = NestedCrossApproximation.PetrovGalerkinNCA(
-    op, cxd0,cxd0, compressor=FastBEAST.ACAOptions(tol=1e-4)
+function fct(r::F) where F <: Real
+    return abs((1-k^2)/r + 2/r^3 - 2*im *k/r^2)
+end
+compressor = NestedCrossApproximation.PCAOptions(
+    NestedCrossApproximation.PCAPivoting(fct, space.pos),
+    NestedCrossApproximation.PCAPivoting(fct, space.pos),
+    maxrank=50,
+    tol=10^-4
 );
+@time h2mat = NestedCrossApproximation.PetrovGalerkinNCA(
+    op, space,space, compressor=compressor#FastBEAST.ACAOptions(tol=1e-4)
+);
+#@time hmat = HM.assemble(op, space, space, compressor=FastBEAST.ACAOptions(tol=1e-6))
+##
+#estimate_reldifference(h2mat, hmat)
 ##
 fM = fullmat(h2mat)
-
+norm(fM-A)/norm(A)
+x = rand(size(A, 2))
+norm(fM*x - A*x)/norm(A*x)
+##
 errs = [[] for i in h2mat.fars]
 imp = []
-lmat = zeros(Float64, size(A, 1), size(A, 2))
+lmat = zeros(ComplexF64, size(A, 1), size(A, 2))
 for l in eachindex(h2mat.fars)
     for far in h2mat.fars[l]
         r = value(h2mat.tree.test_cluster, far[1])
@@ -95,5 +112,3 @@ end
 
 
 ##
-
-clusterlink = FastBEAST.cluster_link(h2mat.tree.test_cluster)

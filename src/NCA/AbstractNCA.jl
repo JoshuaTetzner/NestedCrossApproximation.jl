@@ -17,9 +17,7 @@ struct PivotBlocks{I, K}
 end
 
 struct H2MatrixBlock{I,K}
-    Z::Matrix{K}#::FastBEAST.MatrixBlock{I,K,Matrix{K}}
-    #τ::Vector{I}
-    #σ::Vector{I}
+    Z::Matrix{K}
     row_basis::I
     col_basis::I
 end

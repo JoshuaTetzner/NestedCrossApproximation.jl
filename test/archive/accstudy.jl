@@ -123,7 +123,7 @@ println("Error ACA: ", norm(U*V - A)/norm(A))
 TU = U * V[:, c]
 Ub = TU * (TU[r, :])^-1 
 norm((TU[r, :])^-1*TU[r, :]-I(size(TU, 2)))/norm(I(size(TU, 2)))
-##
+##retU
 cols = []
 for (ind, p) in enumerate(spaceu.pos)
     if norm(p) < 5.0

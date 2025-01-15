@@ -64,17 +64,19 @@ function PetrovGalerkinNCA(
     operator,
     testspace, 
     trialspace;
-    testtree=create_tree(testspace.pos, KMeansTreeOptions()),
-    trialtree=create_tree(trialspace.pos, KMeansTreeOptions()),
+    testtree=create_tree(testspace.pos, KMeansTreeOptions(nmin=50, maxlevel=50)),
+    trialtree=create_tree(trialspace.pos, KMeansTreeOptions(nmin=50, maxlevel=50)),
     nearinteractionquadstrat=BEAST.defaultquadstrat(operator, testspace, trialspace),
-    momentquadstrat=BEAST.DoubleNumQStrat(2, 2),
-    compressor=FastBEAST.ACAOptions(; tol=1e-4),
+    momentquadstrat=BEAST.DoubleNumQStrat(2, 3),
+    compressor=FastBEAST.ACAOptions(; tol=1e-3),
     multithreading=true,
-    verbose=true,
+    verbose=false,
     η=1.0
 )
     blktree = ClusterTrees.BlockTrees.BlockTree(testtree, trialtree)
     nears, fars = computeinteractions(blktree, η=η)
+
+    if verbose println("nonadmissible interactions") end
     nearinteractions = FastBEAST.assemble(
         operator,
         testspace,
@@ -93,9 +95,8 @@ function PetrovGalerkinNCA(
         @views store(v,m,n) = (Z[m,n] += v)
         farblkassembler(tdata,sdata,store)
     end
-    println("Nearinteractions")
-      
 
+    if verbose println("pivotselection") end
     test_fars = row_pivot_selection(
         testtree,
         trialtree,
@@ -103,8 +104,8 @@ function PetrovGalerkinNCA(
         farassembler,
         scalartype(operator);
         compressor=compressor,
-        verbose=verbose,
-        multithreading=false
+        verbose=false,
+        multithreading=multithreading
     )
 
     trial_fars = column_pivot_selection(
@@ -114,8 +115,8 @@ function PetrovGalerkinNCA(
         farassembler,
         scalartype(operator);
         compressor=compressor,
-        verbose=verbose,
-        multithreading=false
+        verbose=false,
+        multithreading=multithreading
     )
 
     testmomentcollection, o2otranslator = build_test_bases(
@@ -125,6 +126,7 @@ function PetrovGalerkinNCA(
         trialtree, trial_fars, scalartype(operator), verbose=verbose, multithreading=multithreading
     )
 
+    if verbose println("coupling") end
     i2otranslator = assemble_couplingmatrices(
         farassembler,
         scalartype(operator), 
@@ -133,7 +135,7 @@ function PetrovGalerkinNCA(
         trial_fars,
         compressor; 
         multithreading=multithreading, 
-        verbose=verbose
+        verbose=false
     )
 
     return PetrovGalerkinNCA{scalartype(operator)}(
@@ -146,7 +148,7 @@ function PetrovGalerkinNCA(
         o2otranslator,
         fars,
         (testtree.num_elements, trialtree.num_elements),
-        verbose,
+        false,
         multithreading
     )
 
@@ -155,3 +157,5 @@ end
 function assemble(operator, testspace, trialspace; kwargs...)
     return PetrovGalerkinNCA(operator, testspace, trialspace; kwargs...)
 end
+
+##

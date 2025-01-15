@@ -1,6 +1,5 @@
 using LinearMaps
 
-
 function Base.size(A::PetrovGalerkinNCA, dim=nothing)
     if dim === nothing
         return (A.dim[1], A.dim[2])
@@ -32,13 +31,9 @@ end
 
     fill!(y, zero(eltype(y)))
 
-    xhat = Vector{Vector{eltype(y)}}(
-        undef, length(A.tree.trial_cluster.nodes)
-    ) 
-    yhat = Vector{Vector{eltype(y)}}(
-        undef, length(A.tree.test_cluster.nodes)
-    ) 
-    
+    xhat = Vector{Vector{eltype(y)}}(undef, length(A.tree.trial_cluster.nodes))
+    yhat = Vector{Vector{eltype(y)}}(undef, length(A.tree.test_cluster.nodes))
+
     for idx in eachindex(A.trialmomentcollection)
         if isassigned(A.trialmomentcollection, idx)
             nb = A.trialmomentcollection[idx]
@@ -50,16 +45,16 @@ end
             nb = A.i2itranslator[idx]
             xhat[idx] = nb.T[1] * xhat[nb.children[1]]
             for nchd in 2:length(nb.children)
-                xhat[idx] +=nb.T[nchd] * xhat[nb.children[nchd]]
+                xhat[idx] += nb.T[nchd] * xhat[nb.children[nchd]]
             end
         end
     end
 
     for lrb in A.i2otranslator
         if isassigned(yhat, lrb.row_basis)
-            yhat[lrb.row_basis] += lrb.Z.M * xhat[lrb.col_basis]
+            yhat[lrb.row_basis] += lrb.Z * xhat[lrb.col_basis]
         else
-            yhat[lrb.row_basis] = lrb.Z.M * xhat[lrb.col_basis]
+            yhat[lrb.row_basis] = lrb.Z * xhat[lrb.col_basis]
         end
     end
 
@@ -95,9 +90,9 @@ end
             end
         end
     end
-    
+
     y += A.nearinteractions * x
-    
+
     return y
 end
 
@@ -110,12 +105,8 @@ end
 
     fill!(y, zero(eltype(y)))
 
-    xhat = Vector{Vector{eltype(y)}}(
-        undef, length(A.lmap.tree.test_cluster.nodes)
-    ) 
-    yhat = Vector{Vector{eltype(y)}}(
-        undef, length(A.lmap.tree.trial_cluster.nodes)
-    ) 
+    xhat = Vector{Vector{eltype(y)}}(undef, length(A.lmap.tree.test_cluster.nodes))
+    yhat = Vector{Vector{eltype(y)}}(undef, length(A.lmap.tree.trial_cluster.nodes))
 
     for idx in eachindex(A.lmap.testmomentcollection)
         if isassigned(A.lmap.testmomentcollection, idx)
@@ -124,7 +115,7 @@ end
         end
     end
 
-    for idx in eachindex(A.lmap.o2otranslator)
+    for idx in reverse(eachindex(A.lmap.o2otranslator))
         if isassigned(A.lmap.o2otranslator, idx)
             nb = A.lmap.o2otranslator[idx]
             xhat[idx] = transpose(nb.T[1]) * xhat[nb.children[1]]
@@ -136,9 +127,9 @@ end
 
     for lrb in A.lmap.i2otranslator
         if isassigned(yhat, lrb.col_basis)
-            yhat[lrb.col_basis] += transpose(lrb.Z.M) * xhat[lrb.row_basis]
+            yhat[lrb.col_basis] += transpose(lrb.Z) * xhat[lrb.row_basis]
         else
-            yhat[lrb.col_basis] = transpose(lrb.Z.M) * xhat[lrb.row_basis]
+            yhat[lrb.col_basis] = transpose(lrb.Z) * xhat[lrb.row_basis]
         end
     end
 
@@ -168,20 +159,16 @@ end
 end
 
 @views function LinearAlgebra.mul!(
-    y::AbstractVecOrMat, 
-    A::LinearMaps.AdjointMap{<:Any,<:PetrovGalerkinNCA}, 
-    x::AbstractVector
+    y::AbstractVecOrMat,
+    A::LinearMaps.AdjointMap{<:Any,<:PetrovGalerkinNCA},
+    x::AbstractVector,
 )
     LinearMaps.check_dim_mul(y, A.lmap, x)
 
     fill!(y, zero(eltype(y)))
 
-    xhat = Vector{Vector{eltype(y)}}(
-        undef, length(A.lmap.tree.test_cluster.nodes)
-    ) 
-    yhat = Vector{Vector{eltype(y)}}(
-        undef, length(A.lmap.tree.trial_cluster.nodes)
-    ) 
+    xhat = Vector{Vector{eltype(y)}}(undef, length(A.lmap.tree.test_cluster.nodes))
+    yhat = Vector{Vector{eltype(y)}}(undef, length(A.lmap.tree.trial_cluster.nodes))
 
     for idx in eachindex(A.lmap.testmomentcollection)
         if isassigned(A.lmap.testmomentcollection, idx)
@@ -202,9 +189,9 @@ end
 
     for lrb in A.lmap.i2otranslator
         if isassigned(yhat, lrb.col_basis)
-            yhat[lrb.col_basis] += adjoint(lrb.Z.M) * xhat[lrb.row_basis]
+            yhat[lrb.col_basis] += adjoint(lrb.Z) * xhat[lrb.row_basis]
         else
-            yhat[lrb.col_basis] = adjoint(lrb.Z.M) * xhat[lrb.row_basis]
+            yhat[lrb.col_basis] = adjoint(lrb.Z) * xhat[lrb.row_basis]
         end
     end
 

@@ -24,7 +24,7 @@ end
 
 function pivoting(
     pivstrat::FastBEAST.FD,
-    usedidcs::SubArray{Bool, 1, Vector{Bool}, Tuple{UnitRange{Int64}}, true}
+    usedidcs::Union{SubArray{Bool, 1, Vector{Bool}, Tuple{UnitRange{Int64}}, true}, Vector{Bool}}
 )
 
     nextpivot = FastBEAST.filldistance(pivstrat, usedidcs)
@@ -55,9 +55,13 @@ function checklinearconvergence(oldnorms::Vector{F}, refnorm::F) where F
 
     β = sum((x .- meanx).*(log10.(oldnorms) .- meany)) / sum((x.-meanx).^2)
     α = meany - β*meanx
-
-    return (α + β*(length(oldnorms))) > log10(refnorm)
+    #println("in")
+    #println(abs(α + β*(length(oldnorms)+1))), " > ", abs((log10(refnorm)))
+    return (α + β*(length(oldnorms)+1)) > log10(refnorm) #|| (α + β*(length(oldnorms)+1)) > log10(1e-4*oldnorms[1])
+    #return (α + β*(length(oldnorms)+1)) > log10(1e-4*oldnorms[1])
 end
+
+
 
 function pca_rm(
     M::LazyMatrix{I, K},
@@ -66,9 +70,7 @@ function pca_rm(
     maxrank=Int(round(length(M.τ)*length(M.σ)/(length(M.τ)+length(M.σ)))),
     tol=1e-4
 ) where {I, K}
-    #clear!(am)  
-    #oldnorms = Float64[]
-
+    oldnorms = Float64[]
     (maxrows, maxcolumns) = size(M)
     columnpivstrat, nextcolumn = FastBEAST.firstpivot(columnpivstrat, M.σ)
     am.used_J[nextcolumn] = true
@@ -89,8 +91,9 @@ function pca_rm(
     am.I[am.npivots] = nextrow
     
     norm(am.U[1:maxrows, am.npivots]) == 0.0 && return Matrix[], Int[], Int[]
-
+    
     @views normU = norm(am.U[1:maxrows, 1])
+    push!(oldnorms, normU)
     convergence = true
     while convergence && am.npivots < maxrank
         am.npivots += 1
@@ -100,6 +103,7 @@ function pca_rm(
         if length(am.J) < am.npivots
             println(size(M), am.npivots)
         end
+        #println(am.npivots)
         am.J[am.npivots] = nextcolumn
 
         @views M.μ(
@@ -107,7 +111,10 @@ function pca_rm(
             M.τ[1:maxrows],
             M.σ[nextcolumn:nextcolumn]
         )
-        
+        if norm(am.U[1:maxrows, am.npivots]) < normU
+            #println("update")
+            normU = norm(am.U[1:maxrows, am.npivots])
+        end
         am.V[am.npivots, am.npivots] = 1.0
         for k = 1:am.npivots-1
            @views  am.V[k, am.npivots] = (1/am.U[am.I[k], k]) * am.U[am.I[k], am.npivots]
@@ -122,22 +129,21 @@ function pca_rm(
         )
         am.used_I[nextrow] = true
         am.I[am.npivots] = nextrow
-        normUV = norm(am.U[1:maxrows, am.npivots])
+        normUV = norm(am.U[1:maxrows, am.npivots]) 
         
-        #push!(oldnorms, normUV)
-        #normU = norm(am.U[1:maxrows, 1])*norm(am.V[1, 1:am.npivots])
-        @views convergence = normUV > tol * normU * norm(am.V[1, 1:am.npivots])
-        #if !convergence
-        #    convergence = convergence || checklinearconvergence(oldnorms, tol * normU)
-        #end
+        @views convergence = mean(abs.(am.U[1:maxrows, am.npivots])) > tol * normU/maxrows#
+        #@views convergence = normUV > tol * normU * norm(am.V[1, 1:am.npivots])
+        #println(mean(abs.(am.U[1:maxrows, am.npivots]))," > ",tol * mean(abs.(am.U[1:maxrows, 1])))
+        if !convergence
+            convergence = checklinearconvergence(oldnorms, normUV)
+        end
+        push!(oldnorms, normUV)
     end
 
     retU = am.U[1:maxrows, 1:am.npivots]
     retV = am.V[1:am.npivots, 1:am.npivots]
     rpivots = am.I[1:am.npivots]
     cpivots = am.J[1:am.npivots]
-    #am.I[1:am.npivots] .= 0
-    #am.J[1:am.npivots] .= 0
     am.U[1:maxrows, 1:am.npivots] .= 0.0
     am.V[1:am.npivots, 1:am.npivots] .= 0.0
     am.used_I[rpivots] .= false
@@ -154,9 +160,7 @@ function pca_cm(
     maxrank=Int(round(length(M.τ)*length(M.σ)/(length(M.τ)+length(M.σ)))),
     tol=1e-14
 ) where {I, K}
-    
-    #clear!(am)  
-
+    oldnorms = Float64[]
     (maxrows, maxcolumns) = size(M)
 
     rowpivstrat, nextrow = FastBEAST.firstpivot(rowpivstrat, M.τ)
@@ -181,6 +185,7 @@ function pca_cm(
     norm(am.V[am.npivots, 1:maxcolumns]) == 0.0 && return Matrix[], Int[], Int[]
 
    @views normV = norm(am.V[1, 1:maxcolumns])
+   push!(oldnorms, normV)
     convergence = true
 
     while convergence && am.npivots < maxrank
@@ -195,7 +200,10 @@ function pca_cm(
             M.τ[nextrow:nextrow],
             M.σ[1:maxcolumns]
         )
-        
+        if norm(am.V[am.npivots, 1:maxcolumns]) < normV
+            #println("update")
+            normV = norm(am.V[am.npivots, 1:maxcolumns])
+        end
         am.U[am.npivots, am.npivots] = 1
         for k = 1:am.npivots-1
            @views  am.U[am.npivots, k] = (1/am.V[k, am.J[k]]) * am.V[am.npivots, am.J[k]]
@@ -211,14 +219,31 @@ function pca_cm(
         am.used_J[nextcolumn] = true
         am.J[am.npivots] = nextcolumn
         normUV = norm(am.V[am.npivots, 1:maxcolumns])
-        @views convergence = normUV > am.npivots/maxcolumns * tol * normV
+        #@views convergence = normUV > tol * normV * norm(am.U[1:am.npivots, 1])
+        #@views convergence = maximum(abs.(am.V[am.npivots, 1:maxcolumns])) > tol * abs(mean(am.V[1, 1:maxcolumns]))
+        @views convergence = mean(abs.(am.V[am.npivots, 1:maxcolumns])) > tol * normV/maxcolumns
+        if !convergence
+            convergence = checklinearconvergence(oldnorms, normUV)
+        end
+        push!(oldnorms, normUV)
+        #@views convergence = normUV > am.npivots/maxcolumns * tol * normV
     end
     
-    if am.npivots == maxrank
-        println(size(M))
-        println("Aborted after maxrank.")
-    end
+    #if am.npivots == maxrank
+    #    println(size(M))
+    #    println("Aborted after maxrank.")
+    #end
 
-    return am.U[1:am.npivots, 1:am.npivots], am.V[1:am.npivots, 1:maxcolumns], am.I[1:am.npivots], am.J[1:am.npivots]
+    retU = am.U[1:am.npivots, 1:am.npivots]
+    retV = am.V[1:am.npivots, 1:maxcolumns]
+    rpivots = am.I[1:am.npivots]
+    cpivots = am.J[1:am.npivots]
+    am.U[1:am.npivots, 1:am.npivots] .= 0.0
+    am.V[1:am.npivots, 1:maxcolumns] .= 0.0
+    am.used_I[rpivots] .= false
+    am.used_J[cpivots] .= false
+    am.npivots = 1 
+
+    return retU, retV, rpivots, cpivots
     
 end

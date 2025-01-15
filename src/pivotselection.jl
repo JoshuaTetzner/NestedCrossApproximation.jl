@@ -19,72 +19,62 @@ function sort_interactions(
 end
 
 function interactionindices(
-    tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
-    nodeidx::I,
-    interactions::Vector{I},
-    inheritedpivots::Vector{I}
-) where {I}
-
+    tree::NminTree{D}, nodeidx::I, interactions::Vector{I}, inheritedpivots::Vector{I}
+) where {I,D}
     index_set = Int[]
-    cluster_maps = (zeros(I, length(interactions)+1), interactions)
+    cluster_maps = (zeros(I, length(interactions) + 1), interactions)
 
     for (ind, interaction) in enumerate(interactions)
         append!(index_set, value(tree, interaction))
-        cluster_maps[1][ind+1] = length(index_set)
+        cluster_maps[1][ind + 1] = length(index_set)
     end
     append!(index_set, inheritedpivots)
 
     return index_set, cluster_maps
 end
 
-
-
 function row_pivot_selection(
-    test_tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
-    trial_tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
-    fars::Vector{Vector{Tuple{I, I}}},
+    test_tree::NminTree{D},
+    trial_tree::NminTree{D},
+    fars::Vector{Vector{Tuple{I,I}}},
     matrixassembler,
     ::Type{K};
     compressor=FastBEAST.ACAOptions(; tol=1e-4),
     verbose=false,
     multithreading=true,
-) where {I, K}
-    
-    clusterblocks = Vector{PivotBlocks{I, K}}(undef, length(test_tree.nodes))
-    interactionlist = sort_interactions(
-        length(test_tree.nodes), fars; testortrial=1
-    )
+) where {I,D,K}
+    clusterblocks = Vector{PivotBlocks{I,K}}(undef, length(test_tree.nodes))
+    interactionlist = sort_interactions(length(test_tree.nodes), fars; testortrial=1)
     clusterlink = FastBEAST.cluster_link(test_tree)
-    
+
     if verbose
-        p = Progress(sum(length.(clusterlink)), desc="Computing row pivots: ")
+        p = Progress(sum(length.(clusterlink)); desc="Computing row pivots: ")
     end
     if compressor isa FastBEAST.ACAOptions
         am = allocate_aca_memory(
-            K, 
-            length(value(test_tree, 1)), 
-            length(value(trial_tree, 1)), 
-            multithreading; 
-            maxrank=compressor.maxrank, 
+            K,
+            length(value(test_tree, 1)),
+            length(value(trial_tree, 1)),
+            multithreading;
+            maxrank=compressor.maxrank,
         )
     else
         am = allocate_pca_memory_rm(
-            K, 
-            length(value(test_tree, 1)), 
-            length(value(trial_tree, 1)), 
-            multithreading; 
-            maxrank=compressor.maxrank, 
+            K,
+            length(value(test_tree, 1)),
+            length(value(trial_tree, 1)),
+            multithreading;
+            maxrank=compressor.maxrank,
         )
     end
 
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
     for ilevel in eachindex(clusterlink)
-        
-        tolmult = 1.0/(length(clusterlink)-ilevel)
         level = clusterlink[ilevel]
-        _foreach(level) do (nodeidx) 
+        tolm = 1 - (length(clusterlink) - ilevel - 1) * 0.1
+        _foreach(level) do (nodeidx)
             childrange = FastBEAST.child_link(test_tree, nodeidx)
-            
+
             parent = ClusterTrees.parent(test_tree, nodeidx)
             if parent != 0 && isassigned(clusterblocks, parent)
                 inheritedpivots = clusterblocks[parent].M.σ[clusterblocks[parent].M.M.σ]
@@ -92,7 +82,7 @@ function row_pivot_selection(
                 inheritedpivots = Int[]
             end
 
-            noadm=false
+            noadm = false
             if interactionlist[nodeidx] == 0.0
                 noadm = true
             end
@@ -103,7 +93,7 @@ function row_pivot_selection(
 
             if tindices != []
                 sindices = value(test_tree, nodeidx)
-                
+
                 if compressor isa FastBEAST.ACAOptions
                     clusterblocks[nodeidx] = PivotBlocks(
                         getcompressedmatrixview(
@@ -113,11 +103,11 @@ function row_pivot_selection(
                             K,
                             am[Threads.threadid()],
                             compressor;
+                            #tolm=tolm,
                             noadm=noadm,
-                            tolmult=tolmult
                         ),
                         tclustermaps,
-                        childrange
+                        childrange,
                     )
                 else
                     refcenter = test_tree.nodes[nodeidx].node.data.ct
@@ -130,10 +120,10 @@ function row_pivot_selection(
                             am[Threads.threadid()],
                             compressor;
                             refcenter=refcenter,
-                            noadm=noadm
+                            noadm=noadm,
                         ),
                         tclustermaps,
-                        childrange
+                        childrange,
                     )
                 end
             end
@@ -145,51 +135,47 @@ function row_pivot_selection(
     return clusterblocks
 end
 
-
 function column_pivot_selection(
-    test_tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
-    trial_tree,#::FastBEAST.NminClusterTrees.NminTrees.NminTree{D},
-    fars::Vector{Vector{Tuple{I, I}}},
+    test_tree::NminTree{D},
+    trial_tree::NminTree{D},
+    fars::Vector{Vector{Tuple{I,I}}},
     matrixassembler,
     ::Type{K};
     compressor=FastBEAST.ACAOptions(; tol=1e-4),
     verbose=false,
     multithreading=true,
-) where {I, K}sclustermaps
-
-    clusterblocks = Vector{PivotBlocks{I, K}}(undef, length(trial_tree.nodes))
-    interactionlist = sort_interactions(
-        length(trial_tree.nodes), fars; testortrial=2
-    )
+) where {I,D,K}
+    clusterblocks = Vector{PivotBlocks{I,K}}(undef, length(trial_tree.nodes))
+    interactionlist = sort_interactions(length(trial_tree.nodes), fars; testortrial=2)
     clusterlink = FastBEAST.cluster_link(trial_tree)
 
     if verbose
-        p = Progress(sum(length.(clusterlink)), desc="Computing column pivots: ")
+        p = Progress(sum(length.(clusterlink)); desc="Computing column pivots: ")
     end
-    
+
     if compressor isa FastBEAST.ACAOptions
         am = allocate_aca_memory(
-            K, 
-            length(value(test_tree, 1)), 
-            length(value(trial_tree, 1)), 
-            multithreading; 
-            maxrank=compressor.maxrank, 
+            K,
+            length(value(test_tree, 1)),
+            length(value(trial_tree, 1)),
+            multithreading;
+            maxrank=compressor.maxrank,
         )
     else
         am = allocate_pca_memory_cm(
-            K, 
-            length(value(test_tree, 1)), 
-            length(value(trial_tree, 1)), 
-            multithreading; 
-            maxrank=compressor.maxrank, 
+            K,
+            length(value(test_tree, 1)),
+            length(value(trial_tree, 1)),
+            multithreading;
+            maxrank=compressor.maxrank,
         )
     end
 
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
     for ilevel in eachindex(clusterlink)
-        tolmult = 1.0/(length(clusterlink)-ilevel)
         level = clusterlink[ilevel]
-        _foreach(level) do (nodeidx) 
+        tolm = 1 - (length(clusterlink) - ilevel - 1) * 0.1
+        _foreach(level) do (nodeidx)
             childrange = FastBEAST.child_link(trial_tree, nodeidx)
 
             parent = ClusterTrees.parent(trial_tree, nodeidx)
@@ -199,7 +185,7 @@ function column_pivot_selection(
                 inheritedpivots = Int[]
             end
 
-            noadm=false
+            noadm = false
             if interactionlist[nodeidx] == 0.0
                 noadm = true
             end
@@ -220,10 +206,10 @@ function column_pivot_selection(
                             am[Threads.threadid()],
                             compressor;
                             noadm=noadm,
-                            tolmult=tolmult
+                            #tolm=tolm
                         ),
                         sclustermaps,
-                        childrange
+                        childrange,
                     )
                 else
                     refcenter = trial_tree.nodes[nodeidx].node.data.ct
@@ -233,13 +219,13 @@ function column_pivot_selection(
                             sindices,
                             tindices,
                             K,
-                            am[Threadsthreadid()],
-                            compressor,
+                            am[Threads.threadid()],
+                            compressor;
                             refcenter=refcenter,
-                            noadm=noadm
+                            noadm=noadm,
                         ),
                         sclustermaps,
-                        childrange
+                        childrange,
                     )
                 end
             end
@@ -250,16 +236,3 @@ function column_pivot_selection(
 
     return clusterblocks
 end
-
-##
-
-function tester()
-
-    @time begin
-        x=rand(1000)
-        z = svd(x)
-    end
-    return 1
-end
-
-tester()

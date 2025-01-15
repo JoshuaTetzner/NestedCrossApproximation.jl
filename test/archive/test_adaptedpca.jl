@@ -17,17 +17,13 @@ function StoM(vec)
 end
 ##
 sp = meshrectangle(1.0, 1.0, 0.1)
-tp = translate(meshrectangle(1.0, 1.0, 0.1), SVector(3.0, 0.0, 0.0))
-sv = StoM(sp.vertices)
-tv = StoM(tp.vertices)
+tp = translate(meshrectangle(3.0, 1.0, 0.1), SVector(3.0, 0.0, 0.0))
 
 ##
 k = 10.0
 SL = Maxwell3D.singlelayer(wavenumber=k)
 X1 = raviartthomas(sp)
 X2 = raviartthomas(tp)
-sv = StoM(X1.pos)
-tv = StoM(X2.pos)
 T = assemble(SL, X1, X2)
 println("Rank: ", rank(T))
 ##
@@ -38,23 +34,41 @@ println("Rank: ", rank(T))
     blkasm(tdata, sdata, store)
 end
 
-##
+
 lm = FastBEAST.LazyMatrix(assembler, Vector(1:numfunctions(X1)), Vector(1:numfunctions(X2)), ComplexF64)
+##
 am_rm = NestedCrossApproximation.allocate_pca_memory_rm(ComplexF64, numfunctions(X1), numfunctions(X2), maxrank=200)
 
+fct(x) = 1/x^3 + 1/x
 pivstrat = NestedCrossApproximation.PCAPivoting(
-    SVector(0.5,0.5,0.0), X2.pos
-)
+    fct, SVector(0.5,0.5,0.0), X2.pos
+);
+
+##
+
 @time U, V, r, c = NestedCrossApproximation.pca_rm(
     lm,
     am_rm,
     pivstrat,
     tol=1e-4,
 );
-
 ##
+rows = zeros(Int, length(X1.pos))
+cols = zeros(Int, length(X2.pos))
 
-x = rand(10, 5)
-y = Matrix{eltype(x)}(I, 5, 5)  
+colbuffer = zeros(ComplexF64, length(X1.pos), 20)
+cpivstrat = NestedCrossApproximation.MyPivoting(fct, X2.pos, ref=SVector(0.5, 0.5, 0.0))
+rpivstrat = NestedCrossApproximation.MaximumValue()
 
-x*y
+
+cpivots = Int[]
+for i = 1:20
+    push!(cpivots, cpivstrat())
+end
+##
+lm2 = FastBEAST.LazyMatrix(assembler, Vector(1:numfunctions(X1)), cpivots, ComplexF64)
+
+
+@time r2 = NestedCrossApproximation.pca(
+    lm, rows, rowbuffer, colbuffer, rpivstrat; tol=1e-4);
+##

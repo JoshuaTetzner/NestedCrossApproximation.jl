@@ -10,6 +10,7 @@ using LinearMaps
 using StaticArrays
 using Statistics
 using SparseArrays
+using Base.Threads
 
 include("NCA/AbstractNCA.jl")
 include("pca/pca_utils.jl")
@@ -29,6 +30,17 @@ include("utils.jl")
 include("buttomupgalerkin.jl")
 include("NCA/GalerkinNCA_BA.jl")
 
+include("flexNCA/incompletefactorization/convergence.jl")
+include("flexNCA/incompletefactorization/pivoting.jl")
+include("flexNCA/incompletefactorization/incompleteaca.jl")
+include("flexNCA/representor.jl")
+include("flexNCA/moments.jl")
+include("flexNCA/translations.jl")
+include("flexNCA/compressor.jl")
+include("flexNCA/buffer.jl")
+include("flexNCA/farinteractions.jl")
+include("NCA/NCA.jl")
+
 export row_pivot_selection
 export column_pivot_selection
 export build_test_bases
@@ -36,4 +48,4 @@ export build_test_bases
 export assemble_couplingmatrices
 export storage
 
-end 
+end

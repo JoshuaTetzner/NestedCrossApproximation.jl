@@ -1,3 +1,56 @@
+struct RPivoting{I} <: FastBEAST.FD
+    N::I
+end
+
+function RPivoting()
+    return RPivoting(0)
+end
+
+function FastBEAST.firstpivot(pivstr::RPivoting{Int}, globalidcs::Vector{Int})
+    return RPivoting(length(globalidcs)), rand(1:length(globalidcs))
+end
+
+function pivoting(
+    pivstrat::NestedCrossApproximation.RPivoting{I},
+    usedidcs::Union{SubArray{Bool, 1, Vector{Bool}, Tuple{UnitRange{Int64}}, true}, Vector{Bool}}
+) where I
+    nextidx = rand(1:pivstrat.N)
+    if usedidcs[nextidx]
+        return argmin(usedidcs)
+    else
+        return nextidx
+    end
+end
+
+struct PCAPivoting2{F<:Real} <: FastBEAST.FD
+    w::Vector{F}
+    h::Vector{F}
+    leja::Vector{F}
+    pos::Vector{SVector{3,F}}
+end
+
+function PCAPivoting2(
+    ref::SVector{3,F}, pos::Vector{SVector{3,F}};
+) where {F<:Real}
+
+    w = 1 ./ norm.(pos .- Scalar(ref))
+    leja = ones(F, length(pos))
+    h = zeros(F, length(pos))
+
+    return PCAPivoting2(w, h, leja, pos)
+end
+
+function PCAPivoting2(
+    pos::Vector{SVector{3,F}};
+) where {F<:Real}
+
+    w = ones(F, length(pos))
+    leja = ones(F, length(pos))
+    h = zeros(F, length(pos))
+
+    return PCAPivoting2(w, h, leja, pos)
+end
+
 struct PCAPivoting{F<:Real} <: FastBEAST.FD
     fct::Function
     weights::Vector{F}
@@ -45,6 +98,15 @@ function weightedrandom(weights::Vector{F}) where F <: Real
 end
 
 function FastBEAST.filldistance(
+    fdmemory::PCAPivoting2{F},
+    usedidcs::Union{Vector{Bool},SubArray{Bool,1,Vector{Bool},Tuple{UnitRange{Int}},true}},
+) where {F<:Real}
+    nextidx = argmax(fdmemory.leja .^ (2/sum(usedidcs)) .* fdmemory.h .* fdmemory.w .^4)
+    fdmemory.leja .*= norm.(fdmemory.pos .- Scalar(fdmemory.pos[nextidx]))
+    return nextidx
+end
+
+function FastBEAST.filldistance(
     fdmemory::PCAPivoting{F},
     usedidcs::Union{Vector{Bool},SubArray{Bool,1,Vector{Bool},Tuple{UnitRange{Int}},true}},
 ) where {F<:Real}
@@ -82,4 +144,13 @@ function FastBEAST.firstpivot(pivstrat::PCAPivoting{F}, globalidcs::Vector{Int})
     end
     
     return PCAPivoting(pivstrat.fct, pivstrat.weights, h, localpos), firstidcs
+end
+
+function FastBEAST.firstpivot(pivstrat::PCAPivoting2{F}, globalidcs::Vector{Int}) where F
+
+    firstidx = argmax(pivstrat.w)
+    pivstrat.h .= norm.(pivstrat.pos .- Scalar(pivstrat.pos[firstidx]))
+    pivstrat.leja .*= norm.(pivstrat.pos .- Scalar(pivstrat.pos[firstidx])) 
+
+    return PCAPivoting2(pivstrat.w, pivstrat.h, pivstrat.leja, pivstrat.pos), firstidx
 end
