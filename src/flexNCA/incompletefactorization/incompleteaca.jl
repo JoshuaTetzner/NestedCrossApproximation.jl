@@ -76,7 +76,7 @@ function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
         )
 
         # Norm update
-        updatenorm!(iaca.convergence, rowbuffer[npivot, 1:maxcolumn])
+        updatenorm!(iaca.convergence, rowbuffer[npivot, 1:maxcolumn], npivot)
 
         colbuffer[npivot, npivot] = K(1.0)
         for k in 1:(npivot - 1)
@@ -129,7 +129,7 @@ function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
         )
 
         # Norm update
-        updatenorm!(iaca.convergence, colbuffer[1:maxrow, npivot])
+        updatenorm!(iaca.convergence, colbuffer[1:maxrow, npivot], npivot)
 
         rowbuffer[npivot, npivot] = K(1.0)
         for k in 1:(npivot - 1)

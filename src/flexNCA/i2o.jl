@@ -3,7 +3,7 @@ function build_testh2blocks!(
     translationidcs::Vector{Int},
     moments::Vector{H2BasisBlock{I,K}},
     momentidcs::Vector{Int},
-    cbuffer::Tuple{Matrix{Float64},Matrix{Float64}},
+    cbuffer::Tuple{Matrix{K},Matrix{K}},
     pivots::Vector{Tuple{Vector{I},Vector{I}}},
     clusterlink,
     fars,
@@ -11,20 +11,20 @@ function build_testh2blocks!(
     tree;
     multithreading=true,
 ) where {I,K}
-    lk = ReentrantLock()
+    lk = Threads.SpinLock()
     iseven(level) ? idx = 1 : idx = 2
 
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
     _foreach(clusterlink[level]) do node
         if !ClusterTrees.haschildren(tree, node)
             if pivots[node] != ([], [])
-                V =
-                    cbuffer[idx][value(tree, node), 1:length(pivots[node][1])] *
-                    inv(cbuffer[idx][pivots[node][1], 1:length(pivots[node][2])])
+                U =
+                    cbuffer[idx][value(tree, node), 1:length(pivots[node][1])] /
+                    cbuffer[idx][pivots[node][1], 1:length(pivots[node][2])]
                 lock(lk) do
                     push!(momentidcs, node)
                     push!(
-                        moments, H2BasisBlock(V, value(tree, node), pivots[node][2], Int[])
+                        moments, H2BasisBlock(U, value(tree, node), pivots[node][2], Int[])
                     )
                 end
             end
@@ -37,8 +37,8 @@ function build_testh2blocks!(
             childs = collect(children(tree, node))
             for child in childs
                 Θ =
-                    cbuffer[3 - idx][pivots[child][1], 1:length(pivots[node][2])] *
-                    inv(cbuffer[3 - idx][pivots[node][1], 1:length(pivots[node][2])])
+                    cbuffer[3 - idx][pivots[child][1], 1:length(pivots[node][2])] /
+                    cbuffer[3 - idx][pivots[node][1], 1:length(pivots[node][2])]
                 push!(translationblocks, Θ)
             end
             lock(lk) do
@@ -73,7 +73,7 @@ function build_i2itranslations!(
             translations = Matrix{K}[]
             for child in childs
                 @inbounds Θ =
-                    inv(rbuffer[idx][1:length(pivots[node][1]), pivots[node][2]]) *
+                    inv(rbuffer[idx][1:length(pivots[node][1]), pivots[node][2]]) \
                     rbuffer[idx][1:length(pivots[node][1]), pivots[child][2]]
                 push!(translations, Θ)
             end
@@ -84,21 +84,26 @@ function build_i2itranslations!(
     end
 end
 
-function I2Otranslations(
+function I2Otranslator(
     matrixassembler::Function,
     ::Type{K},
-    fars::Vector{Vector{Tuple{Int,Int}}},
-    pivots::Vector{Tuple{Vector{Int},Vector{Int}}};
+    fars::Vector{Vector{Tuple{I,I}}},
+    pivots::Vector{Tuple{Vector{I},Vector{I}}};
     multithreading=true,
-) where {K}
+) where {I,K}
     fars = reduce(vcat, fars)
-    lowrankblocks = Vector{H2MatrixBlock{Int,K}}(undef, length(fars))
+    lk = Threads.SpinLock()
+    lowrankblocks = H2MatrixBlock{I,K}[]
 
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
-    _foreach(enumerate(fars)) do (idx, far)
-        blk = zeros(K, length(pivots[far[1]][1]), length(pivots[far[2]][1]))
-        matrixassembler(blk, pivots[far[1]][1], pivots[far[2]][1])
-        lowrankblocks[idx] = H2MatrixBlock(blk, far[1], far[2])
+    _foreach(fars) do far
+        if far[1] > far[2]
+            blk = zeros(K, length(pivots[far[1]][1]), length(pivots[far[2]][1]))
+            matrixassembler(blk, pivots[far[1]][1], pivots[far[2]][1])
+            lock(lk) do
+                push!(lowrankblocks, H2MatrixBlock(blk, far[1], far[2]))
+            end
+        end
     end
 
     return lowrankblocks

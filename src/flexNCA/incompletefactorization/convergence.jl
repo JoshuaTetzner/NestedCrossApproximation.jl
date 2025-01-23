@@ -27,7 +27,7 @@ function (convcrit::IncompleteNormEstimator{F})(
 end
 
 function updatenorm!(
-    convcrit::IncompleteNormEstimator{F}, rc::AbstractVector{K}
+    convcrit::IncompleteNormEstimator{F}, rc::AbstractVector{K}, npivot::Int
 ) where {F<:Real,K}
-    return (norm(rc) < convcrit.normUV) && (convcrit.normUV = norm(rc))
+    return convcrit.normUV = ((npivot - 1) * convcrit.normUV + norm(rc)) / npivot
 end

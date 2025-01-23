@@ -11,6 +11,13 @@ function TopDownCompressor(; factorization=LRF.ACA(), representor=nothing)
     return TopDownCompressor(factorization, representor)
 end
 
+function checktol(lm, aM, r, c)
+    m = zeros(ComplexF64, size(lm, 1), size(lm, 2))
+    @views lm.μ(m, lm.τ, lm.σ)
+    println(length(r))
+    return println(norm(m - aM) / norm(m))
+end
+
 function (compressor::TopDownCompressor{CompressorType,Nothing})(
     cbuffer::Matrix{K},
     rbuffer::Matrix{K},
@@ -31,8 +38,16 @@ function (compressor::TopDownCompressor{CompressorType,Nothing})(
     rpivots = LRF.rows(lrf)
     cpivots = LRF.cols(lrf)
     npivots != length(rpivots) && @warn "ACA compression found zero rows or columns!"
+    checktol(
+        lm,
+        cbuffer[testidcs, 1:npivots] * rbuffer[1:npivots, 1:length(trialidcs)],
+        rpivots,
+        cpivots,
+    )
+
     cbuffer[testidcs, 1:npivots] =
         cbuffer[testidcs, 1:npivots] * rbuffer[1:npivots, cpivots]
+
     return (testidcs[rpivots], trialidcs[cpivots])
 end
 
@@ -78,7 +93,7 @@ function (compressor::TopDownCompressor{CompressorType,RepresentorType})(
     cpivots = LRF.cols(lrf)
     npivots != length(rpivots) && @warn "ACA compression found zero rows or columns!"
     cbuffer[testidcs, 1:npivots] =
-        cbuffer[testidcs, 1:npivots] * rbuffer[1:npivots, cpivots]
+        cbuffer[testidcs, 1:npivots] * rbuffer[1:npivots, cpivots[1:npivots]]
     return (testidcs[rpivots], trialidcs[cpivots])
 end
 

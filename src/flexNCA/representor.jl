@@ -15,8 +15,8 @@ struct ChebyshevRep{I,D,F} <: Representor
     N::I
 end
 
-function ChebyshevRep(ε::F, η::F, pos::Vector{SVector{D,F}}) where {D,F}
-    N = Int(abs(round(log(η, ε))))
+function ChebyshevRep(ε::F, η::F, pos::Vector{SVector{D,F}}; γ=0.33) where {D,F}
+    N = Int(abs(round(log((sqrt(3) * γ * η), ε))))
     cn = ChebyshevApprox.nodes(N, :chebyshev_nodes).points
     #To-Do: This should use D to determine the dimension.
     nodes3d = [SVector(cn[i], cn[j], cn[k]) for i in 1:N for j in 1:N for k in 1:N]
@@ -44,9 +44,9 @@ function covmat(M::AbstractVector{SVector{D,F}}) where {D,F}
 
     hs = zeros(F, 3)
     for mᵢ in M
-        h1 = dot((mᵢ - cₘ), s[1, 1:3])
-        h2 = dot((mᵢ - cₘ), s[2, 1:3])
-        h3 = dot((mᵢ - cₘ), s[3, 1:3])
+        h1 = dot((mᵢ - cₘ), s[1:3, 1])
+        h2 = dot((mᵢ - cₘ), s[1:3, 2])
+        h3 = dot((mᵢ - cₘ), s[1:3, 3])
         if (hs[1] < h1)
             hs[1] = h1
         end

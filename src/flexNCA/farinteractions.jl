@@ -35,17 +35,18 @@ function compress(
     fars::Vector{Vector{Tuple{Int,Int}}},
     compressor::TopDownCompressor,
     ::Type{K};
-    multithreading=false,
+    multithreading=true,
     maxrank=40,
+    tol=1e-4,
 ) where {D,K}
     sortedfars = testfars(length(tree.nodes), fars)
     clusterlink = FastBEAST.cluster_link(tree)
     momentidcs = Int[]
     moments = NestedCrossApproximation.H2BasisBlock{Int,K}[]
-    levtranslations = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,K}}[]
+    leveledtranslations = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,K}}[]
 
     cbuffer, rbuffer = allocate_sym_buffer(
-        K, compressor, tree.num_elements, tree.num_elements
+        K, compressor, tree.num_elements, tree.num_elements; maxrank=maxrank
     )
 
     pivots = [(Int[], Int[]) for i in eachindex(tree.nodes)]
@@ -65,7 +66,13 @@ function compress(
                 localrbuffer = take!(rbuffer)
                 idcs = value(tree, node)
                 pivots[node] = compressor(
-                    cbuffer[ridx], localrbuffer, farassembler, idcs, farfield
+                    cbuffer[ridx],
+                    localrbuffer,
+                    farassembler,
+                    idcs,
+                    farfield;
+                    tol=tol,
+                    maxrank=maxrank,
                 )
                 put!(rbuffer, localrbuffer)
             end
@@ -84,10 +91,10 @@ function compress(
                 tree,
             )
         end
-        push!(levtranslations, Dict(translationidcs .=> translations))
+        push!(leveledtranslations, Dict(translationidcs .=> translations))
     end
 
-    return Dict(momentidcs .=> moments), levtranslations, pivots
+    return Dict(momentidcs .=> moments), leveledtranslations, pivots
 end
 
 function compress(test_tree, trial_tree, farassembler, fars, compressor::TopDown)

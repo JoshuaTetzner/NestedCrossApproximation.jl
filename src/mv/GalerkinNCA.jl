@@ -69,9 +69,14 @@ end
     for lrb in A.i2otranslator
         if isassigned(yhat, lrb.row_basis)
             yhat[lrb.row_basis] += lrb.Z * xhat[lrb.col_basis]
+
         else
-            holder = lrb.Z * xhat[lrb.col_basis]
-            yhat[lrb.row_basis] = holder
+            yhat[lrb.row_basis] = lrb.Z * xhat[lrb.col_basis]
+        end
+        if isassigned(yhat, lrb.col_basis)
+            yhat[lrb.col_basis] += transpose(lrb.Z) * xhat[lrb.row_basis]
+        else
+            yhat[lrb.col_basis] = transpose(lrb.Z) * xhat[lrb.row_basis]
         end
     end
 
@@ -138,19 +143,36 @@ end
     xhat = Vector{Vector{eltype(y)}}(undef, length(A.lmap.tree.trial_cluster.nodes))
     yhat = Vector{Vector{eltype(y)}}(undef, length(A.lmap.tree.test_cluster.nodes))
 
-    for idx in eachindex(A.lmap.momentcollection)
-        if isassigned(A.lmap.momentcollection, idx)
-            nb = A.lmap.momentcollection[idx]
-            xhat[idx] = adjoint(nb.T) * x[nb.τ]
+    if A.lmap.momentcollection isa Vector
+        for idx in eachindex(A.lmap.momentcollection)
+            if isassigned(A.lmap.momentcollection, idx)
+                nb = A.lmap.momentcollection[idx]
+                xhat[idx] = adjoint(nb.T) * x[nb.τ]
+            end
+        end
+    else
+        for (idx, moment) in A.lmap.momentcollection
+            xhat[idx] = adjoint(moment.T) * x[moment.τ]
         end
     end
 
-    for idx in reverse(eachindex(A.lmap.translator))
-        if isassigned(A.lmap.translator, idx)
-            nb = A.lmap.translator[idx]
-            xhat[idx] = adjoint(nb.T[1]) * xhat[nb.children[1]]
-            for nchd in 2:length(nb.children)
-                xhat[idx] += adjoint(nb.T[nchd]) * xhat[nb.children[nchd]]
+    if !isassigned(A.lmap.translator, 1)
+        for idx in reverse(eachindex(A.lmap.translator))
+            if isassigned(A.lmap.translator, idx)
+                nb = A.lmap.translator[idx]
+                xhat[idx] = adjoint(nb.T[1]) * xhat[nb.children[1]]
+                for nchd in 2:length(nb.children)
+                    xhat[idx] += adjoint(nb.T[nchd]) * xhat[nb.children[nchd]]
+                end
+            end
+        end
+    else
+        for level in reverse(A.lmap.translator)
+            for (idx, o2o) in level
+                xhat[idx] = adjoint(o2o.T[1]) * xhat[o2o.children[1]]
+                for nchd in 2:length(o2o.children)
+                    xhat[idx] += adjoint(o2o.T[nchd]) * xhat[o2o.children[nchd]]
+                end
             end
         end
     end
@@ -161,24 +183,50 @@ end
         else
             yhat[lrb.row_basis] = conj(lrb.Z) * xhat[lrb.col_basis]
         end
+        if isassigned(yhat, lrb.col_basis)
+            yhat[lrb.col_basis] += adjoint(lrb.Z) * xhat[lrb.row_basis]
+        else
+            yhat[lrb.col_basis] = adjoint(lrb.Z) * xhat[lrb.row_basis]
+        end
     end
 
-    for idx in eachindex(A.lmap.translator)
-        if isassigned(A.lmap.translator, idx)
-            nb = A.lmap.translator[idx]
-            for chd in eachindex(nb.children)
-                if isassigned(yhat, nb.children[chd])
-                    yhat[nb.children[chd]] += conj(nb.T[chd]) * yhat[idx]
-                else
-                    yhat[nb.children[chd]] = conj(nb.T[chd]) * yhat[idx]
+    if !isassigned(A.lmap.translator, 1)
+        for idx in eachindex(A.lmap.translator)
+            if isassigned(A.lmap.translator, idx)
+                nb = A.lmap.translator[idx]
+                for chd in eachindex(nb.children)
+                    if isassigned(yhat, nb.children[chd])
+                        yhat[nb.children[chd]] += conj(nb.T[chd]) * yhat[idx]
+                    else
+                        yhat[nb.children[chd]] = conj(nb.T[chd]) * yhat[idx]
+                    end
+                end
+            end
+        end
+    else
+        for level in A.lmap.translator
+            for (idx, i2i) in level
+                for chd in eachindex(i2i.children)
+                    if isassigned(yhat, i2i.children[chd])
+                        yhat[i2i.children[chd]] += conj(i2i.T[chd]) * yhat[idx]
+                    else
+                        yhat[i2i.children[chd]] = conj(i2i.T[chd]) * yhat[idx]
+                    end
                 end
             end
         end
     end
-    for idx in eachindex(A.lmap.momentcollection)
-        if isassigned(A.lmap.momentcollection, idx)
-            nb = A.lmap.momentcollection[idx]
-            y[nb.τ] = conj(nb.T) * yhat[idx]
+
+    if A.lmap.momentcollection isa Vector
+        for idx in eachindex(A.lmap.momentcollection)
+            if isassigned(A.lmap.momentcollection, idx)
+                nb = A.lmap.momentcollection[idx]
+                y[nb.τ] = conj(nb.T) * yhat[idx]
+            end
+        end
+    else
+        for (idx, moment) in A.lmap.momentcollection
+            y[moment.τ] = conj(moment.T) * yhat[idx]
         end
     end
 

@@ -7,7 +7,9 @@ function NCA(
     compressor=TopDownCompressor(),
     multithreading=true,
     verbose=false,
+    maxrank=40,
     η=1.0,
+    tol=1e-4,
 )
     blktree = ClusterTrees.BlockTrees.BlockTree(tree, tree)
     nears, fars = FastBEAST.computeinteractions(blktree; η=η)
@@ -30,7 +32,7 @@ function NCA(
         return farblkassembler(tdata, sdata, store)
     end
 
-    moments, translations, pivots = compress(
+    moments, translations, pivots = compress_testfunctions(
         tree,
         farassembler,
         fars,
@@ -38,9 +40,10 @@ function NCA(
         scalartype(operator);
         multithreading=multithreading,
         maxrank=maxrank,
+        tol=tol,
     )
 
-    i2otranslator = I2Otranslations(
+    i2otranslator = I2Otranslator(
         farassembler, scalartype(operator), fars, pivots; multithreading=multithreading
     )
 

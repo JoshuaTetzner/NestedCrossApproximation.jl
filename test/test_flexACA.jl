@@ -1,112 +1,124 @@
 using BEAST
 using FastBEAST
-using Base.Threads
-using ThreadsX
 using ClusterTrees
 using CompScienceMeshes
-using NestedCrossApproximation
 using LinearAlgebra
-using ChebyshevApprox
-NCAM = NestedCrossApproximation
+using NestedCrossApproximation
 
+function lbases(h2mat::NestedCrossApproximation.GalerkinNCA{K}) where {K}
+    trialbases = Vector{Matrix{K}}(undef, length(h2mat.tree.test_cluster.nodes))
+    testbases = Vector{Matrix{K}}(undef, length(h2mat.tree.test_cluster.nodes))
+    for (ind, b) in h2mat.momentcollection
+        trialbases[ind] = transpose(b.T)
+        testbases[ind] = b.T
+    end
+
+    for (i, level) in enumerate(reverse(h2mat.translator))
+        for (i, t) in level
+            T = vcat(testbases[t.children[1]] * t.T[1], testbases[t.children[2]] * t.T[2])
+            trialbases[i] = transpose(T)
+            testbases[i] = T
+        end
+    end
+    return testbases, trialbases
+end
+
+function lrbmat(h2mat)
+    A_h2 = zeros(eltype(h2mat), size(h2mat, 1), size(h2mat, 2))
+    testbases, trialbases = lbases(h2mat)
+    for i2o in h2mat.i2otranslator
+        A_h2[
+            value(h2mat.tree.test_cluster, i2o.row_basis),
+            value(h2mat.tree.trial_cluster, i2o.col_basis),
+        ] = testbases[i2o.row_basis] * i2o.Z * trialbases[i2o.col_basis]
+    end
+
+    return A_h2
+end
+function lrbmat(A, h2mat)
+    lrbA = zeros(eltype(h2mat), size(h2mat, 1), size(h2mat, 2))
+    for i2o in h2mat.i2otranslator
+        lrbA[value(h2mat.tree.test_cluster, i2o.row_basis), value(h2mat.tree.trial_cluster, i2o.col_basis)] = A[
+            value(h2mat.tree.test_cluster, i2o.row_basis),
+            value(h2mat.tree.trial_cluster, i2o.col_basis),
+        ]
+    end
+
+    return lrbA
+end
+
+##
 Γ = meshsphere(1.0, 0.1)
-op = Helmholtz3D.singlelayer()
-space = lagrangecxd0(Γ)
-
+λ = 2
+k = 2 * pi / λ
+op = Maxwell3D.singlelayer(; wavenumber=k)
+space = raviartthomas(Γ)
+nqst(i) = BEAST.DoubleNumWiltonSauterQStrat(i, i, i, i, i, i, i, i)
+fqst(i) = BEAST.DoubleNumQStrat(i, i)
 tree = create_tree(space.pos, KMeansTreeOptions(; nmin=50))
-blktree = ClusterTrees.BlockTrees.BlockTree(tree, tree)
-nears, fars = FastBEAST.computeinteractions(blktree; η=1.0)
-@views farblkassembler = BEAST.blockassembler(op, space, space)
-@views function farassembler(Z, tdata, sdata)
-    @views store(v, m, n) = (Z[m, n] += v)
-    return farblkassembler(tdata, sdata, store)
+A = assemble(op, space, space; quadstrat=fqst(5))
+
+##
+
+@time h2mat = NestedCrossApproximation.NCA(
+    op,
+    space;
+    nearinteractionquadstrat=nqst(4),
+    momentquadstrat=fqst(4),
+    tree=tree,
+    #compressor=comp,
+    maxrank=100,
+    tol=1e-10,
+    multithreading=false,
+);
+
+##
+#; quadstrat=nqstrat)
+lrbA = lrbmat(A, h2mat)
+lrbh2 = lrbmat(h2mat)
+
+norm(lrbA)
+norm(lrbh2)
+norm(lrbA - lrbh2) / norm(lrbA)
+##
+testbases, trialbases = lbases(h2mat)
+for i2o in h2mat.i2otranslator
+    r = value(h2mat.tree.test_cluster, i2o.row_basis)
+    c = value(h2mat.tree.trial_cluster, i2o.col_basis)
+    println(norm(A[r, c] - lrbh2[r, c]) / norm(A[r, c]))
 end
 ##
-fact = NCAM.iACA(
-    space.pos; rowpivoting=LRF.MaximumValue(), columnpivoting=NCAM.IACAPivoting(space.pos)
-)
-comp = NCAM.TopDownCompressor(; factorization=fact);
-@time h2mat = NCAM.NCA(op, space; tree=tree, compressor=comp);
-@time h22 = NCAM.GalerkinNCA(op, space; tree=tree);
+
+blktree = ClusterTrees.BlockTrees.BlockTree(tree, tree)
+nears, fars = FastBEAST.computeinteractions(blktree; η=1.0)
+fars
+sortedfars = NestedCrossApproximation.testfars(length(tree.nodes), fars)
 ##
-x = rand(size(h2mat, 2));
-fullmat = assemble(op, space, space)
-norm(h22 * x - fullmat * x) / norm(fullmat * x)
-norm(fullmat * x - h2mat * x) / norm(fullmat * x)
+tol = 1e-10
+## 76
+r76 = value(tree, 34)
+c76 = value(tree, sortedfars[34])
+blk76 = A[r76, c76]
+@views function fct76(B, x, y)
+    return B[:, :] = blk76[x, y]
+end
+lm76 = LRF.LazyMatrix(fct76, Vector(1:size(blk76, 1)), Vector(1:size(blk76, 2)), ComplexF64)
+r_76, c_76, Ac, Bc = LRF.aca(lm76; tol=tol)
+blk76 = Ac * Bc#A[r76, c76]#
+U = blk76[:, c_76] / (blk76[r_76, c_76])
+## 94
+c94 = value(tree, 193)
+r94 = value(tree, sortedfars[193])
+blk94 = A[r94, c94]
+@views function fct94(B, x, y)
+    return B[:, :] = blk94[x, y]
+end
+lm94 = LRF.LazyMatrix(fct94, Vector(1:size(blk94, 1)), Vector(1:size(blk94, 2)), ComplexF64)
+r_94, c_94, _, _ = LRF.aca(lm94; tol=tol)
+V = blk94[r_94, c_94] \ blk94[r_94, :]
 ##
-lm = LRF.LazyMatrix(
-    farassembler, Vector(1:length(space.pos)), Vector(1:length(space.pos)), Float64
-)
-fact = NCAM.iACA(
-    space.pos; rowpivoting=LRF.MaximumValue(), columnpivoting=NCAM.IACAPivoting(space.pos)
-)
+r = value(tree, 34)
+c = value(tree, 193)
+S = A[r[r_76], c[c_94]]
 
-NCAM.init(fact, lm)
-
-comp = NCAM.TopDownCompressor(; factorization=fact);
-@time NCAM.compress(tree, farassembler, fars, comp, Float64);
-
-##
-@time begin
-    test_fars = row_pivot_selection(tree, tree, fars, farassembler, Float64)
-
-    momentcollection, translator = build_test_bases(tree, test_fars, Float64)
-end;
-
-##
-intc = fars[end][1]
-rows = value(tree, intc[1])
-cols = value(tree, intc[2])
-##
-@time comp = NCA.iACA(
-    LRF.MaximumValue(),
-    NCA.IACAPivoting(space.pos),
-    NCA.IncompleteNormEstimator(Float64[], 0.0),
-);
-lm = LRF.LazyMatrix(farassembler, rows, cols, Float64)
-ref = sum(space.pos[cols]) / length(space.pos[cols])
-@time compressor = NCA.init(comp, lm; ref=ref);
-rowbuffer = zeros(Float64, 40, length(cols))
-colbuffer = zeros(Float64, length(rows), 40)
-@time r, c = compressor(lm, rowbuffer, colbuffer, 40, 1e-5);
-##
-r
-
-mat = zeros(Float64, length(rows), length(cols))
-lm(mat, 1:length(rows), 1:length(cols))
-##
-norm(mat[:, c] * mat[r, c]^-1 * mat[r, :] - mat) / norm(mat)
-##
-lm = FastBEAST.LazyMatrix(farassembler, rows, cols, Float64)
-am_rm = NestedCrossApproximation.allocate_pca_memory_rm(
-    Float64, length(rows), length(cols); maxrank=40
-)
-fct(r) = 1 / r .^ 2
-pivstrat = NestedCrossApproximation.PCAPivoting(fct, ref, space.pos[cols])
-@time U, V, r, c = NestedCrossApproximation.pca_rm(lm, am_rm, pivstrat; tol=1e-5);
-r
-##
-
-using StaticArrays
-
-using Plots
-plotlyjs()
-##
-m = meshrectangle(1.0, 1.0, 0.03).vertices
-rep = NCA.ChebyshevRep(1e-2, 2.0, m)
-rep, cn = rep(Vector(1:length(m)))
-
-pos = reshape([point[i] for point in m for i in 1:3], (3, length(m)))
-pos2 = reshape([point[i] for point in m[rep] for i in 1:3], (3, length(rep)))
-pos3 = reshape([point[i] for point in cn for i in 1:3], (3, length(cn)))
-
-scatter(pos[1, :], pos[2, :], pos[3, :])
-scatter!(pos2[1, :], pos2[2, :], pos2[3, :])
-scatter!(pos3[1, :], pos3[2, :], pos3[3, :])
-
-###
-
-dd = Dict([1, 2, 3, 4] .=> [[1, 2], [2], [3], [4]])
-
-reverse(collect(keys(dd)))
-typeof(a)
+norm(A[r, c] - U * S * V) / norm(A[r, c])
