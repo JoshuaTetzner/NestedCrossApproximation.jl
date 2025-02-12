@@ -1,3 +1,5 @@
+using Statistics
+
 mutable struct IncompleteNormEstimator{F} <: LRF.ConvCrit
     lastnorms::Vector{F}
     normUV::F
@@ -19,7 +21,12 @@ function (convcrit::IncompleteNormEstimator{F})(
             sum((x .- meanx) .^ 2)
         α = meany - β * meanx
         push!(convcrit.lastnorms, norm(rcbuffer))
-        return (α + β * length(convcrit.lastnorms)) > log10(norm(rcbuffer)) #|| (α + β*(length(oldnorms)+1)) > log10(1e-4*oldnorms[1])
+        #f(x) = α + β * x
+        #rms =
+        #    sqrt.(
+        #        sum([(log(10, n) - f(i))^2 for (i, n) in enumerate(convcrit.lastnorms)]) / npivot
+        #    )
+        return ((α) + β * npivot) > log10(tol * convcrit.normUV)#(α + β * length(convcrit.lastnorms)) > log10(norm(rcbuffer)) #||
     else
         push!(convcrit.lastnorms, norm(rcbuffer))
         return isnotconverged

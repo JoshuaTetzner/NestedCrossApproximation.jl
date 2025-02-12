@@ -2,49 +2,46 @@ struct GalerkinNCA{
     T,
     TreeType,
     NearInteractionType,
-    MomentCollectionDict,
-    I2OTranslatorType,
-    TranslatorType,
+    NestedBasesDict,
+    TransferMatrixType,
+    CouplingMatrixType,
     FarInteractionType,
 } <: LinearMaps.LinearMap{T}
     tree::TreeType
     nearinteractions::NearInteractionType
-    momentcollection::MomentCollectionDict
-    i2otranslator::I2OTranslatorType
-    translator::TranslatorType
+    nestedbases::NestedBasesDict
+    transfermatrices::TransferMatrixType
+    couplingmatrices::CouplingMatrixType
     fars::FarInteractionType
     dim::Tuple{Int,Int}
-    verbose::Bool
     ismultithreaded::Bool
 
     function GalerkinNCA{T}(
         tree,
         nearinteractions,
-        momentcollection,
-        i2otranslator,
-        translator,
+        nestedbases,
+        transfermatrices,
+        couplingmatrices,
         fars,
         dim,
-        verbose,
         ismultithreaded,
     ) where {T}
         return new{
             T,
             typeof(tree),
             typeof(nearinteractions),
-            typeof(momentcollection),
-            typeof(i2otranslator),
-            typeof(translator),
+            typeof(nestedbases),
+            typeof(transfermatrices),
+            typeof(couplingmatrices),
             typeof(fars),
         }(
             tree,
             nearinteractions,
-            momentcollection,
-            i2otranslator,
-            translator,
+            nestedbases,
+            transfermatrices,
+            couplingmatrices,
             fars,
             dim,
-            verbose,
             ismultithreaded,
         )
     end
@@ -56,14 +53,15 @@ function GalerkinNCA(
     tree=create_tree(space.pos, KMeansTreeOptions(; nmin=50)),
     nearinteractionquadstrat=BEAST.defaultquadstrat(operator, space, space),
     momentquadstrat=BEAST.DoubleNumQStrat(2, 3),
-    compressor=FastBEAST.ACAOptions(; tol=1e-4),
+    compressor=TopDownCompressor(),
     multithreading=true,
-    verbose=false,
-    η=1.0,
+    maxrank=40, #Should be moved to the compressor
+    tol=1e-4, #global
+    η=1.0, #global
 )
     blktree = ClusterTrees.BlockTrees.BlockTree(tree, tree)
     nears, fars = FastBEAST.computeinteractions(blktree; η=η)
-    # println("Nears")
+
     nearinteractions = FastBEAST.assemble(
         operator,
         space,
@@ -81,45 +79,31 @@ function GalerkinNCA(
         @views store(v, m, n) = (Z[m, n] += v)
         return farblkassembler(tdata, sdata, store)
     end
-
-    test_fars = row_pivot_selection(
+    println("incompression")
+    nestedbases, transfermatrices, pivots = compress_testtree(
         tree,
         tree,
-        fars,
         farassembler,
-        scalartype(operator);
-        compressor=compressor,
-        verbose=verbose,
-        multithreading=multithreading,
-    )
-
-    momentcollection, translator = build_test_bases(
-        tree,
-        test_fars,
-        scalartype(operator);
-        verbose=verbose,
-        multithreading=multithreading,
-    )
-
-    i2otranslator = assemble_couplingmatrices(
-        farassembler,
-        scalartype(operator),
         fars,
-        test_fars,
-        compressor;
+        compressor,
+        scalartype(operator);
         multithreading=multithreading,
-        verbose=verbose,
+        maxrank=maxrank,
+        tol=tol,
+    )
+    println("outcompression")
+    couplingmatrices = assemble_couplingmatrices(
+        farassembler, scalartype(operator), fars, pivots; multithreading=multithreading
     )
 
     return GalerkinNCA{scalartype(operator)}(
         blktree,
         nearinteractions,
-        momentcollection,
-        i2otranslator,
-        translator,
+        nestedbases,
+        transfermatrices,
+        couplingmatrices,
         fars,
         (tree.num_elements, tree.num_elements),
-        verbose,
         multithreading,
     )
 end

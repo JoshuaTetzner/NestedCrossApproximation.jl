@@ -12,8 +12,8 @@ end
 
 function iACA(
     pos::Vector{SVector{D,F}};
-    rowpivoting=IACAPivoting(pos),
-    columnpivoting=LRF.MaximumValue(),
+    rowpivoting=LRF.MaximumValue(),
+    columnpivoting=IACAPivoting(pos),
     convergence=IncompleteNormEstimator(F[], F(0.0)),
 ) where {D,F<:Real}
     return iACA(rowpivoting, columnpivoting, convergence)

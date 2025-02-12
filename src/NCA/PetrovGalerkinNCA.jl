@@ -2,81 +2,75 @@ struct PetrovGalerkinNCA{
     T,
     TreeType,
     NearInteractionType,
-    MomentCollectionDict,
-    I2ITranslatorType,
-    I2OTranslatorType,
-    O2OTranslatorType,
-    FarInteractionType
+    NestedBasesDict,
+    TransferMatrixType,
+    CouplingMatrixType,
+    FarInteractionType,
 } <: LinearMaps.LinearMap{T}
     tree::TreeType
     nearinteractions::NearInteractionType
-    testmomentcollection::MomentCollectionDict
-    trialmomentcollection::MomentCollectionDict
-    i2itranslator::I2ITranslatorType
-    i2otranslator::I2OTranslatorType
-    o2otranslator::O2OTranslatorType
+    nestedtestbases::NestedBasesDict
+    nestedtrialbases::NestedBasesDict
+    testtransfermatrices::TransferMatrixType
+    trialtransfermatrices::TransferMatrixType
+    couplingmatrices::CouplingMatrixType
     fars::FarInteractionType
-    dim::Tuple{Int, Int}
-    verbose::Bool
+    dim::Tuple{Int,Int}
     ismultithreaded::Bool
 
     function PetrovGalerkinNCA{T}(
         tree,
         nearinteractions,
-        testmomentcollection,
-        trialmomentcollection,
-        i2itranslator,
-        i2otranslator,
-        o2otranslator,
+        nestedtestbases,
+        nestedtrialbases,
+        testtransfermatrices,
+        trialtransfermatrices,
+        couplingmatrices,
         fars,
         dim,
-        verbose,
         ismultithreaded,
-    ) where T
+    ) where {T}
         return new{
             T,
             typeof(tree),
             typeof(nearinteractions),
-            typeof(testmomentcollection),
-            typeof(i2itranslator),
-            typeof(i2otranslator),
-            typeof(o2otranslator),
-            typeof(fars)
+            typeof(nestedtestbases),
+            typeof(testtransfermatrices),
+            typeof(couplingmatrices),
+            typeof(fars),
         }(
             tree,
             nearinteractions,
-            testmomentcollection,
-            trialmomentcollection,
-            i2itranslator,
-            i2otranslator,
-            o2otranslator,
+            nestedtestbases,
+            nestedtrialbases,
+            testtransfermatrices,
+            trialtransfermatrices,
+            couplingmatrices,
             fars,
             dim,
-            verbose,
             ismultithreaded,
         )
-
     end
-
 end
 
 function PetrovGalerkinNCA(
     operator,
-    testspace, 
+    testspace,
     trialspace;
-    testtree=create_tree(testspace.pos, KMeansTreeOptions(nmin=50, maxlevel=50)),
-    trialtree=create_tree(trialspace.pos, KMeansTreeOptions(nmin=50, maxlevel=50)),
+    testtree=create_tree(testspace.pos, KMeansTreeOptions(; nmin=50, maxlevel=50)),
+    trialtree=create_tree(trialspace.pos, KMeansTreeOptions(; nmin=50, maxlevel=50)),
     nearinteractionquadstrat=BEAST.defaultquadstrat(operator, testspace, trialspace),
     momentquadstrat=BEAST.DoubleNumQStrat(2, 3),
-    compressor=FastBEAST.ACAOptions(; tol=1e-3),
+    testcompressor=TopDownCompressor(),
+    trialcompressor=TopDownCompressor(),
     multithreading=true,
-    verbose=false,
-    η=1.0
+    maxrank=40, #Should be moved to the compressor
+    tol=1e-4, #global
+    η=1.0, #global
 )
     blktree = ClusterTrees.BlockTrees.BlockTree(testtree, trialtree)
-    nears, fars = computeinteractions(blktree, η=η)
+    nears, fars = computeinteractions(blktree; η=η)
 
-    if verbose println("nonadmissible interactions") end
     nearinteractions = FastBEAST.assemble(
         operator,
         testspace,
@@ -85,73 +79,61 @@ function PetrovGalerkinNCA(
         nears,
         scalartype(operator);
         quadstrat=nearinteractionquadstrat,
-        multithreading=multithreading
-    ) 
+        multithreading=multithreading,
+    )
 
     @views farblkassembler = BEAST.blockassembler(
-        operator, testspace, trialspace, quadstrat=momentquadstrat
-        )
+        operator, testspace, trialspace; quadstrat=momentquadstrat
+    )
     @views function farassembler(Z, tdata, sdata)
-        @views store(v,m,n) = (Z[m,n] += v)
-        farblkassembler(tdata,sdata,store)
+        @views store(v, m, n) = (Z[m, n] += v)
+        return farblkassembler(tdata, sdata, store)
     end
 
-    if verbose println("pivotselection") end
-    test_fars = row_pivot_selection(
+    nestedtestbases, testtransfermatrices, testpivots = compress_testtree(
         testtree,
         trialtree,
-        fars,
         farassembler,
+        fars,
+        testcompressor,
         scalartype(operator);
-        compressor=compressor,
-        verbose=false,
-        multithreading=multithreading
+        multithreading=multithreading,
+        maxrank=maxrank,
+        tol=tol,
     )
-
-    trial_fars = column_pivot_selection(
+    nestedtrialbases, trialtransfermatrices, trialpivots = compress_trialtree(
         testtree,
         trialtree,
+        farassembler,
         fars,
-        farassembler,
+        trialcompressor,
         scalartype(operator);
-        compressor=compressor,
-        verbose=false,
-        multithreading=multithreading
+        multithreading=multithreading,
+        maxrank=maxrank,
+        tol=tol,
     )
 
-    testmomentcollection, o2otranslator = build_test_bases(
-        testtree, test_fars, scalartype(operator), verbose=verbose, multithreading=multithreading
-    )
-    trialmomentcollection, i2itranslator = build_trial_bases(
-        trialtree, trial_fars, scalartype(operator), verbose=verbose, multithreading=multithreading
-    )
-
-    if verbose println("coupling") end
-    i2otranslator = assemble_couplingmatrices(
+    couplingmatrices = assemble_couplingmatrices(
         farassembler,
-        scalartype(operator), 
-        fars, 
-        test_fars, 
-        trial_fars,
-        compressor; 
-        multithreading=multithreading, 
-        verbose=false
+        scalartype(operator),
+        fars,
+        testpivots,
+        trialpivots;
+        multithreading=multithreading,
     )
 
     return PetrovGalerkinNCA{scalartype(operator)}(
         blktree,
         nearinteractions,
-        testmomentcollection,
-        trialmomentcollection,
-        i2itranslator,
-        i2otranslator,
-        o2otranslator,
+        nestedtestbases,
+        nestedtrialbases,
+        testtransfermatrices,
+        trialtransfermatrices,
+        couplingmatrices,
         fars,
         (testtree.num_elements, trialtree.num_elements),
-        false,
-        multithreading
+        multithreading,
     )
-
 end
 
 function assemble(operator, testspace, trialspace; kwargs...)
