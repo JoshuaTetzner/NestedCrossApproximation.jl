@@ -24,6 +24,8 @@ include("lowrankfactorization.jl")
 include("buffer.jl")
 include("x2x.jl")
 include("topdowncompressor.jl")
+include("buttomupcompressor.jl")
+include("zhaocompressor.jl")
 include("i2o.jl")
 
 include("NCA/GalerkinNCA.jl")

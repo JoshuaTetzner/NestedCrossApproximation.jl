@@ -89,40 +89,42 @@ function PetrovGalerkinNCA(
         @views store(v, m, n) = (Z[m, n] += v)
         return farblkassembler(tdata, sdata, store)
     end
+    fartime = @elapsed begin
+        nestedtestbases, testtransfermatrices, testpivots = compress_testtree(
+            testtree,
+            trialtree,
+            farassembler,
+            fars,
+            testcompressor,
+            scalartype(operator);
+            multithreading=multithreading,
+            maxrank=maxrank,
+            tol=tol,
+        )
+        nestedtrialbases, trialtransfermatrices, trialpivots = compress_trialtree(
+            testtree,
+            trialtree,
+            farassembler,
+            fars,
+            trialcompressor,
+            scalartype(operator);
+            multithreading=multithreading,
+            maxrank=maxrank,
+            tol=tol,
+        )
 
-    nestedtestbases, testtransfermatrices, testpivots = compress_testtree(
-        testtree,
-        trialtree,
-        farassembler,
-        fars,
-        testcompressor,
-        scalartype(operator);
-        multithreading=multithreading,
-        maxrank=maxrank,
-        tol=tol,
-    )
-    nestedtrialbases, trialtransfermatrices, trialpivots = compress_trialtree(
-        testtree,
-        trialtree,
-        farassembler,
-        fars,
-        trialcompressor,
-        scalartype(operator);
-        multithreading=multithreading,
-        maxrank=maxrank,
-        tol=tol,
-    )
+        couplingmatrices = assemble_couplingmatrices(
+            farassembler,
+            scalartype(operator),
+            fars,
+            testpivots,
+            trialpivots;
+            multithreading=multithreading,
+        )
+    end
 
-    couplingmatrices = assemble_couplingmatrices(
-        farassembler,
-        scalartype(operator),
-        fars,
-        testpivots,
-        trialpivots;
-        multithreading=multithreading,
-    )
-
-    return PetrovGalerkinNCA{scalartype(operator)}(
+    return fartime,
+    PetrovGalerkinNCA{scalartype(operator)}(
         blktree,
         nearinteractions,
         nestedtestbases,

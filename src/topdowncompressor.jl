@@ -46,17 +46,21 @@ function compress_testtree(
     rbuffer, cbuffer = buffer
 
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
-
+    admlevel = 0
+    for cl in eachindex(fars)
+        if fars[cl] != []
+            admlevel += 1
+        end
+    end
+    println("Tolerance: ", tol / admlevel)
     for (levelidx, level) in enumerate(clusterlink)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
         iseven(levelidx) ? ridx = 1 : ridx = 2
-
         _foreach(level) do node
             colidcs = value(trial_tree, sortedfars[node])
             (node != 1) &&
                 (colidcs = vcat(colidcs, pivots[ClusterTrees.parent(test_tree, node)][2]))
-
             if colidcs != []
                 rowidcs = value(test_tree, node)
                 pivots[node] = compressor(
@@ -65,7 +69,7 @@ function compress_testtree(
                     farassembler,
                     rowidcs,
                     colidcs;
-                    tol=tol,
+                    tol=tol / admlevel,
                     maxrank=maxrank,
                 )
             end
@@ -114,7 +118,13 @@ function compress_trialtree(
     cbuffer, rbuffer = buffer
 
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
-
+    admlevel = 0
+    for cl in eachindex(fars)
+        if fars[cl] != []
+            admlevel += 1
+        end
+    end
+    println("Tolerance: ", tol / admlevel)
     for (levelidx, level) in enumerate(clusterlink)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
@@ -124,7 +134,6 @@ function compress_trialtree(
             rowidcs = value(test_tree, sortedfars[node])
             (node != 1) &&
                 (rowidcs = vcat(rowidcs, pivots[ClusterTrees.parent(trial_tree, node)][1]))
-
             if rowidcs != []
                 colidcs = value(trial_tree, node)
                 pivots[node] = compressor(
@@ -133,7 +142,7 @@ function compress_trialtree(
                     farassembler,
                     rowidcs,
                     colidcs;
-                    tol=tol,
+                    tol=tol / admlevel,
                     maxrank=maxrank,
                 )
             end

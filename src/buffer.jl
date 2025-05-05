@@ -25,11 +25,19 @@ function buffer(
 end
 
 # iACA
-function channel(::TopDownCompressor{CT,Nothing}, maxrc::Int; maxrank=40) where {CT<:iACA}
+function channel(
+    ::Union{TopDownCompressor{CT,Nothing},ButtomUpCompressor{CT,Nothing}},
+    maxrc::Int;
+    maxrank=40,
+) where {CT<:iACA}
     return (maxrank, maxrank)
 end
 
-function buffer(::TopDownCompressor{CT,Nothing}, maxrc::Int; maxrank=40) where {CT<:iACA}
+function buffer(
+    ::Union{TopDownCompressor{CT,Nothing},ButtomUpCompressor{CT,Nothing}},
+    maxrc::Int;
+    maxrank=40,
+) where {CT<:iACA}
     return (maxrc, maxrank)
 end
 
@@ -44,4 +52,17 @@ function allocate_buffer(
         put!(c, zeros(K, rc_channel))
     end
     return c, (zeros(K, rc_buffer), zeros(K, rc_buffer))
+end
+
+function allocate_buttomupbuffer(
+    ::Type{K},
+    rc_channel::Tuple{Int,Int},
+    rc_buffer::Tuple{Int,Int};
+    tasks=Threads.nthreads(),
+) where {K}
+    c = Channel{Matrix{K}}(tasks)
+    for task in 1:tasks
+        put!(c, zeros(K, rc_channel))
+    end
+    return c, zeros(K, rc_buffer)
 end

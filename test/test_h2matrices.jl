@@ -8,15 +8,23 @@ using Test
 ##
 
 Γ = meshsphere(1.0, 0.08)
-op = Helmholtz3D.singlelayer()
-space = lagrangecxd0(Γ)
+op = Maxwell3D.singlelayer(; wavenumber=1.0)
+space = raviartthomas(Γ)
 
-
-symh2mat = NestedCrossApproximation.GalerkinNCA(op, space)
 h2mat = NestedCrossApproximation.PetrovGalerkinNCA(op, space, space)
 mat = assemble(op, space, space)
 
 ##
 x = rand(eltype(mat), size(mat, 2))
-@test norm(symh2mat*x -mat*x)/norm(mat*x) < 1e-3
-@test norm(h2mat*x -mat*x)/norm(mat*x) < 1e-3
+norm(symh2mat * x - mat * x) / norm(mat * x)
+norm(h2mat * x - mat * x) / norm(mat * x)
+##
+@test norm(symh2mat * x - mat * x) / norm(mat * x) < 1e-3
+@test norm(h2mat * x - mat * x) / norm(mat * x) < 1e-3
+##
+A = assemble(op, space, space)
+lrbh2 = NestedCrossApproximation.lrbmat(h2mat)
+Alrb = NestedCrossApproximation.lrbmat(A, h2mat)
+norm(lrbh2 - Alrb) / norm(Alrb)
+##
+estimate_reldifference(h2mat, mat; tol=1e-3)

@@ -1,4 +1,4 @@
-using Statistics
+using Statistics, Polynomials, Test
 
 mutable struct IncompleteNormEstimator{F} <: LRF.ConvCrit
     lastnorms::Vector{F}
@@ -11,22 +11,15 @@ function (convcrit::IncompleteNormEstimator{F})(
     rcbuffer::AbstractVector{K}, npivot::Int, tol::F
 ) where {F<:Real,K}
     isnotconverged = norm(rcbuffer) > tol * convcrit.normUV
-    if !isnotconverged
-        meany = mean(log10.(convcrit.lastnorms))
-        x = Vector(1:(npivot - 1))
-        meanx = npivot / 2
 
-        β =
-            sum((x .- meanx) .* (log10.(convcrit.lastnorms) .- meany)) /
-            sum((x .- meanx) .^ 2)
-        α = meany - β * meanx
+    if !isnotconverged && !isapprox(norm(rcbuffer), 0.0; atol=eps(real(eltype(rcbuffer))))
+        y = log10.(convcrit.lastnorms)
+        x = Vector(1:(npivot - 1))
+        f2 = fit(x, y, 2)
+
         push!(convcrit.lastnorms, norm(rcbuffer))
-        #f(x) = α + β * x
-        #rms =
-        #    sqrt.(
-        #        sum([(log(10, n) - f(i))^2 for (i, n) in enumerate(convcrit.lastnorms)]) / npivot
-        #    )
-        return ((α) + β * npivot) > log10(tol * convcrit.normUV)#(α + β * length(convcrit.lastnorms)) > log10(norm(rcbuffer)) #||
+
+        return f2(npivot) > log10(tol * convcrit.normUV)
     else
         push!(convcrit.lastnorms, norm(rcbuffer))
         return isnotconverged

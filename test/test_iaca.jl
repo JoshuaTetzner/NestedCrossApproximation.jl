@@ -14,18 +14,26 @@ s = raviartthomas(Γs)
 k = 2 * pi / λ
 op = Maxwell3D.singlelayer(; alpha=0.0 * im, wavenumber=k)
 
-A = assemble(op, t, s)
-@views function fct(B, x, y)
-    return B[:, :] = A[x, y]
+@views farblkassembler = BEAST.blockassembler(op, space, space)
+@views function farassembler(Z, tdata, sdata)
+    @views store(v, m, n) = (Z[m, n] += v)
+    return farblkassembler(tdata, sdata, store)
 end
-##
-lm = LRF.LazyMatrix(fct, Vector(1:size(A, 1)), Vector(1:size(A, 2)), ComplexF64)
-iaca = iACA(s.pos)
-iaca = NestedCrossApproximation.init(iaca, lm; ref=SVector(0.5, 0.5, 0.0))
+rowidcs = value(tree, length(tree.nodes))
+colidcs = value(tree, sortedfars[end])
 
-U = zeros(ComplexF64, length(t.pos), 100)
-V = zeros(ComplexF64, 100, length(s.pos))
-rpivots, cpivots = iaca(lm, V, U, 100, 1e-4)
+##
+ref = tree.nodes[end].node.data.ct
+cts = [tree.nodes[node].node.data.ct for node in sortedfars[end]]
+
+iaca = iACA(
+    NestedCrossApproximation.IACAPivoting2(tree, space.pos),
+    LRF.MaximumValue(zeros(Bool, length(rowidcs))),
+    NestedCrossApproximation.IncompleteNormEstimator(Float64[], Float64(0.0)),
+)
+V = zeros(ComplexF64, 50, length(space.pos))
+U = zeros(ComplexF64, 50, 50)
+@time rpivots, cpivots = iaca(farassembler, V, U, rowidcs, 50, 1e-4, ref, sortedfars[end])
 
 norm(A - (A[:, cpivots] / A[rpivots, cpivots]) * A[rpivots, :]) / norm(A)
 ##

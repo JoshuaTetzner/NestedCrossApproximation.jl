@@ -19,10 +19,9 @@ function ChebyshevRep(
     ε::F,
     η::F,
     pos::Vector{SVector{D,F}};
-    γ=0.33,
+    γ=0.35,
     N=Int(abs(round(log((sqrt(3) * γ * η), ε)))),
 ) where {D,F}
-    println(N)
     cn = ChebyshevApprox.nodes(N, :chebyshev_nodes).points
     #To-Do: This should use D to determine the dimension. I think 2D is better in general
     #Bebendorf proposes 3D.

@@ -1,3 +1,5 @@
+using BlockSparseMatrices
+
 function storage(h2mat::GalerkinNCA)
     ref = size(h2mat, 1) * size(h2mat, 2)
     h2stor = 0.0
@@ -83,7 +85,7 @@ function lbases(h2mat::GalerkinNCA{K}) where {K}
 end
 
 function lbases(h2mat::PetrovGalerkinNCA{K}) where {K}
-    trialbases = Vector{Matrix{K}}(undef, length(h2mat.tree.test_cluster.nodes))
+    trialbases = Vector{Matrix{K}}(undef, length(h2mat.tree.trial_cluster.nodes))
     testbases = Vector{Matrix{K}}(undef, length(h2mat.tree.test_cluster.nodes))
     for (ind, b) in h2mat.nestedtestbases
         testbases[ind] = b.T
@@ -177,4 +179,24 @@ function lrbmat(A, h2mat)
     end
 
     return lrbA
+end
+
+function lrbh2mat(h2mat::PetrovGalerkinNCA)
+    blocks = BlockSparseMatrices.DenseMatrixBlock{
+        ComplexF64,Matrix{ComplexF64},Vector{Int}
+    }[]
+    nears = BlockSparseMatrix(blocks, h2mat.dim)
+
+    return PetrovGalerkinNCA{ComplexF64}(
+        h2mat.tree,
+        nears,
+        h2mat.nestedtestbases,
+        h2mat.nestedtrialbases,
+        h2mat.testtransfermatrices,
+        h2mat.trialtransfermatrices,
+        h2mat.couplingmatrices,
+        h2mat.fars,
+        h2mat.dim,
+        h2mat.ismultithreaded,
+    )
 end
