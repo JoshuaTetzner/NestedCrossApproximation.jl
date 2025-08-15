@@ -123,8 +123,7 @@ function PetrovGalerkinNCA(
         )
     end
 
-    return fartime,
-    PetrovGalerkinNCA{scalartype(operator)}(
+    return PetrovGalerkinNCA{scalartype(operator)}(
         blktree,
         nearinteractions,
         nestedtestbases,

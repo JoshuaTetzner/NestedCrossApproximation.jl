@@ -9,6 +9,7 @@ using LinearAlgebra
 using LinearMaps
 using StaticArrays
 using Statistics
+using H2Trees
 using ThreadsX
 
 include("incompletefactorization/convergence.jl")
@@ -33,6 +34,15 @@ include("NCA/PetrovGalerkinNCA.jl")
 include("MV/GalerkinNCA.jl")
 include("MV/PetrovGalerkinNCA.jl")
 include("utils.jl")
+
+include("nearinteractions/abstractnearinteraction.jl")
+include("nearinteractions/blocknearinteractions.jl")
+
+include("WBNCA/tree.jl")
+include("WBNCA/dtree.jl")
+include("WBNCA/directionalcompressor.jl")
+include("WBNCA/coupling.jl")
+include("WBNCA/WBNCA.jl")
 
 export PetrovGalerkinNCA
 export GalerkinNCA

@@ -15,7 +15,7 @@ function (convcrit::IncompleteNormEstimator{F})(
     if !isnotconverged && !isapprox(norm(rcbuffer), 0.0; atol=eps(real(eltype(rcbuffer))))
         y = log10.(convcrit.lastnorms)
         x = Vector(1:(npivot - 1))
-        f2 = fit(x, y, 2)
+        f2 = fit(x, y, 1)
 
         push!(convcrit.lastnorms, norm(rcbuffer))
 

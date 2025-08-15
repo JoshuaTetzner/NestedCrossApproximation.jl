@@ -23,7 +23,15 @@ A = assemble(op, space, space)
 @views function fct(B, x, y)
     return B[:, :] = A[x, y]
 end
-
-pivoting = NestedCrossApproximation.IACAPivoting(space.pos)
 ##
-setup(tree, tree, fct, fars, pivoting, pivoting, ComplexF64)
+PetrovGalerkinMCA(op, space, space;)
+
+##
+
+pos = [@SVector rand(3) for i in 1:10]
+
+pivstrat = LRF.ModifiedFillDistance(pos)
+
+pivstrat(Vector(1:5))
+
+pivstrat()

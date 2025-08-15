@@ -7,9 +7,9 @@ using LinearAlgebra
 using Test
 using Random
 ##
-λ = 4.0
+λ = 0.5
 k = 2 * pi / λ
-Γ = meshicosphere(40, 1.0)
+Γ = meshicosphere(20, 1.0)
 op = Maxwell3D.singlelayer(; wavenumber=k)
 space = raviartthomas(Γ)
 Random.seed!(1)
@@ -34,6 +34,7 @@ A = assemble(op, space, space; quadstrat=BEAST.DoubleNumQStrat(2, 3));
     testcompressor=testcomp,
     trialcompressor=trialcomp,
     tol=1e-4,
+    maxrank=150,
     multithreading=true,
 );
 h2 = NestedCrossApproximation.fullmat(h2mat);
@@ -66,6 +67,7 @@ for lfars in h2mat.fars
         S = A[τt, σs]
         U = A[value(tree, tidx), σt] / A[τt, σt]
         V = A[τs, σs] \ A[τs, value(tree, sidx)]
+        #println(norm(blk - U * S * V) / norm(blk))
         error[l] += norm(blk - U * S * V) / norm(blk)
     end
     error[l] = error[l] / length(lfars)

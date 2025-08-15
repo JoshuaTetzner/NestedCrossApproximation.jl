@@ -158,8 +158,8 @@ function setup(
     trial_tree::NminTree{D},
     farassembler::Function,
     fars::Vector{Vector{Tuple{Int,Int}}},
-    testpivoting::IACAPivoting,
-    trialpivoting::IACAPivoting,
+    #testpivoting::IACAPivoting,
+    #trialpivoting::IACAPivoting,
     ::Type{K};
     maxrank=40,
 ) where {D,K}
