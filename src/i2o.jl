@@ -37,10 +37,16 @@ function assemble_couplingmatrices(
 
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
     _foreach(fars) do far
-        blk = zeros(K, length(testpivots[far[1]][1]), length(trialpivots[far[2]][2]))
-        matrixassembler(blk, testpivots[far[1]][1], trialpivots[far[2]][2])
-        lock(lk) do
-            push!(lowrankblocks, H2MatrixBlock(blk, far[1], far[2]))
+        if !(length(testpivots[far[1]][1]) == 0 || length(trialpivots[far[2]][2]) == 0)
+            blk = zeros(K, length(testpivots[far[1]][1]), length(trialpivots[far[2]][2]))
+            matrixassembler(blk, testpivots[far[1]][1], trialpivots[far[2]][2])
+            lock(lk) do
+                push!(lowrankblocks, H2MatrixBlock(blk, far[1], far[2]))
+            end
+        else
+            lock(lk) do
+                push!(lowrankblocks, H2MatrixBlock(zeros(K, 0, 0), far[1], far[2]))
+            end
         end
     end
 

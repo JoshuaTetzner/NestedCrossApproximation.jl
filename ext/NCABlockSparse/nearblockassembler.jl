@@ -31,10 +31,10 @@ function blockassembler(
     primer=assembleblockprimer(assembler),
 )
     return BEAST.blockassembler(
-        operator(assembler),
-        testspace(assembler),
-        trialspace(assembler);
-        quadstrat=quadstrategy(assembler),
+        NestedCrossApproximation.operator(assembler),
+        NestedCrossApproximation.testspace(assembler),
+        NestedCrossApproximation.trialspace(assembler);
+        quadstrat=NestedCrossApproximation.quadstrategy(assembler),
         primer=primer,
     )
 end

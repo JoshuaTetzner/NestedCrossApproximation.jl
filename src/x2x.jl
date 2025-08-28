@@ -117,6 +117,17 @@ function build_trialbases!(
     _foreach(clusterlink[level]) do node
         if !ClusterTrees.haschildren(tree, node)
             if pivots[node] != ([], [])
+                for i in 1:length(pivots[node][1])
+                    if norm(rbuffer[idx][i, pivots[node][2]]) == 0
+                        println("zerooooo: ", i, ", ", length(pivots[node][1]))
+                    end
+                end
+                for (x, i) in enumerate(pivots[node][2])
+                    if norm(rbuffer[idx][1:length(pivots[node][1]), i]) == 0
+                        println("zerooooo2: ", x, ", ", length(pivots[node][1]))
+                        println(pivots[node][1], pivots[node][2])
+                    end
+                end
                 V =
                     rbuffer[idx][1:length(pivots[node][1]), pivots[node][2]] \
                     rbuffer[idx][1:length(pivots[node][1]), value(tree, node)]
@@ -130,12 +141,18 @@ function build_trialbases!(
             end
         end
     end
+
     _foreach = multithreading ? ThreadsX.foreach : Base.foreach
     _foreach(clusterlink[level - 1]) do node
         if ClusterTrees.haschildren(tree, node) && pivots[node] != ([], [])
             translationblocks = Matrix{K}[]
             childs = collect(children(tree, node))
             for child in childs
+                if !any(
+                    isfinite, rbuffer[3 - idx][1:length(pivots[node][1]), pivots[child][2]]
+                )
+                    println(rbuffer[3 - idx][1:length(pivots[node][1]), pivots[child][2]])
+                end
                 Θ =
                     rbuffer[3 - idx][1:length(pivots[node][1]), pivots[node][2]] \
                     rbuffer[3 - idx][1:length(pivots[node][1]), pivots[child][2]]

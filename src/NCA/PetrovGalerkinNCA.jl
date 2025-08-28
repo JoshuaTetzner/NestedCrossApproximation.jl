@@ -52,7 +52,7 @@ struct PetrovGalerkinNCA{
         )
     end
 end
-
+#=
 function PetrovGalerkinNCA(
     operator,
     testspace,
@@ -70,8 +70,8 @@ function PetrovGalerkinNCA(
 )
     blktree = ClusterTrees.BlockTrees.BlockTree(testtree, trialtree)
     nears, fars = computeinteractions(blktree; η=η)
-
-    nearinteractions = FastBEAST.assemble(
+    println("Nearsinteractions")
+    #=nearinteractions = FastBEAST.assemble(
         operator,
         testspace,
         trialspace,
@@ -80,7 +80,7 @@ function PetrovGalerkinNCA(
         scalartype(operator);
         quadstrat=nearinteractionquadstrat,
         multithreading=multithreading,
-    )
+    )=#
 
     @views farblkassembler = BEAST.blockassembler(
         operator, testspace, trialspace; quadstrat=momentquadstrat
@@ -90,6 +90,7 @@ function PetrovGalerkinNCA(
         return farblkassembler(tdata, sdata, store)
     end
     fartime = @elapsed begin
+        #=println("compress_testtree")
         nestedtestbases, testtransfermatrices, testpivots = compress_testtree(
             testtree,
             trialtree,
@@ -100,7 +101,9 @@ function PetrovGalerkinNCA(
             multithreading=multithreading,
             maxrank=maxrank,
             tol=tol,
-        )
+        )=#
+
+        println("compress_trialtree")
         nestedtrialbases, trialtransfermatrices, trialpivots = compress_trialtree(
             testtree,
             trialtree,
@@ -112,7 +115,7 @@ function PetrovGalerkinNCA(
             maxrank=maxrank,
             tol=tol,
         )
-
+        println("coupling")
         couplingmatrices = assemble_couplingmatrices(
             farassembler,
             scalartype(operator),
@@ -136,9 +139,93 @@ function PetrovGalerkinNCA(
         multithreading,
     )
 end
+=#
+function defaultfarquadstrat(operator, testspace, trialspace) end
 
+function defaultnearquadstrat(operator, testspace, trialspace) end
+
+function PetrovGalerkinNCA2(
+    operator,
+    testspace,
+    trialspace,
+    tree;
+    farquadstrat=defaultfarquadstrat(operator, testspace, trialspace),
+    nearquadstrat=defaultnearquadstrat(operator, testspace, trialspace),
+    #momentquadstrat=BEAST.DoubleNumQStrat(2, 3),
+    #testcompressor=TopDownCompressor(),
+    #trialcompressor=TopDownCompressor(),
+    multithreading=true,
+    isnear=H2Trees.isnear,
+    maxrank=40, #Should be moved to the compressor
+    tol=1e-4, #global
+    η=1.0, #global
+)
+    nearmatrix = AbstractKernelMatrix(
+        operator, testspace, trialspace; quadstrat=nearquadstrat
+    )
+    values, nearvalues = H2Trees.nearinteractions(
+        tree; isnear=isnear, extractselfvalues=false
+    )
+    blocks = Vector{Matrix{scalartype(op)}}(undef, length(values))
+    Threads.@threads for i in eachindex(values)
+        blk = zeros(scalartype(op), length(values[i]), length(nearvalues[i]))
+        nearmatrix(values[i], nearvalues[i], blk)
+        blocks[i] = blk
+    end
+    nearmatrix = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
+    farmatrix = AbstractKernelMatrix(
+        operator, testspace, trialspace; quadstrat=farquadstrat
+    )
+    fartime = @elapsed begin
+        println("compress_testtree")
+        nestedtestbases, testtransfermatrices, testpivots = compress_testtree(
+            farmatrix,
+            tree,
+            testcompressor;
+            multithreading=multithreading,
+            maxrank=maxrank,
+            tol=tol,
+        )=#
+
+        println("compress_trialtree")
+        nestedtrialbases, trialtransfermatrices, trialpivots = compress_trialtree(
+            testtree,
+            trialtree,
+            farassembler,
+            fars,
+            trialcompressor,
+            scalartype(operator);
+            multithreading=multithreading,
+            maxrank=maxrank,
+            tol=tol,
+        )
+        println("coupling")
+        couplingmatrices = assemble_couplingmatrices(
+            farassembler,
+            scalartype(operator),
+            fars,
+            testpivots,
+            trialpivots;
+            multithreading=multithreading,
+        )
+    end
+
+    return PetrovGalerkinNCA{scalartype(operator)}(
+        blktree,
+        nearinteractions,
+        nestedtestbases,
+        nestedtrialbases,
+        testtransfermatrices,
+        trialtransfermatrices,
+        couplingmatrices,
+        fars,
+        (testtree.num_elements, trialtree.num_elements),
+        multithreading,
+    )=#
+end
+#=
 function assemble(operator, testspace, trialspace; kwargs...)
     return PetrovGalerkinNCA(operator, testspace, trialspace; kwargs...)
 end
-
+=#
 ##

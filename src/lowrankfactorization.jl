@@ -58,9 +58,9 @@ function (
     rpivots, cpivots, npivots = lrf(
         lm, localrbuffer, view(cbuffer, testidcs, 1:maxrank), maxrank, tol
     )
-    #rpivots = LRF.rows(lrf)
-    #cpivots = LRF.cols(lrf)
-    npivots != length(rpivots) && @warn "ACA compression found zero rows or columns!"
+
+    rpivots = rpivots[1:npivots]
+    cpivots = cpivots[1:npivots]
 
     cbuffer[testidcs, 1:npivots] =
         cbuffer[testidcs, 1:npivots] * localrbuffer[1:npivots, cpivots]
@@ -95,10 +95,11 @@ function (
     rpivots, cpivots, npivots = lrf(
         lm, view(rbuffer, 1:maxrank, trialidcs), localcbuffer, maxrank, tol
     )
-    #rpivots = LRF.rows(lrf)
-    #cpivots = LRF.cols(lrf)
-    npivots != length(rpivots) && error()#(npivots = length(rpivots))#println(rpivots)
-
+    if rpivots[npivots] == rpivots[npivots - 1] || cpivots[npivots] == cpivots[npivots - 1]
+        npivots -= 1
+    end
+    rpivots = rpivots[1:npivots]
+    cpivots = cpivots[1:npivots]
     rbuffer[1:npivots, trialidcs] =
         localcbuffer[rpivots, 1:npivots] * rbuffer[1:npivots, trialidcs]
 
@@ -129,6 +130,10 @@ function (compressor::TopDownCompressor{CompressorType,Nothing})(
         lm, localrbuffer, view(cbuffer, testidcs, 1:maxrank), maxrank, tol
     )
     npivots = length(rpivots)
+
+    if rpivots[npivots] == rpivots[npivots - 1] || cpivots[npivots] == cpivots[npivots - 1]
+        npivots -= 1
+    end
 
     cbuffer[testidcs, 1:npivots] =
         cbuffer[testidcs, 1:npivots] * localrbuffer[1:npivots, 1:npivots]
@@ -198,6 +203,13 @@ function (compressor::TopDownCompressor{CompressorType,Nothing})(
         lm, view(rbuffer, 1:maxrank, trialidcs), localcbuffer, maxrank, tol
     )
     npivots = length(rpivots)
+
+    if rpivots[npivots] == rpivots[npivots - 1] || cpivots[npivots] == cpivots[npivots - 1]
+        #println("fail")
+        #println(compressor.lrf.rowpivoting.usedidcs)
+        #error()
+        npivots -= 1
+    end
 
     rbuffer[1:npivots, trialidcs] =
         localcbuffer[1:npivots, 1:npivots] * rbuffer[1:npivots, trialidcs]

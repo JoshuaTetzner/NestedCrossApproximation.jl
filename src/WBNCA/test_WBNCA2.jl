@@ -1,5 +1,4 @@
 using BEAST
-using BlockSparseMatrices
 using NestedCrossApproximation
 using CompScienceMeshes
 using LinearAlgebra
@@ -36,7 +35,6 @@ function myisnear(treea, treeb, nodea, nodeb)
 end
 
 @time nears = nearassembler(tree, H2Trees.isnear)
-nears
 ##
 values, nearvalues = H2Trees.nearinteractions(
     tree; isnear=myisnear, extractselfvalues=false

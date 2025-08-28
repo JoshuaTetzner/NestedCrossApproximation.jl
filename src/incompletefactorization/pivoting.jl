@@ -35,6 +35,59 @@ function (pivstrat::IACAPivoting{D,F})(npivot::Int) where {D,F<:Real}
     return nextidx
 end
 
+mutable struct IACAPivotingMFIE{D,F} <: GeoPivStrat
+    refpos::Vector{SVector{D,F}}
+    pos::Vector{SVector{D,F}}
+    h::Vector{F}
+    leja::Vector{F}
+    w::Vector{F}
+end
+
+function IACAPivotingMFIE(refpos::Vector{SVector{D,F}}, pos) where {D,F<:Real}
+    return IACAPivotingMFIE(refpos, pos, F[], F[], F[])
+end
+
+function (pivstrat::IACAPivotingMFIE{D,F})(
+    rcp::Vector{Int}, refidcs::Vector{Int}; ref=SVector(F(0.0), F(0.0), F(0.0))
+) where {D,F}
+    h = zeros(F, length(rcp))
+
+    leja = ones(F, length(rcp))
+
+    w = zeros(F, length(rcp))
+    pos = zeros(F, 3, length(refidcs))
+    mp = mean(pivstrat.refpos[refidcs])
+    for idx in eachindex(refidcs)
+        pos[:, idx] = pivstrat.refpos[refidcs][idx] - mp
+    end
+    u, _, _ = svd(pos)
+
+    for (idx, rc) in enumerate(rcp)
+        d = abs(dot((pivstrat.pos[rc] - mp), u[:, 3]))
+        if isapprox(d, 0.0; atol=1e-10)
+            w[idx] = 0.0
+        else
+            w[idx] = 1
+        end
+    end
+    w = w .* 1 ./ norm.(pivstrat.pos[rcp] .- Scalar(ref))
+    return IACAPivotingMFIE(pivstrat.refpos[refidcs], pivstrat.pos[rcp], h, leja, w)
+end
+
+function (pivstrat::IACAPivotingMFIE{D,F})() where {D,F<:Real}
+    nextidx = argmax(pivstrat.w)
+    @views pivstrat.h .= norm.(pivstrat.pos .- Scalar(pivstrat.pos[nextidx]))
+    pivstrat.leja .*= norm.(pivstrat.pos .- Scalar(pivstrat.pos[nextidx]))
+    return nextidx
+end
+
+function (pivstrat::IACAPivotingMFIE{D,F})(npivot::Int) where {D,F<:Real}
+    nextidx = argmax(pivstrat.leja .^ (2 / (npivot - 1)) .* pivstrat.h .* pivstrat.w .^ 4)
+    LRF.filldistance!(pivstrat, nextidx)
+    pivstrat.leja .*= norm.(pivstrat.pos .- Scalar(pivstrat.pos[nextidx]))
+    return nextidx
+end
+
 struct IACAPivoting2{D,T,F} <: GeoPivStrat
     tree::NminTree{T}
     pos::Vector{SVector{D,F}}

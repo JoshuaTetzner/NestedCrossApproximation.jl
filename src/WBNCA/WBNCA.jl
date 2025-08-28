@@ -60,13 +60,30 @@ struct WidebandNCA{
     end
 end
 
+function isnear(k, treea, treeb, nodea, nodeb; ηₗ=1.0, ηₕ=4.0)
+    ths = H2Trees.halfsize(treea, nodea) * sqrt(3)
+    shs = H2Trees.halfsize(treeb, nodeb) * sqrt(3)
+    dist = norm(H2Trees.center(treea, nodea) - H2Trees.center(treeb, nodeb)) - (ths + shs)
+    if k / pi * 4 * min(ths, shs) <= 1
+        (2 * max(ths, shs) <= ηₗ * max(dist, 0.0)) ? (return false) : (return true)
+    else
+        (4 * k * max(ths^2, shs^2) <= ηₕ * max(dist, 0.0)) ? (return false) : (return true)
+    end
+end
+
+wavenumber(operator::BEAST.IntegralOperator) = imag(operator.gamma)
+function islf(k, tree, level)
+    println(k / pi * 4 * sqrt(3) * H2Trees.halfsize(tree) / 2^(level - 1), " <= ", 1)
+    return k / pi * 4 * sqrt(3) * H2Trees.halfsize(tree) / 2^(level - 1) <= 1
+end
+
 function WidebandNCA2(
     operator,
     testspace,
     trialspace,
     testtree,
     trialtree;
-    lfcompressor=FastBEAST.ACAOptions(; tol=1e-4),
+    lfcompressor=AdaptiveCrossApproximation.ACA(),
     nearinteractionquadstrat=BEAST.defaultquadstrat(operator, testspace, trialspace),
     testcompressor=iACA(trialspace.pos),
     trialcompressor=iACA(
@@ -81,6 +98,32 @@ function WidebandNCA2(
     ηₕ=5.0,
     tol=1e-4,
 )
+    tree = BlockTree(testtree, trialtree)
+    #=
+    nearassembler = NestedCrossApproximation.BlockBEASTNearInteractionsAssembler{
+        scalartype(operator)
+    }(
+        operator, testspace, trialspace, momentquadstrat
+    )
+    =#
+    complexisnear(ta, tb, a, b) = isnear(imag(operator.gamma), ta, tb, a, b; ηₗ=ηₗ, ηₕ=ηₕ)
+    #@time nearinteractions = nearassembler(tree, complexisnear)
+
+    lfinteractions = MatrixBlock{
+        Int,scalartype(operator),LowRankMatrix{scalartype(operator)}
+    }[]
+    for level in H2Trees.levels(testtree)
+        println(level)
+        println(islf(wavenumber(operator), testtree, level))
+        if islf(wavenumber(operator), testtree, level)
+            K = AbstractKernel(operator, testspace, trialspace)
+            append!(
+                lfinteractions, compress(K, tree, level, lfcompressor; isnear=complexisnear)
+            )
+        else
+        end
+    end
+    #=
     blktree = ClusterTrees.BlockTrees.BlockTree(testtree, trialtree)
     nears, hffars, lffars = computeinteractionshf(
         blktree, imag(operator.gamma); ηₗ=ηₗ, ηₕ=ηₕ
@@ -111,8 +154,8 @@ function WidebandNCA2(
         trialtree.num_elements,
         multithreading;
         maxrank=lfcompressor.maxrank,
-    )
-    lffars = reduce(vcat, lffars)
+    )=#
+    #=lffars = reduce(vcat, lffars)
     lfinteractions = Vector{
         FastBEAST.MatrixBlock{
             Int,scalartype(operator),FastBEAST.LowRankMatrix{scalartype(operator)}
@@ -167,7 +210,7 @@ function WidebandNCA2(
         coupling,
         (testtree.num_elements, trialtree.num_elements),
         multithreading,
-    )
+    )=#
 end
 
 function WidebandNCA(
@@ -206,6 +249,7 @@ function WidebandNCA(
         quadstrat=nearinteractionquadstrat,
         multithreading=multithreading,
     )
+
     #println("nears done")
     @views farblkassembler = BEAST.blockassembler(
         operator, testspace, trialspace; quadstrat=momentquadstrat
@@ -244,6 +288,13 @@ function WidebandNCA(
         )
     end
     println("hf")
+    nlev = 0
+    for f in hffars
+        if f != []
+            nlev += 1
+        end
+    end
+    tol = tol / nlev
     @time tbases, tpivots, tdirfars, Ftpivots, sbases, spivots, sdirfars, Fspivots, dtree = directionalcompressor(
         farassembler,
         testtree,

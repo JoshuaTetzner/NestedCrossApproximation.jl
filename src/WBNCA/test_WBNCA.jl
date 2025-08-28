@@ -1,27 +1,48 @@
 using BEAST
 using FastBEAST
+using H2Trees
 using CompScienceMeshes
 using NestedCrossApproximation
-using ClusterTrees
+using AdaptiveCrossApproximation
 using LinearAlgebra
 
-λ = 0.25
+λ = 2
 k = 2 * pi / λ
 ηₗ = 1.0
 ηₕ = 4.0
-Γ = meshsphere(1.0, 0.025)
+Γ = meshsphere(1.0, 0.05)
 op = Maxwell3D.singlelayer(; wavenumber=k)
 space = raviartthomas(Γ)
 println("N = ", length(space.pos))
-tree = create_tree(space.pos, BoxTreeOptions(; nmin=100))
-blktree = ClusterTrees.BlockTrees.BlockTree(tree, tree)
-nears, hffars, lffars = NestedCrossApproximation.computeinteractionshf(
-    blktree, k; ηₗ=ηₗ, ηₕ=ηₕ
-);
-hffars
-lffars[end]
+tree = TwoNTree(space, 0.0; minvalues=200)
+##
+
+wnca = NestedCrossApproximation.WidebandNCA2(op, space, space, tree, tree; ηₕ=4.0)
+
+##
+using ClusterTrees
+tree2 = create_tree(space.pos, BoxTreeOptions(; nmin=200))
+wnca2 = NestedCrossApproximation.WidebandNCA(
+    op,
+    space,
+    space;
+    testtree=tree2,
+    trialtree=tree2,
+    ηₕ=4.0,
+    #testcompressor=LRF.ACA(),
+    #trialcompressor=LRF.ACA(),
+)
+##
+nnz(wnca2)
+
+##
+#hffars
+#lffars[end]
+##
+
 ##
 #=
+
 kmtree = create_tree(space.pos, BoxTreeOptions(; nmin=50))
 testcomp = NestedCrossApproximation.TopDownCompressor(iACA(space.pos), nothing)
 trialcomp = NestedCrossApproximation.TopDownCompressor(
@@ -66,12 +87,12 @@ norm(A - fnca) / norm(A)=#
     #trialcompressor=LRF.ACA(),
 )
 
-x = rand(size(wnca, 2))
-wnca * x
+x = rand(size(wnca2, 2))
+wnca2 * x
 
 A = assemble(op, space, space)
 
-norm(wnca * x - A * x) / norm(A * x)
+norm(wnca2 * x - A * x) / norm(A * x)
 ##
 nca = PetrovGalerkinNCA(op, space, space; testtree=tree, trialtree=tree)
 ##

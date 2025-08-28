@@ -32,10 +32,30 @@ end
 function init(
     iaca::iACA{RPT,CPT,CCT},
     M::LRF.LazyMatrix{Int,K};
+    ref=sum(iaca.rowpivoting.refpos[M.σ]) / length(M.σ),
+) where {K,RPT<:IACAPivotingMFIE,CPT<:LRF.PivStrat,CCT<:LRF.ConvCrit}
+    return iACA(
+        iaca.rowpivoting(M.τ, M.σ; ref=ref), iaca.columnpivoting(M.σ), iaca.convergence(M)
+    )
+end
+
+function init(
+    iaca::iACA{RPT,CPT,CCT},
+    M::LRF.LazyMatrix{Int,K};
     ref=sum(iaca.columnpivoting.pos[M.τ]) / length(M.τ),
 ) where {K,RPT<:LRF.PivStrat,CPT<:GeoPivStrat,CCT<:LRF.ConvCrit}
     return iACA(
         iaca.rowpivoting(M.τ), iaca.columnpivoting(M.σ; ref=ref), iaca.convergence(M)
+    )
+end
+
+function init(
+    iaca::iACA{RPT,CPT,CCT},
+    M::LRF.LazyMatrix{Int,K};
+    ref=sum(iaca.columnpivoting.refpos[M.τ]) / length(M.τ),
+) where {K,RPT<:LRF.PivStrat,CPT<:IACAPivotingMFIE,CCT<:LRF.ConvCrit}
+    return iACA(
+        iaca.rowpivoting(M.τ), iaca.columnpivoting(M.σ, M.τ; ref=ref), iaca.convergence(M)
     )
 end
 
@@ -79,25 +99,30 @@ function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
             M.τ[rows[npivot]:rows[npivot]],
             M.σ[1:maxcolumn],
         )
-
-        # Norm update
-        updatenorm!(iaca.convergence, rowbuffer[npivot, 1:maxcolumn], npivot)
-
-        colbuffer[npivot, npivot] = K(1.0)
-        for k in 1:(npivot - 1)
-            @views colbuffer[npivot, k] =
-                rowbuffer[k, cols[k]]^-1 * rowbuffer[npivot, cols[k]]
-            for kk in 1:maxcolumn
-                @views rowbuffer[npivot, kk] -= rowbuffer[k, kk] * colbuffer[npivot, k]
-            end
-        end
-
-        cols[npivot] = iaca.columnpivoting(rowbuffer[npivot, 1:maxcolumn])
         if isapprox(norm(rowbuffer[npivot, 1:maxcolumn]), 0.0)
+            #println("we should not be here")
             conv = true
             npivot -= 1
         else
-            conv = iaca.convergence(rowbuffer[npivot, 1:maxcolumn], npivot, tol)
+            #Norm update
+            updatenorm!(iaca.convergence, rowbuffer[npivot, 1:maxcolumn], npivot)
+
+            colbuffer[npivot, npivot] = K(1.0)
+            for k in 1:(npivot - 1)
+                @views colbuffer[npivot, k] =
+                    rowbuffer[k, cols[k]]^-1 * rowbuffer[npivot, cols[k]]
+                for kk in 1:maxcolumn
+                    @views rowbuffer[npivot, kk] -= rowbuffer[k, kk] * colbuffer[npivot, k]
+                end
+            end
+
+            cols[npivot] = iaca.columnpivoting(rowbuffer[npivot, 1:maxcolumn])
+            if isapprox(norm(rowbuffer[npivot, cols[npivot]]), 0.0)
+                conv = true
+                npivot -= 1
+            else
+                conv = iaca.convergence(rowbuffer[npivot, 1:maxcolumn], npivot, tol)
+            end
         end
     end
 
@@ -144,25 +169,29 @@ function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
             M.τ[1:maxrow],
             M.σ[cols[npivot]:cols[npivot]],
         )
-
-        # Norm update
-        updatenorm!(iaca.convergence, colbuffer[1:maxrow, npivot], npivot)
-
-        rowbuffer[npivot, npivot] = K(1.0)
-        for k in 1:(npivot - 1)
-            @views rowbuffer[k, npivot] =
-                colbuffer[rows[k], k] .^ -1 * colbuffer[rows[k], npivot]
-            for kk in 1:maxrow
-                @views colbuffer[kk, npivot] -= colbuffer[kk, k] * rowbuffer[k, npivot]
-            end
-        end
-
-        rows[npivot] = iaca.rowpivoting(colbuffer[1:maxrow, npivot])
         if isapprox(norm(colbuffer[1:maxrow, npivot]), 0.0)
             conv = true
             npivot -= 1
         else
-            conv = iaca.convergence(colbuffer[1:maxrow, npivot], npivot, tol)
+            # Norm update
+            updatenorm!(iaca.convergence, colbuffer[1:maxrow, npivot], npivot)
+
+            rowbuffer[npivot, npivot] = K(1.0)
+            for k in 1:(npivot - 1)
+                @views rowbuffer[k, npivot] =
+                    colbuffer[rows[k], k] .^ -1 * colbuffer[rows[k], npivot]
+                for kk in 1:maxrow
+                    @views colbuffer[kk, npivot] -= colbuffer[kk, k] * rowbuffer[k, npivot]
+                end
+            end
+
+            rows[npivot] = iaca.rowpivoting(colbuffer[1:maxrow, npivot])
+            if isapprox(norm(colbuffer[rows[npivot], npivot]), 0.0)
+                conv = true
+                npivot -= 1
+            else
+                conv = iaca.convergence(colbuffer[1:maxrow, npivot], npivot, tol)
+            end
         end
     end
     if verbose

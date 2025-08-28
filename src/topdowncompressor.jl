@@ -54,10 +54,12 @@ function compress_testtree(
     end
     println("Tolerance: ", tol / admlevel)
     for (levelidx, level) in enumerate(clusterlink)
+        println("\nLevel: ", levelidx)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
         iseven(levelidx) ? ridx = 1 : ridx = 2
         _foreach(level) do node
+            print(".")
             colidcs = value(trial_tree, sortedfars[node])
             (node != 1) &&
                 (colidcs = vcat(colidcs, pivots[ClusterTrees.parent(test_tree, node)][2]))
@@ -72,8 +74,13 @@ function compress_testtree(
                     tol=tol / admlevel,
                     maxrank=maxrank,
                 )
+                if length(pivots[node][1]) == 0
+                    println("node")
+                    error()
+                end
             end
         end
+        println("bases")
         (levelidx > 1) && build_testbases!(
             translations,
             translationidcs,
@@ -126,11 +133,13 @@ function compress_trialtree(
     end
     println("Tolerance: ", tol / admlevel)
     for (levelidx, level) in enumerate(clusterlink)
+        println("\nLevel: ", levelidx)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
         iseven(levelidx) ? ridx = 1 : ridx = 2
 
         _foreach(level) do node
+            print(".")
             rowidcs = value(test_tree, sortedfars[node])
             (node != 1) &&
                 (rowidcs = vcat(rowidcs, pivots[ClusterTrees.parent(trial_tree, node)][1]))
@@ -145,8 +154,13 @@ function compress_trialtree(
                     tol=tol / admlevel,
                     maxrank=maxrank,
                 )
+                if length(pivots[node][1]) == 0
+                    println(length(rowidcs), ", ", length(colidcs))
+                    error()
+                end
             end
         end
+        println("bases")
         (levelidx > 1) && build_trialbases!(
             translations,
             translationidcs,
