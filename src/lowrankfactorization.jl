@@ -11,6 +11,21 @@ function TopDownCompressor(; factorization=LRF.ACA(), representor=nothing)
     return TopDownCompressor(factorization, representor)
 end
 
+struct TopDownCompressor2{LowRankFactorizationType,RepresentorType}
+    lrf::LowRankFactorizationType
+    representor::RepresentorType
+
+    function TopDownCompressor(lrf, representor)
+        return new{typeof(lrf),typeof(representor)}(lrf, representor)
+    end
+end
+
+function TopDownCompressor(;
+    factorization=AdaptiveCrossApproximation.ACA(), representor=nothing
+)
+    return TopDownCompressor(factorization, representor)
+end
+
 struct ButtomUpCompressor{LowRankFactorizationType,RepresentorType}
     lrf::LowRankFactorizationType
     representor::RepresentorType

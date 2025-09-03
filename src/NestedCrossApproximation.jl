@@ -1,13 +1,24 @@
 module NestedCrossApproximation
 
+using AdaptiveCrossApproximation
+using BlockSparseMatrices
 using LinearMaps
+using LinearAlgebra
 using H2Trees
+using OhMyThreads
 
 include("abstractkernelmatrix/abstractkernelmatrix.jl")
 include("abstractkernelmatrix/beastkernelmatrix.jl")
 
-include("NCA/PetrovGalerkinNCA.jl")
+include("NCA/AbstractNCA.jl")
 
+include("coupling.jl")
+include("bases.jl")
+include("compressor.jl")
+include("topdowncompressor2.jl")
+include("buffer.jl")
+include("NCA/PetrovGalerkinNCA.jl")
+include("MV/PetrovGalerkinNCA.jl")
 #=
 using BEAST
 using Base.Threads

@@ -12,7 +12,7 @@ function compress(
     iterator = functor(tree)
 
     for tnode in H2Trees.LevelIterator(H2Trees.testtree(tree), level)
-        for snode in iterator(H2Trees.testtree(tree), H2Trees.testtree(tree), tnode)
+        for snode in iterator(H2Trees.testtree(tree), H2Trees.trialtree(tree), tnode)
             #GlobalBuffer need to be implemented
             maxrows = length(H2Trees.values(H2Trees.testtree(tree), tnode))
             maxcols = length(H2Trees.values(H2Trees.trialtree(tree), snode))

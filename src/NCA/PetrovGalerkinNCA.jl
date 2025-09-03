@@ -152,66 +152,59 @@ function PetrovGalerkinNCA2(
     farquadstrat=defaultfarquadstrat(operator, testspace, trialspace),
     nearquadstrat=defaultnearquadstrat(operator, testspace, trialspace),
     #momentquadstrat=BEAST.DoubleNumQStrat(2, 3),
-    #testcompressor=TopDownCompressor(),
-    #trialcompressor=TopDownCompressor(),
-    multithreading=true,
+    testcompressor=TopDownCompressor(),
+    trialcompressor=TopDownCompressor(),
+    ntasks=Threads.nthreads(),
     isnear=H2Trees.isnear,
     maxrank=40, #Should be moved to the compressor
-    tol=1e-4, #global
-    η=1.0, #global
+    tol=1e-4, #might stay there
+    #η=1.0, #isnear
 )
+
+    # near interactions
     nearmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=nearquadstrat
     )
     values, nearvalues = H2Trees.nearinteractions(
         tree; isnear=isnear, extractselfvalues=false
     )
-    blocks = Vector{Matrix{scalartype(op)}}(undef, length(values))
+    blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, length(values))
     Threads.@threads for i in eachindex(values)
-        blk = zeros(scalartype(op), length(values[i]), length(nearvalues[i]))
-        nearmatrix(values[i], nearvalues[i], blk)
+        blk = zeros(eltype(nearmatrix), length(values[i]), length(nearvalues[i]))
+        nearmatrix(blk, values[i], nearvalues[i])
         blocks[i] = blk
     end
-    nearmatrix = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
+    nearinteractions = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
+
+    # far interactions
     farmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=farquadstrat
     )
-    fartime = @elapsed begin
-        println("compress_testtree")
-        nestedtestbases, testtransfermatrices, testpivots = compress_testtree(
-            farmatrix,
-            tree,
-            testcompressor;
-            multithreading=multithreading,
-            maxrank=maxrank,
-            tol=tol,
-        )=#
 
-        println("compress_trialtree")
-        nestedtrialbases, trialtransfermatrices, trialpivots = compress_trialtree(
-            testtree,
-            trialtree,
-            farassembler,
-            fars,
-            trialcompressor,
-            scalartype(operator);
-            multithreading=multithreading,
-            maxrank=maxrank,
-            tol=tol,
-        )
-        println("coupling")
-        couplingmatrices = assemble_couplingmatrices(
-            farassembler,
-            scalartype(operator),
-            fars,
-            testpivots,
-            trialpivots;
-            multithreading=multithreading,
-        )
-    end
+    println("compress_testtree")
+    nestedtestbases, testtransfermatrices, testpivots = testcompressor(
+        farmatrix,
+        tree,
+        reverse(testbuffer(testcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks));
+        isnear=isnear,
+        ntasks=ntasks,
+    )
+    println("compress_trialtree")
+    nestedtrialbases, trialtransfermatrices, trialpivots = trialcompressor(
+        farmatrix,
+        tree,
+        trialbuffer(trialcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks);
+        isnear=isnear,
+        ntasks=ntasks,
+    )
 
-    return PetrovGalerkinNCA{scalartype(operator)}(
-        blktree,
+    println("coupling")
+    couplingmatrices, fars = assemble_couplingmatrices(
+        farmatrix, tree, testpivots, trialpivots; isnear=isnear, ntasks=ntasks
+    )
+
+    return PetrovGalerkinNCA{eltype(nearmatrix)}(
+        tree,
         nearinteractions,
         nestedtestbases,
         nestedtrialbases,
@@ -219,9 +212,9 @@ function PetrovGalerkinNCA2(
         trialtransfermatrices,
         couplingmatrices,
         fars,
-        (testtree.num_elements, trialtree.num_elements),
-        multithreading,
-    )=#
+        size(farmatrix),
+        true,
+    )
 end
 #=
 function assemble(operator, testspace, trialspace; kwargs...)

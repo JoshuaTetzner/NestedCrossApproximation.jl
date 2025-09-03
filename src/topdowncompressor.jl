@@ -52,9 +52,7 @@ function compress_testtree(
             admlevel += 1
         end
     end
-    println("Tolerance: ", tol / admlevel)
     for (levelidx, level) in enumerate(clusterlink)
-        println("\nLevel: ", levelidx)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
         iseven(levelidx) ? ridx = 1 : ridx = 2

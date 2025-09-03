@@ -30,8 +30,8 @@ end
     LinearMaps.check_dim_mul(y, A, x)
 
     fill!(y, zero(eltype(y)))
-    xhat = Vector{Vector{eltype(y)}}(undef, length(A.tree.trial_cluster.nodes))
-    yhat = Vector{Vector{eltype(y)}}(undef, length(A.tree.test_cluster.nodes))
+    xhat = Vector{Vector{eltype(y)}}(undef, length(A.tree.trialcluster.nodes))
+    yhat = Vector{Vector{eltype(y)}}(undef, length(A.tree.testcluster.nodes))
 
     for (idx, basis) in A.nestedtrialbases
         xhat[idx] = basis.T * x[basis.σ]
