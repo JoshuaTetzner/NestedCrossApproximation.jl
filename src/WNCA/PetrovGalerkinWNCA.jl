@@ -71,86 +71,65 @@ function isnear(k, treea, treeb, nodea, nodeb; ηₗ=1.0, ηₕ=4.0)
     end
 end
 
-wavenumber(operator::BEAST.IntegralOperator) = imag(operator.gamma)
 function islf(k, tree, level)
-    println(k / pi * 4 * sqrt(3) * H2Trees.halfsize(tree) / 2^(level - 1), " <= ", 1)
     return k / pi * 4 * sqrt(3) * H2Trees.halfsize(tree) / 2^(level - 1) <= 1
+end
+
+function islf(k)
+    lf(tree, level) = islf(k, tree, level)
+    return lf
 end
 
 function PetrovGalerkinWNCA(
     operator,
     testspace,
-    trialspace;
-    lfcompressor=FastBEAST.ACAOptions(; tol=1e-4),
-    testtree=create_tree(testspace.pos, BoxTreeOptions(; nmin=50, maxlevel=50)),
-    trialtree=create_tree(trialspace.pos, BoxTreeOptions(; nmin=50, maxlevel=50)),
-    nearinteractionquadstrat=BEAST.defaultquadstrat(operator, testspace, trialspace),
-    testcompressor=iACA(trialspace.pos),
-    trialcompressor=iACA(
-        testspace.pos;
-        rowpivoting=NestedCrossApproximation.IACAPivoting(testspace.pos),
-        columnpivoting=FastBEAST.LRF.MaximumValue(),
-    ),
-    momentquadstrat=BEAST.DoubleNumQStrat(2, 3),
-    multithreading=true,
+    trialspace,
+    tree;
+    farquadstrat=defaultfarquadstrat(operator, testspace, trialspace),
+    nearquadstrat=defaultnearquadstrat(operator, testspace, trialspace),
+    testcompressor=TopDownCompressor(),
+    trialcompressor=TopDownCompressor(),
+    lfcompressor=AdaptiveCrossApproximation.ACA(),
+    ntasks=Threads.nthreads(),
+    isnear=H2Trees.isnear,
+    islf=islf(wavenumber(operator)),
     maxrank=40,
-    ηₗ=1.0,
-    ηₕ=5.0,
-    tol=1e-4,
 )
-    blktree = ClusterTrees.BlockTrees.BlockTree(testtree, trialtree)
-    nears, hffars, lffars = computeinteractionshf(
-        blktree, imag(operator.gamma); ηₗ=ηₗ, ηₕ=ηₕ
+    # near interactions
+    nearmatrix = AbstractKernelMatrix(
+        operator, testspace, trialspace; quadstrat=nearquadstrat
     )
+    values, nearvalues, fars, dirs, lfvalues, lffarvalues = directionalitneractions(
+        tree, islf, isnear
+    )
+    blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, length(values))
     println("nears")
-    @time nearinteractions = FastBEAST.assemble(
-        operator,
-        testspace,
-        trialspace,
-        blktree,
-        nears,
-        scalartype(operator);
-        quadstrat=nearinteractionquadstrat,
-        multithreading=multithreading,
-    )
+    Threads.@threads for i in eachindex(values)
+        blk = zeros(eltype(nearmatrix), length(values[i]), length(nearvalues[i]))
+        nearmatrix(blk, values[i], nearvalues[i])
+        blocks[i] = blk
+    end
+    nearinteractions = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
 
-    #println("nears done")
-    @views farblkassembler = BEAST.blockassembler(
-        operator, testspace, trialspace; quadstrat=momentquadstrat
-    )
-    @views function farassembler(Z, tdata, sdata)
-        @views store(v, m, n) = (Z[m, n] += v)
-        return farblkassembler(tdata, sdata, store)
+    println("lfs")
+    lk = Threads.SpinLock()
+    rowbuffer = (maxrank, maximum(length.(Iterators.flatten(lffarvalues))))
+    colbuffer = (maximum(length.(lfvalues)))
+    lfblocks = MatrixBlock{Int,eltype(farmatrix),LowRankMatrix{eltype(farmatrix)}}[]
+    am = allocate_lfbuffer(())
+    for (levelidx, level) in enumerate(lfvalues)
+        @tasks for (tidx, t) in enumerate(lfvalues[level])
+            @set ntasks = ntasks
+            for s in lffarvalues[levelidx][tidx]
+                compress()
+                blk = MatrixBlock(LowRankMatrix(U, V), t, s)
+                lock(lk) do
+                    push!(blk, lfblocks)
+                end
+            end
+        end
     end
 
-    am = FastBEAST.allocate_aca_memory(
-        scalartype(operator),
-        testtree.num_elements,
-        trialtree.num_elements,
-        multithreading;
-        maxrank=lfcompressor.maxrank,
-    )
-    lffars = reduce(vcat, lffars)
-    lfinteractions = Vector{
-        FastBEAST.MatrixBlock{
-            Int,scalartype(operator),FastBEAST.LowRankMatrix{scalartype(operator)}
-        },
-    }(
-        undef, length(lffars)
-    )
-    println("lf")
-    _foreach = multithreading ? ThreadsX.foreach : Base.foreach
-    @time _foreach(enumerate(lffars)) do (idx, far)
-        lfinteractions[idx] = FastBEAST.getcompressedmatrix(
-            farassembler,
-            FastBEAST.value(testtree, far[1]),
-            FastBEAST.value(trialtree, far[2]),
-            Int,
-            scalartype(operator),
-            am[Threads.threadid()];
-            compressor=lfcompressor,
-        )
-    end
     println("hf")
     nlev = 0
     for f in hffars
