@@ -146,3 +146,15 @@ function allocate_buttomupbuffer(
     end
     return c, zeros(K, buffer)
 end=#
+
+function allocate_aca_buffer(
+    ::Type{K}, maxrows, maxcols, maxrank; ntasks=Threads.nthreads()
+) where {K}
+    rowbuffer = Channel{Matrix{K}}(ntasks)
+    colbuffer = Channel{Matrix{K}}(ntasks)
+    for _ in 1:ntasks
+        put!(rowbuffer, zeros(K, maxrank, maxcols))
+        put!(colbuffer, zeros(K, maxrows, maxrank))
+    end
+    return rowbuffer, colbuffer
+end

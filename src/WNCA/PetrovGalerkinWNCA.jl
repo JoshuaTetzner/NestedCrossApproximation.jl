@@ -72,14 +72,14 @@ function isnear(k, treea, treeb, nodea, nodeb; ηₗ=1.0, ηₕ=4.0)
 end
 
 function islf(k, tree, level)
-    return k / pi * 4 * sqrt(3) * H2Trees.halfsize(tree) / 2^(level - 1) <= 1
+    return k / pi * 4 * H2Trees.halfsize(tree.testcluster) / 2^(level - 1) <= 1
 end
 
 function islf(k)
     lf(tree, level) = islf(k, tree, level)
     return lf
 end
-
+wavenumber(operator) = operator.wavenumber
 function PetrovGalerkinWNCA(
     operator,
     testspace,
@@ -95,13 +95,19 @@ function PetrovGalerkinWNCA(
     islf=islf(wavenumber(operator)),
     maxrank=40,
 )
+
     # near interactions
     nearmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=nearquadstrat
     )
-    values, nearvalues, fars, dirs, lfvalues, lffarvalues = directionalitneractions(
-        tree, islf, isnear
+    farmatrix = AbstractKernelMatrix(
+        operator, testspace, trialspace; quadstrat=farquadstrat
     )
+    dtree = 𝒟tree(H2Trees.halfsize(tree.testcluster), imag(operator.gamma))
+    values, nearvalues, fars, dirs, lfvalues, lffarvalues = directionalitneractions(
+        tree, dtree, islf, isnear
+    )
+    #=
     blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, length(values))
     println("nears")
     Threads.@threads for i in eachindex(values)
@@ -110,68 +116,90 @@ function PetrovGalerkinWNCA(
         blocks[i] = blk
     end
     nearinteractions = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
-
+    =#
     println("lfs")
+    println(typeof(lffarvalues))
+    println(typeof(lfvalues))
     lk = Threads.SpinLock()
-    rowbuffer = (maxrank, maximum(length.(Iterators.flatten(lffarvalues))))
-    colbuffer = (maximum(length.(lfvalues)))
+    maxcols = maximum(length.(Iterators.flatten(lffarvalues)))
+    maxrows = maximum(length.(lfvalues))
     lfblocks = MatrixBlock{Int,eltype(farmatrix),LowRankMatrix{eltype(farmatrix)}}[]
-    am = allocate_lfbuffer(())
-    for (levelidx, level) in enumerate(lfvalues)
-        @tasks for (tidx, t) in enumerate(lfvalues[level])
-            @set ntasks = ntasks
-            for s in lffarvalues[levelidx][tidx]
-                compress()
-                blk = MatrixBlock(LowRankMatrix(U, V), t, s)
-                lock(lk) do
-                    push!(blk, lfblocks)
-                end
+    rowbuffer, colbuffer = allocate_aca_buffer(eltype(farmatrix), maxrows, maxcols, maxrank)
+    @tasks for tidx in eachindex(lfvalues)
+        println("tidx")
+        @set ntasks = ntasks
+        t = lfvalues[tidx]
+        localrowbuffer = take!(rowbuffer)
+        localcolbuffer = take!(colbuffer)
+        for s in lffarvalues[tidx]
+            npivots = lfcompressor(
+                farmatrix,
+                localcolbuffer,
+                localrowbuffer,
+                min(40, min(length(t), length(s)));
+                rowidcs=t,
+                colidcs=s,
+            )
+            blk = MatrixBlock(
+                LowRankMatrix(
+                    localcolbuffer[1:length(t), 1:npivots],
+                    localrowbuffer[1:npivots, 1:length(s)],
+                ),
+                t,
+                s,
+            )
+            lock(lk) do
+                push!(lfblocks, blk)
+            end
+            localcolbuffer[1:length(t), 1:npivots] .= 0
+            localrowbuffer[1:npivots, 1:length(s)] .= 0
+        end
+        put!(rowbuffer, localrowbuffer)
+        put!(colbuffer, localcolbuffer)
+    end
+    #=
+        println("hf")
+        nlev = 0
+        for f in hffars
+            if f != []
+                nlev += 1
             end
         end
-    end
+        tol = tol / nlev
+        @time tbases, tpivots, tdirfars, Ftpivots, sbases, spivots, sdirfars, Fspivots, dtree = directionalcompressor(
+            farassembler,
+            testtree,
+            hffars,
+            imag(operator.gamma);
+            tlrf=testcompressor,
+            slrf=trialcompressor,
+            maxrank=maxrank,
+            tol=tol,
+            ηₕ=ηₕ,
+            multithreading=multithreading,
+        )
 
-    println("hf")
-    nlev = 0
-    for f in hffars
-        if f != []
-            nlev += 1
-        end
-    end
-    tol = tol / nlev
-    @time tbases, tpivots, tdirfars, Ftpivots, sbases, spivots, sdirfars, Fspivots, dtree = directionalcompressor(
-        farassembler,
-        testtree,
-        hffars,
-        imag(operator.gamma);
-        tlrf=testcompressor,
-        slrf=trialcompressor,
-        maxrank=maxrank,
-        tol=tol,
-        ηₕ=ηₕ,
-        multithreading=multithreading,
-    )
+        @time testbases, testtransfer, trialbases, trialtransfer = builddirectionalH2(
+            testtree, dtree, hffars, tbases, tpivots, sbases, spivots; multithreading=true
+        )
 
-    @time testbases, testtransfer, trialbases, trialtransfer = builddirectionalH2(
-        testtree, dtree, hffars, tbases, tpivots, sbases, spivots; multithreading=true
-    )
+        @time coupling = computecoupling(
+            farassembler, tpivots, tdirfars, spivots, sdirfars, reduce(vcat, hffars)
+        )
 
-    @time coupling = computecoupling(
-        farassembler, tpivots, tdirfars, spivots, sdirfars, reduce(vcat, hffars)
-    )
-
-    return PetrovGalerkinWNCA{ComplexF64}(
-        blktree,
-        dtree,
-        nearinteractions,
-        lfinteractions,
-        testbases,
-        trialbases,
-        testtransfer,
-        trialtransfer,
-        coupling,
-        (testtree.num_elements, trialtree.num_elements),
-        multithreading,
-    )
+        return PetrovGalerkinWNCA{ComplexF64}(
+            blktree,
+            dtree,
+            nearinteractions,
+            lfinteractions,
+            testbases,
+            trialbases,
+            testtransfer,
+            trialtransfer,
+            coupling,
+            (testtree.num_elements, trialtree.num_elements),
+            multithreading,
+        )=#
 end
 
 function Base.size(A::PetrovGalerkinWNCA, dim=nothing)

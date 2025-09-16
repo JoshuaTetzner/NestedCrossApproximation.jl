@@ -22,6 +22,7 @@ include("buffer.jl")
 include("NCA/PetrovGalerkinNCA.jl")
 include("MV/PetrovGalerkinNCA.jl")
 include("WNCA/directionaltree.jl")
+include("WNCA/farinteractions.jl")
 include("WNCA/PetrovGalerkinWNCA.jl")
 #=
 using BEAST

@@ -17,7 +17,7 @@ function NestedCrossApproximation.defaultnearquadstrat(
     return BEAST.defaultquadstrat(operator, testspace, trialspace)
 end
 
-wavenumber(operator::BEAST.IntegralOperator) = imag(operator.gamma)
+NestedCrossApproximation.wavenumber(operator::BEAST.IntegralOperator) = imag(operator.gamma)
 
 function assembleblockprimer(assembler)
     return BEAST.assembleblock_primer(

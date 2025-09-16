@@ -22,7 +22,6 @@ function NestedCrossApproximation.BEASTKernelMatrix(
         operator, testspace, trialspace, primer, quadstrat
     )
 end
-
 struct BlockStoreFunctor{M}
     matrix::M
 end
