@@ -1,6 +1,6 @@
 using LinearMaps
 
-struct LowRankMatrix{F} <: AbstractMatrix{F}
+struct LowRankMatrix{F} <: LinearMaps.LinearMap{F}
     U::Matrix{F}
     V::Matrix{F}
     z::Vector{F}
@@ -31,14 +31,14 @@ function LinearAlgebra.mul!(
     mul!(M.lmap.z, adjoint(M.lmap.U), x)
     return mul!(y, adjoint(M.lmap.V), M.lmap.z)
 end
-struct MatrixBlock{I,F,K<:AbstractMatrix{F}}
+struct MatrixBlock{I,F,K}
     M::K
     τ::Vector{I}
     σ::Vector{I}
 end
 
-function MatrixBlock(M::AbstractMatrix{F}, τ::Vector{I}, σ::Vector{I}) where {I,F}
-    return MatrixBlock{I,F,typeof(M)}(M, τ, σ)
+function MatrixBlock(M::T, τ::Vector{I}, σ::Vector{I}) where {I,F,T<:AbstractMatrix{F}}
+    return MatrixBlock{I,F,T}(M, τ, σ)
 end
 
 Base.eltype(block::MatrixBlock{I,F,T}) where {I,F,T} = F

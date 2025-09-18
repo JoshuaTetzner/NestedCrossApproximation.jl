@@ -79,8 +79,20 @@ function children(tree::𝒟tree{F}, node::Int) where {F}
     return tree.nodes[node].children
 end
 
+function parent(tree::𝒟tree{F}, node::Int) where {F}
+    return tree.nodes[node].parent
+end
+
 function direction(interaction, tree, maxdepth; depth=0, dir=0)
     depth == maxdepth && return dir
-    dir = argmin([angle(interaction, tree.nodes[child].ℯ) for child in children(tree, dir)])
-    return direction(interaction, tree, maxdepth; depth=depth + 1, dir=dir)
+    newdir = argmin([
+        angle(interaction, tree.nodes[child].ℯ) for child in children(tree, dir)
+    ])
+    return direction(
+        interaction, tree, maxdepth; depth=depth + 1, dir=children(tree, dir)[newdir]
+    )
+end
+
+function isleaf(tree::𝒟tree{F}, node::Int) where {F}
+    tree.nodes[node].parent == 0 ? (return true) : (return false)
 end

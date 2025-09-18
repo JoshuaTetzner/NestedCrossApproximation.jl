@@ -30,3 +30,48 @@ function assemble_couplingmatrices(
 
     return lowrankblocks, fars
 end
+
+struct DH2MatrixBlock{I,K}
+    Z::Matrix{K}
+    row_basis::I
+    col_basis::I
+    dir::I
+end
+
+function assemble_couplingmatrices(
+    farmatrix::AbstractKernelMatrix{T},
+    testpivots,
+    trialpivots,
+    fars::Vector{Vector{Tuple{Int,Int}}},
+    dirs::Vector{Vector{Int}};
+    ntasks=Threads.nthreads(),
+) where {T}
+    lk = Threads.SpinLock()
+    couplingblocks = DH2MatrixBlock{Int,T}[]
+
+    for level in 1:length(dirs)
+        @tasks for i in 1:length(dirs[level])
+            @set ntasks = ntasks
+            blk = zeros(
+                T,
+                length(testpivots[fars[level][i][1]][dirs[level][i]][1]),
+                length(trialpivots[fars[level][i][2]][dirs[level][i]][2]),
+            )
+            farmatrix(
+                blk,
+                testpivots[fars[level][i][1]][dirs[level][i]][1],
+                trialpivots[fars[level][i][2]][dirs[level][i]][2],
+            )
+            lock(lk) do
+                push!(
+                    couplingblocks,
+                    DH2MatrixBlock(
+                        blk, fars[level][i][1], fars[level][i][2], dirs[level][i]
+                    ),
+                )
+            end
+        end
+    end
+
+    return couplingblocks
+end

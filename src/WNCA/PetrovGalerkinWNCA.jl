@@ -20,7 +20,7 @@ struct PetrovGalerkinWNCA{
     trialtransfermatrices::TransferMatrixType
     couplingmatrices::CouplingMatrixType
     dim::Tuple{Int,Int}
-    ismultithreaded::Bool
+    ismultithreaded::Int
 
     function PetrovGalerkinWNCA{T}(
         tree,
@@ -107,99 +107,61 @@ function PetrovGalerkinWNCA(
     values, nearvalues, fars, dirs, lfvalues, lffarvalues = directionalitneractions(
         tree, dtree, islf, isnear
     )
-    #=
+
     blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, length(values))
     println("nears")
-    Threads.@threads for i in eachindex(values)
+    @tasks for i in eachindex(values)
+        @set ntasks = ntasks
         blk = zeros(eltype(nearmatrix), length(values[i]), length(nearvalues[i]))
         nearmatrix(blk, values[i], nearvalues[i])
         blocks[i] = blk
     end
     nearinteractions = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
-    =#
+
     println("lfs")
-    println(typeof(lffarvalues))
-    println(typeof(lfvalues))
-    lk = Threads.SpinLock()
-    maxcols = maximum(length.(Iterators.flatten(lffarvalues)))
-    maxrows = maximum(length.(lfvalues))
-    lfblocks = MatrixBlock{Int,eltype(farmatrix),LowRankMatrix{eltype(farmatrix)}}[]
-    rowbuffer, colbuffer = allocate_aca_buffer(eltype(farmatrix), maxrows, maxcols, maxrank)
-    @tasks for tidx in eachindex(lfvalues)
-        println("tidx")
-        @set ntasks = ntasks
-        t = lfvalues[tidx]
-        localrowbuffer = take!(rowbuffer)
-        localcolbuffer = take!(colbuffer)
-        for s in lffarvalues[tidx]
-            npivots = lfcompressor(
-                farmatrix,
-                localcolbuffer,
-                localrowbuffer,
-                min(40, min(length(t), length(s)));
-                rowidcs=t,
-                colidcs=s,
-            )
-            blk = MatrixBlock(
-                LowRankMatrix(
-                    localcolbuffer[1:length(t), 1:npivots],
-                    localrowbuffer[1:npivots, 1:length(s)],
-                ),
-                t,
-                s,
-            )
-            lock(lk) do
-                push!(lfblocks, blk)
-            end
-            localcolbuffer[1:length(t), 1:npivots] .= 0
-            localrowbuffer[1:npivots, 1:length(s)] .= 0
-        end
-        put!(rowbuffer, localrowbuffer)
-        put!(colbuffer, localcolbuffer)
-    end
-    #=
-        println("hf")
-        nlev = 0
-        for f in hffars
-            if f != []
-                nlev += 1
-            end
-        end
-        tol = tol / nlev
-        @time tbases, tpivots, tdirfars, Ftpivots, sbases, spivots, sdirfars, Fspivots, dtree = directionalcompressor(
-            farassembler,
-            testtree,
-            hffars,
-            imag(operator.gamma);
-            tlrf=testcompressor,
-            slrf=trialcompressor,
-            maxrank=maxrank,
-            tol=tol,
-            ηₕ=ηₕ,
-            multithreading=multithreading,
-        )
 
-        @time testbases, testtransfer, trialbases, trialtransfer = builddirectionalH2(
-            testtree, dtree, hffars, tbases, tpivots, sbases, spivots; multithreading=true
-        )
+    lfblocks = blockcompressor(
+        farmatrix, lfvalues, lffarvalues, lfcompressor; maxrank=maxrank, ntasks=ntasks
+    )
 
-        @time coupling = computecoupling(
-            farassembler, tpivots, tdirfars, spivots, sdirfars, reduce(vcat, hffars)
-        )
-
-        return PetrovGalerkinWNCA{ComplexF64}(
-            blktree,
-            dtree,
-            nearinteractions,
-            lfinteractions,
-            testbases,
-            trialbases,
-            testtransfer,
-            trialtransfer,
-            coupling,
-            (testtree.num_elements, trialtree.num_elements),
-            multithreading,
-        )=#
+    println("compress_testtree")
+    nestedtestbases, testtransfermatrices, testpivots = testcompressor(
+        farmatrix,
+        dtree,
+        tree,
+        fars,
+        dirs,
+        reverse(testbuffer(testcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks));
+        ntasks=ntasks,
+        maxrank=maxrank,
+    )
+    println("compress_trialtree")
+    nestedtrialbases, trialtransfermatrices, trialpivots = trialcompressor(
+        farmatrix,
+        dtree,
+        tree,
+        fars,
+        dirs,
+        trialbuffer(trialcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks);
+        ntasks=ntasks,
+        maxrank=maxrank,
+    )
+    @time coupling = assemble_couplingmatrices(
+        farmatrix, testpivots, trialpivots, fars, dirs; ntasks=ntasks
+    )
+    return PetrovGalerkinWNCA{ComplexF64}(
+        tree,
+        dtree,
+        nearinteractions,
+        lfblocks,
+        nestedtestbases,
+        nestedtrialbases,
+        testtransfermatrices,
+        trialtransfermatrices,
+        coupling,
+        size(farmatrix),
+        ntasks,
+    )
 end
 
 function Base.size(A::PetrovGalerkinWNCA, dim=nothing)
@@ -233,13 +195,13 @@ end
 
     fill!(y, zero(eltype(y)))
 
-    xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trial_cluster.nodes))
-    yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.test_cluster.nodes))
+    xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trialcluster.nodes))
+    yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.testcluster.nodes))
 
     for (idx, moment) in A.nestedtrialbases
         res = Vector{eltype(y)}[]
         for (k, dir) in moment
-            push!(res, dir * x[value(A.tree.trial_cluster, idx)])
+            push!(res, dir.T * x[dir.σ])
         end
         xhat[idx] = Dict(keys(moment) .=> res)
     end
@@ -248,11 +210,11 @@ end
         for (node, data) in nodes
             res = Vector{eltype(y)}[]
             for (dir, transfers) in data
-                childs = collect(ClusterTrees.children(A.tree.trial_cluster, node))
-                xhatdir = transfers[1] * xhat[childs[1]][ClusterTrees.parent(A.dtree, dir)]
-                for (i, transfer) in enumerate(transfers[2:end])
+                #childs = transfers.T.children#collect(H2Trees.children(A.tree.trialcluster, node))
+                xhatdir = transfers.T[1] * xhat[transfers.children[1]][parent(A.dtree, dir)]
+                for i in 2:length(transfers.children)#enumerate(transfers[2:end])
                     xhatdir +=
-                        transfer * xhat[childs[i + 1]][ClusterTrees.parent(A.dtree, dir)]
+                        transfers.T[i] * xhat[transfers.children[i]][parent(A.dtree, dir)]
                 end
                 push!(res, xhatdir)
             end
@@ -262,33 +224,31 @@ end
 
     for lrb in A.couplingmatrices
         if isassigned(yhat, lrb.row_basis)
-            if haskey(yhat[lrb.row_basis], lrb.row_dir)
-                yhat[lrb.row_basis][lrb.row_dir] += lrb.Z * xhat[lrb.col_basis][lrb.col_dir]
+            if haskey(yhat[lrb.row_basis], lrb.dir)
+                yhat[lrb.row_basis][lrb.dir] += lrb.Z * xhat[lrb.col_basis][lrb.dir]
             else
-                yhat[lrb.row_basis][lrb.row_dir] = lrb.Z * xhat[lrb.col_basis][lrb.col_dir]
+                yhat[lrb.row_basis][lrb.dir] = lrb.Z * xhat[lrb.col_basis][lrb.dir]
             end
         else
-            yhat[lrb.row_basis] = Dict(
-                lrb.row_dir => lrb.Z * xhat[lrb.col_basis][lrb.col_dir]
-            )
+            yhat[lrb.row_basis] = Dict(lrb.dir => lrb.Z * xhat[lrb.col_basis][lrb.dir])
         end
     end
 
     for nodes in A.testtransfermatrices
         for (node, data) in nodes
-            childs = collect(ClusterTrees.children(A.tree.test_cluster, node))
+            childs = collect(H2Trees.children(A.tree.testcluster, node))
 
             for (dir, transfers) in data
-                childdir = ClusterTrees.parent(A.dtree, dir)
-                for (i, child) in enumerate(childs)
+                childdir = parent(A.dtree, dir)
+                for (i, child) in enumerate(transfers.children)
                     if isassigned(yhat, child)
                         if haskey(yhat[child], childdir)
-                            yhat[child][childdir] += transfers[i] * yhat[node][dir]
+                            yhat[child][childdir] += transfers.T[i] * yhat[node][dir]
                         else
-                            yhat[child][childdir] = transfers[i] * yhat[node][dir]
+                            yhat[child][childdir] = transfers.T[i] * yhat[node][dir]
                         end
                     else
-                        yhat[child] = Dict(childdir => transfers[i] * yhat[node][dir])
+                        yhat[child] = Dict(childdir => transfers.T[i] * yhat[node][dir])
                     end
                 end
             end
@@ -297,7 +257,7 @@ end
 
     for (idx, moment) in A.nestedtestbases
         for (dir, basis) in moment
-            y[value(A.tree.test_cluster, idx)] += basis * yhat[idx][dir]
+            y[basis.τ] += basis.T * yhat[idx][dir]
         end
     end
 
@@ -320,13 +280,13 @@ end
 
     fill!(y, zero(eltype(y)))
 
-    xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trial_cluster.nodes))
-    yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.test_cluster.nodes))
+    xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trialcluster.nodes))
+    yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.testcluster.nodes))
 
     for (idx, moment) in A.nestedtestbases
         res = Vector{eltype(y)}[]
         for (k, dir) in moment
-            push!(res, transpose(dir) * x[value(A.tree.test_cluster, idx)])
+            push!(res, transpose(dir.T) * x[dir.τ])
         end
         xhat[idx] = Dict(keys(moment) .=> res)
     end
@@ -335,14 +295,14 @@ end
         for (node, data) in nodes
             res = Vector{eltype(y)}[]
             for (dir, transfers) in data
-                childs = collect(ClusterTrees.children(A.tree.test_cluster, node))
+                #childs = collect(H2Trees.children(A.tree.testcluster, node))
                 xhatdir =
-                    transpose(transfers[1]) *
-                    xhat[childs[1]][ClusterTrees.parent(A.dtree, dir)]
-                for (i, transfer) in enumerate(transfers[2:end])
+                    transpose(transfers.T[1]) *
+                    xhat[transfers.children[1]][parent(A.dtree, dir)]
+                for (i, transfer) in enumerate(transfers.T[2:end])
                     xhatdir +=
                         transpose(transfer) *
-                        xhat[childs[i + 1]][ClusterTrees.parent(A.dtree, dir)]
+                        xhat[transfers.children[i + 1]][parent(A.dtree, dir)]
                 end
                 push!(res, xhatdir)
             end
@@ -352,37 +312,37 @@ end
 
     for lrb in A.couplingmatrices
         if isassigned(yhat, lrb.col_basis)
-            if haskey(yhat[lrb.col_basis], lrb.col_dir)
-                yhat[lrb.col_basis][lrb.col_dir] +=
-                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.row_dir]
+            if haskey(yhat[lrb.col_basis], lrb.dir)
+                yhat[lrb.col_basis][lrb.dir] +=
+                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
             else
-                yhat[lrb.col_basis][lrb.col_dir] =
-                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.row_dir]
+                yhat[lrb.col_basis][lrb.dir] =
+                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
             end
         else
             yhat[lrb.col_basis] = Dict(
-                lrb.col_dir => transpose(lrb.Z) * xhat[lrb.row_basis][lrb.row_dir]
+                lrb.dir => transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
             )
         end
     end
 
     for nodes in A.trialtransfermatrices
         for (node, data) in nodes
-            childs = collect(ClusterTrees.children(A.tree.trial_cluster, node))
+            #childs = collect(H2Trees.children(A.tree.trial_cluster, node))
             for (dir, transfers) in data
-                childdir = ClusterTrees.parent(A.dtree, dir)
-                for (i, child) in enumerate(childs)
+                childdir = parent(A.dtree, dir)
+                for (i, child) in enumerate(transfers.children)
                     if isassigned(yhat, child)
                         if haskey(yhat[child], childdir)
                             yhat[child][childdir] +=
-                                transpose(transfers[i]) * yhat[node][dir]
+                                transpose(transfers.T[i]) * yhat[node][dir]
                         else
                             yhat[child][childdir] =
-                                transpose(transfers[i]) * yhat[node][dir]
+                                transpose(transfers.T[i]) * yhat[node][dir]
                         end
                     else
                         yhat[child] = Dict(
-                            childdir => transpose(transfers[i]) * yhat[node][dir]
+                            childdir => transpose(transfers.T[i]) * yhat[node][dir]
                         )
                     end
                 end
@@ -392,7 +352,7 @@ end
 
     for (idx, moment) in A.nestedtrialbases
         for (dir, basis) in moment
-            y[value(A.tree.trial_cluster, idx)] += transpose(basis) * yhat[idx][dir]
+            y[basis.σ] += transpose(basis.T) * yhat[idx][dir]
         end
     end
 
@@ -415,13 +375,13 @@ end
 
     fill!(y, zero(eltype(y)))
 
-    xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trial_cluster.nodes))
-    yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.test_cluster.nodes))
+    xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trialcluster.nodes))
+    yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.testcluster.nodes))
 
     for (idx, moment) in A.nestedtestbases
         res = Vector{eltype(y)}[]
         for (k, dir) in moment
-            push!(res, adjoint(dir) * x[value(A.tree.test_cluster, idx)])
+            push!(res, adjoint(dir.T) * x[dir.τ])
         end
         xhat[idx] = Dict(keys(moment) .=> res)
     end
@@ -430,14 +390,14 @@ end
         for (node, data) in nodes
             res = Vector{eltype(y)}[]
             for (dir, transfers) in data
-                childs = collect(ClusterTrees.children(A.tree.test_cluster, node))
+                #childs = collect(H2Trees.children(A.tree.testcluster, node))
                 xhatdir =
-                    adjoint(transfers[1]) *
-                    xhat[childs[1]][ClusterTrees.parent(A.dtree, dir)]
-                for (i, transfer) in enumerate(transfers[2:end])
+                    adjoint(transfers.T[1]) *
+                    xhat[transfers.children[1]][parent(A.dtree, dir)]
+                for (i, transfer) in enumerate(transfers.T[2:end])
                     xhatdir +=
                         adjoint(transfer) *
-                        xhat[childs[i + 1]][ClusterTrees.parent(A.dtree, dir)]
+                        xhat[transfers.children[i + 1]][parent(A.dtree, dir)]
                 end
                 push!(res, xhatdir)
             end
@@ -447,35 +407,36 @@ end
 
     for lrb in A.couplingmatrices
         if isassigned(yhat, lrb.col_basis)
-            if haskey(yhat[lrb.col_basis], lrb.col_dir)
-                yhat[lrb.col_basis][lrb.col_dir] +=
-                    adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.row_dir]
+            if haskey(yhat[lrb.col_basis], lrb.dir)
+                yhat[lrb.col_basis][lrb.dir] +=
+                    adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
             else
-                yhat[lrb.col_basis][lrb.col_dir] =
-                    adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.row_dir]
+                yhat[lrb.col_basis][lrb.dir] = adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
             end
         else
             yhat[lrb.col_basis] = Dict(
-                lrb.col_dir => adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.row_dir]
+                lrb.dir => adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
             )
         end
     end
 
     for nodes in A.trialtransfermatrices
         for (node, data) in nodes
-            childs = collect(ClusterTrees.children(A.tree.trial_cluster, node))
+            #childs = collect(H2Trees.children(A.tree.trial_cluster, node))
             for (dir, transfers) in data
-                childdir = ClusterTrees.parent(A.dtree, dir)
-                for (i, child) in enumerate(childs)
+                childdir = parent(A.dtree, dir)
+                for (i, child) in enumerate(transfers.children)
                     if isassigned(yhat, child)
                         if haskey(yhat[child], childdir)
-                            yhat[child][childdir] += adjoint(transfers[i]) * yhat[node][dir]
+                            yhat[child][childdir] +=
+                                adjoint(transfers.T[i]) * yhat[node][dir]
                         else
-                            yhat[child][childdir] = adjoint(transfers[i]) * yhat[node][dir]
+                            yhat[child][childdir] =
+                                adjoint(transfers.T[i]) * yhat[node][dir]
                         end
                     else
                         yhat[child] = Dict(
-                            childdir => adjoint(transfers[i]) * yhat[node][dir]
+                            childdir => adjoint(transfers.T[i]) * yhat[node][dir]
                         )
                     end
                 end
@@ -485,7 +446,7 @@ end
 
     for (idx, moment) in A.nestedtrialbases
         for (dir, basis) in moment
-            y[value(A.tree.trial_cluster, idx)] += adjoint(basis) * yhat[idx][dir]
+            y[basis.σ] += adjoint(basis.T) * yhat[idx][dir]
         end
     end
 
