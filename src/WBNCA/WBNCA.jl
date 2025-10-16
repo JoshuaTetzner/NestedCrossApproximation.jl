@@ -404,7 +404,6 @@ end
     for nodes in A.testtransfermatrices
         for (node, data) in nodes
             childs = collect(ClusterTrees.children(A.tree.test_cluster, node))
-
             for (dir, transfers) in data
                 childdir = ClusterTrees.parent(A.dtree, dir)
                 for (i, child) in enumerate(childs)

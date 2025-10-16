@@ -116,10 +116,11 @@ function PetrovGalerkinWNCA(
         nearmatrix(blk, values[i], nearvalues[i])
         blocks[i] = blk
     end
-    nearinteractions = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
+    nearinteractions = BlockSparseMatrix(
+        blocks, values, nearvalues, size(nearmatrix); ntasks=1
+    )
 
     println("lfs")
-
     lfblocks = blockcompressor(
         farmatrix, lfvalues, lffarvalues, lfcompressor; maxrank=maxrank, ntasks=ntasks
     )
@@ -188,6 +189,76 @@ function Base.size(A::Adjoint{T}, dim=nothing) where {T<:PetrovGalerkinWNCA}
     end
 end
 
+function lbases(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA{K}) where {K}
+    trialbases = Vector{Dict{Int,Matrix{K}}}(undef, length(h2mat.tree.testcluster.nodes))
+    testbases = Vector{Dict{Int,Matrix{K}}}(undef, length(h2mat.tree.testcluster.nodes))
+
+    for (i, d) in h2mat.nestedtestbases
+        dirmats = Matrix{ComplexF64}[]
+        for (_, amat) in d
+            push!(dirmats, amat.T)
+        end
+        testbases[i] = Dict(keys(d) .=> dirmats)
+    end
+
+    for (i, d) in h2mat.nestedtrialbases
+        dirmats = Matrix{ComplexF64}[]
+        for (_, amat) in d
+            push!(dirmats, amat.T)
+        end
+        trialbases[i] = Dict(keys(d) .=> dirmats)
+    end
+
+    for level in reverse(h2mat.testtransfermatrices)
+        for (j, t) in level
+            dirmats = Matrix{ComplexF64}[]
+            for (dir, transfer) in t
+                base =
+                    testbases[transfer.children[1]][NestedCrossApproximation.parent(
+                        h2mat.dtree, dir
+                    )] * transfer.T[1]
+                for c in 2:length(transfer.children)
+                    base = vcat(
+                        base,
+                        testbases[transfer.children[c]][NestedCrossApproximation.parent(
+                            h2mat.dtree, dir
+                        )] * transfer.T[c],
+                    )
+                end
+                push!(dirmats, base)
+            end
+            testbases[j] = Dict(keys(t) .=> dirmats)
+        end
+    end
+
+    for level in reverse(h2mat.trialtransfermatrices)
+        for (j, t) in level
+            dirmats = Matrix{ComplexF64}[]
+            for (dir, transfer) in t
+                base =
+                    transfer.T[1] *
+                    trialbases[transfer.children[1]][NestedCrossApproximation.parent(
+                        h2mat.dtree, dir
+                    )]
+                for c in 2:length(transfer.children)
+                    base = hcat(
+                        base,
+                        transfer.T[c] *
+                        trialbases[transfer.children[c]][NestedCrossApproximation.parent(
+                            h2mat.dtree, dir
+                        )],
+                    )
+                end
+                push!(dirmats, base)
+            end
+
+            trialbases[j] = Dict(keys(t) .=> dirmats)
+        end
+    end
+
+    return testbases, trialbases
+end
+
 @views function LinearAlgebra.mul!(
     y::AbstractVecOrMat, A::PetrovGalerkinWNCA, x::AbstractVector
 )
@@ -197,10 +268,12 @@ end
 
     xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trialcluster.nodes))
     yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.testcluster.nodes))
+    tb, sb = lbases(A)
 
     for (idx, moment) in A.nestedtrialbases
         res = Vector{eltype(y)}[]
         for (k, dir) in moment
+            # use the trial-index vector stored in the direction/basis (dir.σ)
             push!(res, dir.T * x[dir.σ])
         end
         xhat[idx] = Dict(keys(moment) .=> res)
@@ -210,9 +283,9 @@ end
         for (node, data) in nodes
             res = Vector{eltype(y)}[]
             for (dir, transfers) in data
-                #childs = transfers.T.children#collect(H2Trees.children(A.tree.trialcluster, node))
+                # transfers.children holds the child indices for the transfer; use those
                 xhatdir = transfers.T[1] * xhat[transfers.children[1]][parent(A.dtree, dir)]
-                for i in 2:length(transfers.children)#enumerate(transfers[2:end])
+                for i in 2:length(transfers.children)
                     xhatdir +=
                         transfers.T[i] * xhat[transfers.children[i]][parent(A.dtree, dir)]
                 end
@@ -236,8 +309,6 @@ end
 
     for nodes in A.testtransfermatrices
         for (node, data) in nodes
-            childs = collect(H2Trees.children(A.tree.testcluster, node))
-
             for (dir, transfers) in data
                 childdir = parent(A.dtree, dir)
                 for (i, child) in enumerate(transfers.children)
@@ -257,9 +328,16 @@ end
 
     for (idx, moment) in A.nestedtestbases
         for (dir, basis) in moment
+            # write into the basis' target indices
             y[basis.τ] += basis.T * yhat[idx][dir]
         end
     end
+    #for lrb in A.couplingmatrices
+    #    y[H2Trees.values(A.tree.testcluster, lrb.row_basis)] .+=
+    #        tb[lrb.row_basis][lrb.dir] * lrb.Z * xhat[lrb.col_basis][lrb.dir]
+    #    #sb[lrb.col_basis][lrb.dir] *
+    #    #x[H2Trees.values(A.tree.trialcluster, lrb.col_basis)]
+    #end
 
     for lrb in A.lowfrequencyinteractions
         y[lrb.τ] += lrb.M * x[lrb.σ]
@@ -312,16 +390,16 @@ end
 
     for lrb in A.couplingmatrices
         if isassigned(yhat, lrb.col_basis)
-            if haskey(yhat[lrb.col_basis], lrb.dir)
-                yhat[lrb.col_basis][lrb.dir] +=
-                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
+            if haskey(yhat[lrb.col_basis], lrb.dir[2])
+                yhat[lrb.col_basis][lrb.dir[2]] +=
+                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir[1]]
             else
-                yhat[lrb.col_basis][lrb.dir] =
-                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
+                yhat[lrb.col_basis][lrb.dir[2]] =
+                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir[1]]
             end
         else
             yhat[lrb.col_basis] = Dict(
-                lrb.dir => transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
+                lrb.dir[2] => transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir[1]]
             )
         end
     end
@@ -407,15 +485,16 @@ end
 
     for lrb in A.couplingmatrices
         if isassigned(yhat, lrb.col_basis)
-            if haskey(yhat[lrb.col_basis], lrb.dir)
-                yhat[lrb.col_basis][lrb.dir] +=
-                    adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
+            if haskey(yhat[lrb.col_basis], lrb.dir[2])
+                yhat[lrb.col_basis][lrb.dir[2]] +=
+                    adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir[1]]
             else
-                yhat[lrb.col_basis][lrb.dir] = adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
+                yhat[lrb.col_basis][lrb.dir[2]] =
+                    adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir[1]]
             end
         else
             yhat[lrb.col_basis] = Dict(
-                lrb.dir => adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
+                lrb.dir[2] => adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir[1]]
             )
         end
     end

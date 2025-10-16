@@ -39,10 +39,6 @@ end
 
     for level in reverse(A.trialtransfermatrices)
         for (idx, Θ) in level
-            if !isassigned(xhat, Θ.children[1])
-                println(idx)
-                println(Θ.children[1])
-            end
             xhat[idx] = Θ.T[1] * xhat[Θ.children[1]]
             for nchd in 2:length(Θ.children)
                 xhat[idx] += Θ.T[nchd] * xhat[Θ.children[nchd]]

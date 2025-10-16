@@ -17,10 +17,11 @@ function build_testbases!(
 
     for node in testclusters
         #ntasks = ntasks
-        if isleaf(dtree, level)
-            if isassigned(pivots, node)
-                localbases = H2BasisBlock{I,K}[]
-                for (dir, piv) in pivots[node]
+
+        if isassigned(pivots, node)
+            localbases = H2BasisBlock{I,K}[]
+            for (dir, piv) in pivots[node]
+                if isleaf(dtree, dir)
                     rows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, node)) for
                         idx in piv[1]
@@ -31,6 +32,8 @@ function build_testbases!(
                         H2BasisBlock(U, H2Trees.values(tree, node), piv[2], Int[]),
                     )
                 end
+            end
+            if localbases != []
                 lock(lk) do
                     push!(basesidcs, node)
                     push!(bases, Dict(keys(pivots[node]) .=> localbases))
@@ -43,8 +46,6 @@ function build_testbases!(
 
     parentclusters = collect(H2Trees.LevelIterator(tree, level - 1))
     for node in parentclusters
-        #ntasks = ntasks
-
         if !iszero(H2Trees.firstchild(tree, node)) && isassigned(pivots, node)#] != ([], [])
             transferdirs = Int[]
             dirtransfers = H2BasisBlock{I,K}[]
@@ -53,20 +54,11 @@ function build_testbases!(
                 children = collect(H2Trees.ChildIterator(tree, node))
                 push!(transferdirs, dir)
                 for child in children
-                    if !haskey(pivots[child], parent(dtree, dir))
-                        println(
-                            "child: ",
-                            child,
-                            ", dir: ",
-                            dir,
-                            ", options: ",
-                            keys(pivots[child]),
-                        )
-                    end
                     crows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, node)) for
                         idx in pivots[child][parent(dtree, dir)][1]
                     ]
+                    @assert length(crows) == length(pivots[child][parent(dtree, dir)][1])
                     rows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, node)) for
                         idx in piv[1]
@@ -164,10 +156,10 @@ function build_trialbases!(
 
     for node in trialclusters
         #ntasks = ntasks
-        if isleaf(dtree, level)
-            if isassigned(pivots, node)
-                localbases = H2BasisBlock{I,K}[]
-                for (dir, piv) in pivots[node]
+        if isassigned(pivots, node)
+            localbases = H2BasisBlock{I,K}[]
+            for (dir, piv) in pivots[node]
+                if isleaf(dtree, level)
                     cols = [
                         findfirst(x -> x == idx, H2Trees.values(tree, node)) for
                         idx in piv[2]
@@ -179,6 +171,8 @@ function build_trialbases!(
                         H2BasisBlock(V, piv[1], H2Trees.values(tree, node), Int[]),
                     )
                 end
+            end
+            if localbases != []
                 lock(lk) do
                     push!(basesidcs, node)
                     push!(bases, Dict(keys(pivots[node]) .=> localbases))

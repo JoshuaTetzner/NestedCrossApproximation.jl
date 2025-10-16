@@ -21,17 +21,19 @@ function testfars(
                     push!(inherdirs, parent(dtree, dir))
                 end
             end
-            localdirs = unique(vcat(dirs[level][faridcs], inherdirs))
+            tdirs = [dir for dir in dirs[level][faridcs]]
+            localdirs = unique(vcat(tdirs, inherdirs))
             localfars = [Int[] for _ in 1:length(localdirs)]
-            faridcs == [] && continue
             for faridx in faridcs
                 push!(
                     localfars[findfirst(x -> x == dirs[level][faridx], localdirs)],
                     fars[level][faridx][2],
                 )
             end
-            push!(levelcluster, t)
-            push!(leveltestdirfars, Dict(localdirs .=> localfars))
+            if localdirs != []
+                push!(levelcluster, t)
+                push!(leveltestdirfars, Dict(localdirs .=> localfars))
+            end
         end
         testdirfars[level] = Dict(levelcluster .=> leveltestdirfars)
     end
@@ -62,11 +64,11 @@ function (compressor::TopDownCompressor)(
         d != Dict() && (nl += 1)
     end
 
-    compressor.lrf.convergence.estimator.tol =
-        compressor.lrf.convergence.estimator.tol / max(1, nl)
-    println("NewTol: ", compressor.lrf.convergence.estimator.tol)
+    #compressor.lrf.convergence.estimator.tol =
+    #    compressor.lrf.convergence.estimator.tol / max(1, nl)
+    #println("NewTol: ", compressor.lrf.convergence.estimator.tol)
 
-    for (levelidx, level) in enumerate(dirfars)#in H2Trees.levels(H2Trees.testtree(tree))
+    for (levelidx, level) in enumerate(dirfars)
         transferidcs = Int[]
         transfer = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,T}}[]
         #testclusters = collect(H2Trees.LevelIterator(H2Trees.testtree(tree), level))
@@ -75,22 +77,22 @@ function (compressor::TopDownCompressor)(
             localblocks = Matrix{T}[]
             localdirs = Int[]
             localpivots = Tuple{Vector{Int},Vector{Int}}[]
-            #if haskey(dirfars[level], t)
-            for (dir, Ft) in level[t]#dirfars[level][t]
+            for (dir, Ft) in level[t]
                 Ftvalues = Int[]
                 for s in Ft
                     append!(Ftvalues, H2Trees.values(H2Trees.trialtree(tree), s))
                 end
                 if isassigned(pivots, H2Trees.parent(tree.testcluster, t))
                     for child in children(dtree, dir)
-                        haskey(pivots[H2Trees.parent(tree.testcluster, t)], child) &&
+                        if haskey(pivots[H2Trees.parent(tree.testcluster, t)], child)
                             append!(
                                 Ftvalues,
                                 pivots[H2Trees.parent(H2Trees.testtree(tree), t)][child][2],
                             )
+                        end
                     end
                 end
-                if Ft != []
+                if Ftvalues != []
                     pivs = compress(
                         compressor,
                         farmatrix,
@@ -107,6 +109,7 @@ function (compressor::TopDownCompressor)(
                             H2Trees.values(H2Trees.testtree(tree), t), 1:length(pivs[1])
                         ],
                     )
+
                     push!(localpivots, pivs)
                     push!(localdirs, dir)
                 end
@@ -158,17 +161,20 @@ function trialfars(
                     push!(inherdirs, parent(dtree, dir))
                 end
             end
-            localdirs = unique(vcat(dirs[level][faridcs], inherdirs))
+            sdirs = [dir for dir in dirs[level][faridcs]]
+            localdirs = unique(vcat(sdirs, inherdirs))
             localfars = [Int[] for _ in 1:length(localdirs)]
-            faridcs == [] && continue
+            #faridcs == [] && continue
             for faridx in faridcs
                 push!(
                     localfars[findfirst(x -> x == dirs[level][faridx], localdirs)],
                     fars[level][faridx][1],
                 )
             end
-            push!(levelcluster, s)
-            push!(leveltrialdirfars, Dict(localdirs .=> localfars))
+            if localdirs != []
+                push!(levelcluster, s)
+                push!(leveltrialdirfars, Dict(localdirs .=> localfars))
+            end
         end
         trialdirfars[level] = Dict(levelcluster .=> leveltrialdirfars)
     end
@@ -200,21 +206,19 @@ function (compressor::TopDownCompressor)(
         d != Dict() && (nl += 1)
     end
 
-    compressor.lrf.convergence.estimator.tol =
-        compressor.lrf.convergence.estimator.tol / max(1, nl)
-    println("NewTol: ", compressor.lrf.convergence.estimator.tol)
+    #compressor.lrf.convergence.estimator.tol =
+    #    compressor.lrf.convergence.estimator.tol / max(1, nl)
+    #println("NewTol: ", compressor.lrf.convergence.estimator.tol)
 
-    for (levelidx, level) in enumerate(dirfars)#in H2Trees.levels(H2Trees.testtree(tree))
+    for (levelidx, level) in enumerate(dirfars)
         transferidcs = Int[]
         transfer = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,T}}[]
-        #testclusters = collect(H2Trees.LevelIterator(H2Trees.testtree(tree), level))
         @tasks for s in collect(keys(level))
             @set ntasks = ntasks
             localblocks = Matrix{T}[]
             localdirs = Int[]
             localpivots = Tuple{Vector{Int},Vector{Int}}[]
-            #if haskey(dirfars[level], t)
-            for (dir, Fs) in level[s]#dirfars[level][t]
+            for (dir, Fs) in level[s]
                 Fsvalues = Int[]
                 for t in Fs
                     append!(Fsvalues, H2Trees.values(H2Trees.testtree(tree), t))
@@ -228,7 +232,7 @@ function (compressor::TopDownCompressor)(
                             )
                     end
                 end
-                if Fs != []
+                if Fsvalues != []
                     pivs = compress(
                         compressor,
                         farmatrix,

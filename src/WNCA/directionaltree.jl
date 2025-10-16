@@ -31,8 +31,8 @@ mutable struct 𝒟tree{F}
 end
 
 function 𝒟tree(hs::F, k::F) where {F}
-    maxlevel = floor(log2(k * hs * 2)) + 1
-    maxlevel == 0 && error()
+    maxlevel = max(0, floor(log2(k * hs * 2)) + 1)
+    maxlevel == 0 && return 𝒟tree(0, 𝒟node{F}[])
     nodes = [
         𝒟node(1, 1, SVector(0, 0, 1.0), 0, Int[]),
         𝒟node(1, 1, SVector(0, 0, -1.0), 0, Int[]),

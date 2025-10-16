@@ -26,6 +26,7 @@ function blockcompressor(
                 rowidcs=values[tidx],
                 colidcs=s,
             )
+            npivots == maxrank && println("RankCap")
             blk = MatrixBlock{Int,K,LowRankMatrix{K}}(
                 LowRankMatrix(
                     localcolbuffer[1:length(values[tidx]), 1:npivots],

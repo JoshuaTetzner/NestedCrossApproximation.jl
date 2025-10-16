@@ -35,7 +35,7 @@ struct DH2MatrixBlock{I,K}
     Z::Matrix{K}
     row_basis::I
     col_basis::I
-    dir::I
+    dir::Int
 end
 
 function assemble_couplingmatrices(
