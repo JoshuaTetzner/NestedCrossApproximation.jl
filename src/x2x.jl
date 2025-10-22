@@ -216,7 +216,7 @@ function build_trialbases!(
         end
     end
 end
-
+#=
 # zhaocompressor
 function build_testbases!(
     leveledtranslations::Vector{Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,K}}},
@@ -338,3 +338,4 @@ function build_trialbases!(
         push!(leveledtranslations, Dict(translationidcs .=> translations))
     end
 end
+=#

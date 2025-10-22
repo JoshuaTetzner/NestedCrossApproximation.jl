@@ -32,30 +32,10 @@ end
 function init(
     iaca::iACA{RPT,CPT,CCT},
     M::LRF.LazyMatrix{Int,K};
-    ref=sum(iaca.rowpivoting.refpos[M.σ]) / length(M.σ),
-) where {K,RPT<:IACAPivotingMFIE,CPT<:LRF.PivStrat,CCT<:LRF.ConvCrit}
-    return iACA(
-        iaca.rowpivoting(M.τ, M.σ; ref=ref), iaca.columnpivoting(M.σ), iaca.convergence(M)
-    )
-end
-
-function init(
-    iaca::iACA{RPT,CPT,CCT},
-    M::LRF.LazyMatrix{Int,K};
     ref=sum(iaca.columnpivoting.pos[M.τ]) / length(M.τ),
 ) where {K,RPT<:LRF.PivStrat,CPT<:GeoPivStrat,CCT<:LRF.ConvCrit}
     return iACA(
         iaca.rowpivoting(M.τ), iaca.columnpivoting(M.σ; ref=ref), iaca.convergence(M)
-    )
-end
-
-function init(
-    iaca::iACA{RPT,CPT,CCT},
-    M::LRF.LazyMatrix{Int,K};
-    ref=sum(iaca.columnpivoting.refpos[M.τ]) / length(M.τ),
-) where {K,RPT<:LRF.PivStrat,CPT<:IACAPivotingMFIE,CCT<:LRF.ConvCrit}
-    return iACA(
-        iaca.rowpivoting(M.τ), iaca.columnpivoting(M.σ, M.τ; ref=ref), iaca.convergence(M)
     )
 end
 
@@ -100,7 +80,6 @@ function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
             M.σ[1:maxcolumn],
         )
         if isapprox(norm(rowbuffer[npivot, 1:maxcolumn]), 0.0)
-            #println("we should not be here")
             conv = true
             npivot -= 1
         else

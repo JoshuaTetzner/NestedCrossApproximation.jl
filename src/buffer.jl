@@ -12,19 +12,6 @@ function buffer(
     return (maxrc, maxrank)
 end
 
-# Bebendorf NCA
-function channel(
-    comp::TopDownCompressor{CT,RT}, maxrc::Int; maxrank=40
-) where {CT<:FastBEAST.LRF.ACA,RT<:Representor}
-    return (maxrank, comp.representor.N)
-end
-
-function buffer(
-    ::TopDownCompressor{CT,RT}, maxrc::Int; maxrank=40
-) where {CT<:FastBEAST.LRF.ACA,RT<:Representor}
-    return (maxrc, maxrank)
-end
-
 # iACA
 function channel(
     ::Union{TopDownCompressor{CT,Nothing},ButtomUpCompressor{CT,Nothing}},
@@ -41,73 +28,7 @@ function buffer(
 ) where {CT<:iACA}
     return (maxrc, maxrank)
 end
-#=
-function testbuffer(
-    ::TopDownCompressor{CT,Nothing},
-    farmatrix::AbstractKernelMatrix{T};
-    maxrank=50,
-    ntasks=Threads.nthreads(),
-) where {T,CT<:AdaptiveCrossApproximation.iACA}
-    return allocate_buffer(
-        T, (maxrank, maxrank), (size(farmatrix, 1), maxrank); tasks=tasks
-    )
-end
 
-function trialbuffer(
-    ::TopDownCompressor{CT,Nothing},
-    farmatrix::AbstractKernelMatrix{T};
-    maxrank=50,
-    ntasks=Threads.nthreads(),
-) where {T,CT<:AdaptiveCrossApproximation.iACA}
-    return reverse(
-        allocate_buffer(T, (maxrank, maxrank), (maxrank, size(farmatrix, 2)); tasks=tasks)
-    )
-end
-
-function testbuffer(
-    ::TopDownCompressor{CT,Nothing},
-    farmatrix::AbstractKernelMatrix{T};
-    maxrank=50,
-    ntasks=Threads.nthreads(),
-) where {T,CT<:AdaptiveCrossApproximation.ACA}
-    return allocate_buffer(
-        T, (maxrank, size(farmatrix, 2)), (size(farmatrix, 1), maxrank); ntasks=ntasks
-    )
-end
-
-function testbuffer(
-    ::TopDownCompressor{CT,Nothing},
-    farmatrix::AbstractKernelMatrix{T};
-    maxrank=50,
-    ntasks=Threads.nthreads(),
-) where {T,CT<:AdaptiveCrossApproximation.iACA}
-    return allocate_buffer(
-        T, (maxrank, maxrank), (size(farmatrix, 1), maxrank); ntasks=ntasks
-    )
-end
-
-function trialbuffer(
-    ::TopDownCompressor{CT,Nothing},
-    farmatrix::AbstractKernelMatrix{T};
-    maxrank=50,
-    ntasks=Threads.nthreads(),
-) where {T,CT<:AdaptiveCrossApproximation.ACA}
-    return allocate_buffer(
-        T, (size(farmatrix, 1), maxrank), (maxrank, size(farmatrix, 2)); ntasks=ntasks
-    )
-end
-
-function trialbuffer(
-    ::TopDownCompressor{CT,Nothing},
-    farmatrix::AbstractKernelMatrix{T};
-    maxrank=50,
-    ntasks=Threads.nthreads(),
-) where {T,CT<:AdaptiveCrossApproximation.iACA}
-    return allocate_buffer(
-        T, (maxrank, maxrank), (maxrank, size(farmatrix, 2)); ntasks=ntasks
-    )
-end
-=#
 function trialbuffer(
     ::Type{K},
     rc_channel::Tuple{Int,Int},
