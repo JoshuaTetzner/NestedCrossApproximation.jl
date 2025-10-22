@@ -1,33 +1,81 @@
 module NestedCrossApproximation
+#=
+using AdaptiveCrossApproximation
+using BlockSparseMatrices
+using LinearMaps
+using LinearAlgebra
+using H2Trees
+using OhMyThreads
+using StaticArrays
 
-using FLoops
+include("abstractkernelmatrix/abstractkernelmatrix.jl")
+include("abstractkernelmatrix/beastkernelmatrix.jl")
+
+include("NCA/AbstractNCA.jl")
+
+include("matrixblocks.jl")
+include("coupling.jl")
+include("bases.jl")
+include("compressor.jl")
+include("topdowncompressor2.jl")
+include("buffer.jl")
+include("NCA/PetrovGalerkinNCA.jl")
+include("MV/PetrovGalerkinNCA.jl")
+include("WNCA/directionaltree.jl")
+include("WNCA/farinteractions.jl")
+include("WNCA/PetrovGalerkinWNCA.jl")
+=#
 using BEAST
+using Base.Threads
 using ClusterTrees
 using FastBEAST
+import FastBEAST.NminClusterTrees.NminTree
 using LinearAlgebra
 using LinearMaps
 using StaticArrays
-using SparseArrays
+using Statistics
+using ThreadsX
+using AdaptiveCrossApproximation
+using BlockSparseMatrices
+
+include("incompletefactorization/convergence.jl")
+include("incompletefactorization/pivoting.jl")
+include("incompletefactorization/incompleteaca.jl")
+
+export iACA
+export IACAPivoting
 
 include("NCA/AbstractNCA.jl")
-include("pca/pca_utils.jl")
-include("pca/pca.jl")
-include("pca/pivoting.jl")
-include("pca/compressor.jl")
-include("compressor.jl")
-include("pivotselection.jl")
+include("representor.jl")
+include("lowrankfactorization.jl")
+include("buffer.jl")
+include("x2x.jl")
+include("topdowncompressor.jl")
+include("buttomupcompressor.jl")
+include("zhaocompressor.jl")
 include("i2o.jl")
-include("moments.jl")
+
 include("NCA/GalerkinNCA.jl")
-include("mv/GalerkinNCA.jl")
 include("NCA/PetrovGalerkinNCA.jl")
-include("mv/PetrovGalerkinNCA.jl")
+include("MV/GalerkinNCA.jl")
+include("MV/PetrovGalerkinNCA.jl")
+include("utils.jl")
 
+#include("nearinteractions/abstractnearinteraction.jl")
+#include("nearinteractions/blocknearinteractions.jl")
 
-export row_pivot_selection
-export column_pivot_selection
-export build_test_bases
-export build_test_bases
-export assemble_couplingmatrices
+include("matrixblocks.jl")
 
-end 
+include("WBNCA/abstractkernel.jl")
+include("WBNCA/compressor.jl")
+include("WBNCA/tree.jl")
+include("WBNCA/dtree.jl")
+include("WBNCA/directionalcompressor.jl")
+include("WBNCA/coupling.jl")
+include("WBNCA/WBNCA.jl")
+
+export PetrovGalerkinNCA
+export GalerkinNCA
+export ChebyshevRep
+
+end
