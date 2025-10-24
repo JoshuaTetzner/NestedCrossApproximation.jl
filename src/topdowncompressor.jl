@@ -123,7 +123,7 @@ function compress_trialtree(
             admlevel += 1
         end
     end
-    println("Tolerance: ", tol / admlevel)
+
     for (levelidx, level) in enumerate(clusterlink)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]

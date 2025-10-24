@@ -12,20 +12,20 @@ function buffer(
     return (maxrc, maxrank)
 end
 
-# iACA
+# IACA
 function channel(
-    ::Union{TopDownCompressor{CT,Nothing},ButtomUpCompressor{CT,Nothing}},
+    ::Union{TopDownCompressor{CT,Nothing},BottomUpCompressor{CT,Nothing}},
     maxrc::Int;
     maxrank=40,
-) where {CT<:iACA}
+) where {CT<:IACA}
     return (maxrank, maxrank)
 end
 
 function buffer(
-    ::Union{TopDownCompressor{CT,Nothing},ButtomUpCompressor{CT,Nothing}},
+    ::Union{TopDownCompressor{CT,Nothing},BottomUpCompressor{CT,Nothing}},
     maxrc::Int;
     maxrank=40,
-) where {CT<:iACA}
+) where {CT<:IACA}
     return (maxrc, maxrank)
 end
 
@@ -54,7 +54,7 @@ function allocate_buffer(
     return c, (zeros(K, matrix), zeros(K, matrix))
 end
 
-function allocate_buttomupbuffer(
+function allocate_bottomupbuffer(
     ::Type{K},
     rc_channel::Tuple{Int,Int},
     rc_buffer::Tuple{Int,Int};

@@ -11,17 +11,17 @@ function TopDownCompressor(; factorization=LRF.ACA(), representor=nothing)
     return TopDownCompressor(factorization, representor)
 end
 
-struct ButtomUpCompressor{LowRankFactorizationType,RepresentorType}
+struct BottomUpCompressor{LowRankFactorizationType,RepresentorType}
     lrf::LowRankFactorizationType
     representor::RepresentorType
 
-    function ButtomUpCompressor(lrf, representor)
+    function BottomUpCompressor(lrf, representor)
         return new{typeof(lrf),typeof(representor)}(lrf, representor)
     end
 end
 
-function ButtomUpCompressor(; factorization=LRF.ACA(), representor=nothing)
-    return ButtomUpCompressor(factorization, representor)
+function BottomUpCompressor(; factorization=LRF.ACA(), representor=nothing)
+    return BottomUpCompressor(factorization, representor)
 end
 
 #Standard NCA
@@ -92,7 +92,7 @@ function (compressor::Union{TopDownCompressor{CompressorType,Nothing}})(
     return (testidcs[rpivots], trialidcs[cpivots])
 end
 
-#iACA
+#IACA
 function (compressor::TopDownCompressor{CompressorType,Nothing})(
     cbuffer::Matrix{K},
     rbuffer::Channel{Matrix{K}},
@@ -101,7 +101,7 @@ function (compressor::TopDownCompressor{CompressorType,Nothing})(
     trialidcs::Vector{Int};
     tol=1e-4,
     maxrank=40,
-) where {K,CompressorType<:iACA}
+) where {K,CompressorType<:IACA}
     lm = FastBEAST.LRF.LazyMatrix(assembler, testidcs, trialidcs, K)
     lrf = init(compressor.lrf, lm)
     localrbuffer = take!(rbuffer)
@@ -126,7 +126,7 @@ function (compressor::TopDownCompressor{CompressorType,Nothing})(
     return (testidcs[rpivots], trialidcs[cpivots])
 end
 
-function (compressor::ButtomUpCompressor{CompressorType,Nothing})(
+function (compressor::BottomUpCompressor{CompressorType,Nothing})(
     tree::NminTree{D},
     cbuffer::Matrix{K},
     rbuffer::Channel{Matrix{K}},
@@ -136,7 +136,7 @@ function (compressor::ButtomUpCompressor{CompressorType,Nothing})(
     pivots::Vector{Tuple{Vector{Int},Vector{Int}}};
     tol=1e-4,
     maxrank=40,
-) where {D,K,CompressorType<:iACA}
+) where {D,K,CompressorType<:IACA}
     localrbuffer = take!(rbuffer)
     if ClusterTrees.haschildren(tree, node)
         rowidcs = Int[]
@@ -174,7 +174,7 @@ function (compressor::TopDownCompressor{CompressorType,Nothing})(
     trialidcs::Vector{Int};
     tol=1e-4,
     maxrank=40,
-) where {K,CompressorType<:iACA}
+) where {K,CompressorType<:IACA}
     lm = FastBEAST.LRF.LazyMatrix(assembler, testidcs, trialidcs, K)
     lrf = init(compressor.lrf, lm)
     rbuffer[1:maxrank, trialidcs] .= 0
@@ -196,7 +196,7 @@ function (compressor::TopDownCompressor{CompressorType,Nothing})(
     return (testidcs[rpivots], trialidcs[cpivots])
 end
 
-function (compressor::ButtomUpCompressor{CompressorType,Nothing})(
+function (compressor::BottomUpCompressor{CompressorType,Nothing})(
     tree::NminTree{D},
     cbuffer::Channel{Matrix{K}},
     rbuffer::Matrix{K},
@@ -206,7 +206,7 @@ function (compressor::ButtomUpCompressor{CompressorType,Nothing})(
     pivots::Vector{Tuple{Vector{Int},Vector{Int}}};
     tol=1e-4,
     maxrank=40,
-) where {D,K,CompressorType<:iACA}
+) where {D,K,CompressorType<:IACA}
     localcbuffer = take!(cbuffer)
     if ClusterTrees.haschildren(tree, node)
         colidcs = Int[]

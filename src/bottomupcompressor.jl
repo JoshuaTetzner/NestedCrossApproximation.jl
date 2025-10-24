@@ -68,11 +68,11 @@ function compress_testtree(
     trial_tree::NminTree{D},
     farassembler::Function,
     fars::Vector{Vector{Tuple{Int,Int}}},
-    compressor::ButtomUpCompressor,
+    compressor::BottomUpCompressor,
     ::Type{K};
     maxrank=40,
     tol=1e-4,
-    buffer=allocate_buttomupbuffer(
+    buffer=allocate_bottomupbuffer(
         K,
         channel(compressor, trial_tree.num_elements; maxrank=maxrank),
         buffer(compressor, test_tree.num_elements; maxrank=maxrank);
@@ -95,7 +95,6 @@ function compress_testtree(
             admlevel += 1
         end
     end
-    println("Tolerance: ", tol / admlevel)
     for level in reverse(clusterlink)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
@@ -136,11 +135,11 @@ function compress_trialtree(
     trial_tree::NminTree{D},
     farassembler::Function,
     fars::Vector{Vector{Tuple{Int,Int}}},
-    compressor::ButtomUpCompressor,
+    compressor::BottomUpCompressor,
     ::Type{K};
     maxrank=40,
     tol=1e-4,
-    buffer=allocate_buttomupbuffer(
+    buffer=allocate_bottomupbuffer(
         K,
         reverse(channel(compressor, test_tree.num_elements; maxrank=maxrank)),
         reverse(buffer(compressor, trial_tree.num_elements; maxrank=maxrank));
@@ -163,7 +162,6 @@ function compress_trialtree(
             admlevel += 1
         end
     end
-    println("Tolerance: ", tol / admlevel)
     for level in reverse(clusterlink)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]

@@ -17,15 +17,17 @@ include("incompletefactorization/convergence.jl")
 include("incompletefactorization/pivoting.jl")
 include("incompletefactorization/incompleteaca.jl")
 
-export iACA
-export IACAPivoting
+export IACA
+export MimicryPivoting
+export TreeMimicryPivoting
+export IncompleteNormEstimator
 
 include("NCA/AbstractNCA.jl")
 include("lowrankfactorization.jl")
 include("buffer.jl")
 include("x2x.jl")
 include("topdowncompressor.jl")
-include("buttomupcompressor.jl")
+include("bottomupcompressor.jl")
 include("i2o.jl")
 
 include("NCA/GalerkinNCA.jl")
@@ -33,11 +35,11 @@ include("NCA/PetrovGalerkinNCA.jl")
 include("MV/GalerkinNCA.jl")
 include("MV/PetrovGalerkinNCA.jl")
 include("utils.jl")
-
 include("matrixblocks.jl")
 
 export PetrovGalerkinNCA
 export GalerkinNCA
 export ChebyshevRep
-
+export TopDownCompressor
+export BottomUpCompressor
 end

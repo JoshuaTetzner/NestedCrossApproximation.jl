@@ -1,45 +1,45 @@
-struct iACA{RowPivType,ColPivType,ConvCritType}
+struct IACA{RowPivType,ColPivType,ConvCritType}
     rowpivoting::RowPivType
     columnpivoting::ColPivType
     convergence::ConvCritType
 
-    function iACA(rowpivoting, columnpivoting, convergence)
+    function IACA(rowpivoting, columnpivoting, convergence)
         return new{typeof(rowpivoting),typeof(columnpivoting),typeof(convergence)}(
             rowpivoting, columnpivoting, convergence
         )
     end
 end
 
-function iACA(
+function IACA(
     pos::Vector{SVector{D,F}};
     rowpivoting=LRF.MaximumValue(),
-    columnpivoting=IACAPivoting(pos),
+    columnpivoting=MimicryPivoting(pos),
     convergence=IncompleteNormEstimator(F[], F(0.0)),
 ) where {D,F<:Real}
-    return iACA(rowpivoting, columnpivoting, convergence)
+    return IACA(rowpivoting, columnpivoting, convergence)
 end
 
 function init(
-    iaca::iACA{RPT,CPT,CCT},
+    iaca::IACA{RPT,CPT,CCT},
     M::LRF.LazyMatrix{Int,K};
     ref=sum(iaca.rowpivoting.pos[M.σ]) / length(M.σ),
 ) where {K,RPT<:GeoPivStrat,CPT<:LRF.PivStrat,CCT<:LRF.ConvCrit}
-    return iACA(
+    return IACA(
         iaca.rowpivoting(M.τ; ref=ref), iaca.columnpivoting(M.σ), iaca.convergence(M)
     )
 end
 
 function init(
-    iaca::iACA{RPT,CPT,CCT},
+    iaca::IACA{RPT,CPT,CCT},
     M::LRF.LazyMatrix{Int,K};
     ref=sum(iaca.columnpivoting.pos[M.τ]) / length(M.τ),
 ) where {K,RPT<:LRF.PivStrat,CPT<:GeoPivStrat,CCT<:LRF.ConvCrit}
-    return iACA(
+    return IACA(
         iaca.rowpivoting(M.τ), iaca.columnpivoting(M.σ; ref=ref), iaca.convergence(M)
     )
 end
 
-function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
+function (iaca::IACA{RowPivType,ColPivType,ConvCritType})(
     M::LRF.LazyMatrix{Int,K},
     rowbuffer::AbstractMatrix{K},
     colbuffer::AbstractMatrix{K},
@@ -108,7 +108,7 @@ function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
     return rows[1:npivot], cols[1:npivot]
 end
 
-function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
+function (iaca::IACA{RowPivType,ColPivType,ConvCritType})(
     M::LRF.LazyMatrix{Int,K},
     rowbuffer::AbstractMatrix{K},
     colbuffer::AbstractMatrix{K},
@@ -182,7 +182,7 @@ end
 
 # ButtomUpCompressor
 
-function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
+function (iaca::IACA{RowPivType,ColPivType,ConvCritType})(
     farassembler::Function,
     rowbuffer::AbstractMatrix{K},
     colbuffer::AbstractMatrix{K},
@@ -193,7 +193,11 @@ function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
     fars::Vector{Int};
     convcrit=IncompleteNormEstimator(F[], F(0.0)),
 ) where {
-    F<:Real,K,RowPivType<:IACAPivoting2,ColPivType<:LRF.PivStrat,ConvCritType<:LRF.ConvCrit
+    F<:Real,
+    K,
+    RowPivType<:TreeMimicryPivoting,
+    ColPivType<:LRF.PivStrat,
+    ConvCritType<:LRF.ConvCrit,
 }
     colpivoting = LRF.MaximumValue(zeros(Bool, length(colidcs)))
     maxcolumn = length(colidcs)
@@ -241,7 +245,7 @@ function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
     return rows[1:npivot], colidcs[cols[1:npivot]]
 end
 
-function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
+function (iaca::IACA{RowPivType,ColPivType,ConvCritType})(
     farassembler::Function,
     rowbuffer::AbstractMatrix{K},
     colbuffer::AbstractMatrix{K},
@@ -253,7 +257,11 @@ function (iaca::iACA{RowPivType,ColPivType,ConvCritType})(
     convcrit=IncompleteNormEstimator(F[], F(0.0)),
     verbose=false,
 ) where {
-    F<:Real,K,RowPivType<:LRF.PivStrat,ColPivType<:IACAPivoting2,ConvCritType<:LRF.ConvCrit
+    F<:Real,
+    K,
+    RowPivType<:LRF.PivStrat,
+    ColPivType<:TreeMimicryPivoting,
+    ConvCritType<:LRF.ConvCrit,
 }
     rowpivoting = LRF.MaximumValue(zeros(Bool, length(rowidcs)))
     maxrow = length(rowidcs)

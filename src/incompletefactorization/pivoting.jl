@@ -1,41 +1,41 @@
 abstract type GeoPivStrat <: LRF.AbstractFillDistance end
 
-mutable struct IACAPivoting{D,F} <: GeoPivStrat
+mutable struct MimicryPivoting{D,F} <: GeoPivStrat
     pos::Vector{SVector{D,F}}
     h::Vector{F}
     leja::Vector{F}
     w::Vector{F}
 end
 
-function IACAPivoting(pos::Vector{SVector{D,F}}) where {D,F<:Real}
-    return IACAPivoting(pos, F[], F[], F[])
+function MimicryPivoting(pos::Vector{SVector{D,F}}) where {D,F<:Real}
+    return MimicryPivoting(pos, F[], F[], F[])
 end
 
-function (pivstrat::IACAPivoting{D,F})(
+function (pivstrat::MimicryPivoting{D,F})(
     rcp::Vector{Int}; ref=SVector(F(0.0), F(0.0), F(0.0))
 ) where {D,F}
     h = zeros(F, length(rcp))
     w = 1 ./ norm.(pivstrat.pos[rcp] .- Scalar(ref))
     leja = ones(F, length(rcp))
 
-    return IACAPivoting(pivstrat.pos[rcp], h, leja, w)
+    return MimicryPivoting(pivstrat.pos[rcp], h, leja, w)
 end
 
-function (pivstrat::IACAPivoting{D,F})() where {D,F<:Real}
+function (pivstrat::MimicryPivoting{D,F})() where {D,F<:Real}
     nextidx = argmax(pivstrat.w)
     @views pivstrat.h .= norm.(pivstrat.pos .- Scalar(pivstrat.pos[nextidx]))
     pivstrat.leja .*= norm.(pivstrat.pos .- Scalar(pivstrat.pos[nextidx]))
     return nextidx
 end
 
-function (pivstrat::IACAPivoting{D,F})(npivot::Int) where {D,F<:Real}
+function (pivstrat::MimicryPivoting{D,F})(npivot::Int) where {D,F<:Real}
     nextidx = argmax(pivstrat.leja .^ (2 / (npivot - 1)) .* pivstrat.h .* pivstrat.w .^ 4)
     LRF.filldistance!(pivstrat, nextidx)
     pivstrat.leja .*= norm.(pivstrat.pos .- Scalar(pivstrat.pos[nextidx]))
     return nextidx
 end
 
-struct IACAPivoting2{D,T,F} <: GeoPivStrat
+struct TreeMimicryPivoting{D,T,F} <: GeoPivStrat
     tree::NminTree{T}
     pos::Vector{SVector{D,F}}
 end
@@ -66,7 +66,10 @@ function findtarget(tree::NminTree{T}, node::Int, ref::SVector{3,F}) where {F,T}
 end
 
 function findtarget(
-    pivstrat::IACAPivoting2{D,T,F}, node::Int, ref::SVector{D,F}, usedidcs::Vector{Int}
+    pivstrat::TreeMimicryPivoting{D,T,F},
+    node::Int,
+    ref::SVector{D,F},
+    usedidcs::Vector{Int},
 ) where {D,T,F}
     childnodes = zeros(Int, pivstrat.tree.nodes[node].node.num_children)
     w = zeros(Float64, pivstrat.tree.nodes[node].node.num_children)
@@ -115,7 +118,7 @@ function geopivoting(
     return idcs[argmax(leja .^ (2 / length(usedidcs)) .* h .* w .^ 4)]
 end
 
-function (pivstrat::IACAPivoting2{D,T,F})(
+function (pivstrat::TreeMimicryPivoting{D,T,F})(
     ref::SVector{3,F}, fars::Vector{Int}, cts::Vector{SVector{3,F}}
 ) where {D,T,F}
     w = 1 ./ norm.(cts .- Scalar(ref))
@@ -139,7 +142,7 @@ function (pivstrat::IACAPivoting2{D,T,F})(
     return firstidx, HoldMyData(h, leja, w)
 end
 
-function (pivstrat::IACAPivoting2{D,T,F})(
+function (pivstrat::TreeMimicryPivoting{D,T,F})(
     ref::SVector{3,F},
     fars::Vector{Int},
     cts::Vector{SVector{3,F}},
