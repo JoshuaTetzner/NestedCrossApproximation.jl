@@ -4,10 +4,8 @@ authors = ["Joshua <joshua.tetzner@uni-rostock.de>"]
 version = "0.1.0"
 
 [deps]
-AdaptiveCrossApproximation = "ef3ffb92-1c7b-43b8-a0d7-a7e2ce4fd1e5"
 BEAST = "bb4162c7-ba94-5a20-af32-d8ec4428bdd1"
 BlockSparseMatrices = "1ef78180-cc57-4e70-b6ec-c3e471307147"
-ChebyshevApprox = "17a596ad-87cd-578c-9b6d-01108c31dc04"
 ClusterTrees = "5100927d-02aa-593a-b4f9-7235df19f0db"
 CompScienceMeshes = "3e66a162-7b8c-5da0-b8f8-124ecd2c3ae1"
 FastBEAST = "3fccbda2-992b-41a0-8fae-2b833e1e73d8"
