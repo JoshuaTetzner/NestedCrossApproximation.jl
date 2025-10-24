@@ -10,7 +10,6 @@ using LinearMaps
 using StaticArrays
 using Statistics
 using ThreadsX
-using AdaptiveCrossApproximation
 using BlockSparseMatrices
 
 include("incompletefactorization/convergence.jl")
@@ -39,7 +38,6 @@ include("matrixblocks.jl")
 
 export PetrovGalerkinNCA
 export GalerkinNCA
-export ChebyshevRep
 export TopDownCompressor
 export BottomUpCompressor
 end
