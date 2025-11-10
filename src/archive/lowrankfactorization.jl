@@ -7,19 +7,6 @@ struct TopDownCompressor{LowRankFactorizationType,RepresentorType}
     end
 end
 
-function TopDownCompressor(; factorization=LRF.ACA(), representor=nothing)
-    return TopDownCompressor(factorization, representor)
-end
-
-struct TopDownCompressor2{LowRankFactorizationType,RepresentorType}
-    lrf::LowRankFactorizationType
-    representor::RepresentorType
-
-    function TopDownCompressor(lrf, representor)
-        return new{typeof(lrf),typeof(representor)}(lrf, representor)
-    end
-end
-
 function TopDownCompressor(;
     factorization=AdaptiveCrossApproximation.ACA(), representor=nothing
 )
@@ -35,20 +22,15 @@ struct ButtomUpCompressor{LowRankFactorizationType,RepresentorType}
     end
 end
 
-function ButtomUpCompressor(; factorization=LRF.ACA(), representor=nothing)
+function ButtomUpCompressor(;
+    factorization=AdaptiveCrossApproximation.ACA(), representor=nothing
+)
     return ButtomUpCompressor(factorization, representor)
-end
-
-struct ZhaoCompressor{LowRankFactorizationType}
-    lrf::LowRankFactorizationType
-end
-
-function ZhaoCompressor(; factorization=LRF.ACA())
-    return ZhaoCompressor(factorization)
 end
 
 #compression separate for test and trial tree...
 #Standard NCA
+
 function (
     compressor::Union{
         TopDownCompressor{CompressorType,Nothing},ZhaoCompressor{CompressorType}

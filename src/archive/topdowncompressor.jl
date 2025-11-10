@@ -1,66 +1,23 @@
-using FastBEAST
-import FastBEAST.NminClusterTrees.NminTree
-
-function testfarfield(tree, levelfars::Vector{Vector{Tuple{Int,Int}}})
-    sortedfars = [Int[] for i in 1:length(tree.nodes)]
-    clusterlink = FastBEAST.cluster_link(tree)
+#=function testfars(nnodes::Int, levelfars::Vector{Vector{Tuple{Int,Int}}})
+    sortedfars = [Int[] for i in 1:nnodes]
     for fars in levelfars
         for far in fars
             push!(sortedfars[far[1]], far[2])
         end
     end
 
-    for level in clusterlink[2:end]
-        for cluster in level
-            append!(sortedfars[cluster], sortedfars[ClusterTrees.parent(tree, cluster)])
-        end
-    end
-
     return sortedfars
 end
 
-function trialfarfield(tree, levelfars::Vector{Vector{Tuple{Int,Int}}})
-    sortedfars = [Int[] for i in 1:length(tree.nodes)]
-    clusterlink = FastBEAST.cluster_link(tree)
+function trialfars(nnodes::Int, levelfars::Vector{Vector{Tuple{Int,Int}}})
+    sortedfars = [Int[] for i in 1:nnodes]
     for fars in levelfars
         for far in fars
             push!(sortedfars[far[2]], far[1])
         end
     end
 
-    for level in clusterlink[2:end]
-        for cluster in level
-            append!(sortedfars[cluster], sortedfars[ClusterTrees.parent(tree, cluster)])
-        end
-    end
-
     return sortedfars
-end
-
-function findrepresentor(
-    tree::NminTree{D}, node::Int, pivots::Vector{Tuple{Vector{Int},Vector{Int}}}, rc::Int
-) where {D}
-    if pivots[node][rc] != []
-        if ClusterTrees.haschildren(tree, node)
-            idcs = Int[]
-            for child in children(tree, node)
-                append!(idcs, findrepresentor(tree, child, pivots, rc))
-            end
-            return idcs
-        else
-            return pivots[node][rc]
-        end
-    else
-        if ClusterTrees.haschildren(tree, node)
-            idcs = Int[]
-            for child in children(tree, node)
-                append!(idcs, findrepresentor(tree, child, pivots, rc))
-            end
-            return idcs
-        else
-            return value(tree, node)
-        end
-    end
 end
 
 function compress_testtree(
@@ -68,11 +25,11 @@ function compress_testtree(
     trial_tree::NminTree{D},
     farassembler::Function,
     fars::Vector{Vector{Tuple{Int,Int}}},
-    compressor::ButtomUpCompressor,
+    compressor::TopDownCompressor,
     ::Type{K};
     maxrank=40,
     tol=1e-4,
-    buffer=allocate_buttomupbuffer(
+    buffer=allocate_buffer(
         K,
         channel(compressor, trial_tree.num_elements; maxrank=maxrank),
         buffer(compressor, test_tree.num_elements; maxrank=maxrank);
@@ -84,7 +41,7 @@ function compress_testtree(
     leveledtranslations = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,K}}[]
     pivots = [(Int[], Int[]) for i in eachindex(test_tree.nodes)]
 
-    sortedfars = testfarfield(test_tree, fars)
+    sortedfars = testfars(length(test_tree.nodes), fars)
     clusterlink = FastBEAST.cluster_link(test_tree)
     rbuffer, cbuffer = buffer
 
@@ -95,37 +52,46 @@ function compress_testtree(
             admlevel += 1
         end
     end
-    println("Tolerance: ", tol / admlevel)
-    for level in reverse(clusterlink)
+    for (levelidx, level) in enumerate(clusterlink)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
+        iseven(levelidx) ? ridx = 1 : ridx = 2
         _foreach(level) do node
-            if sortedfars[node] != []
+            print(".")
+            colidcs = value(trial_tree, sortedfars[node])
+            (node != 1) &&
+                (colidcs = vcat(colidcs, pivots[ClusterTrees.parent(test_tree, node)][2]))
+            if colidcs != []
+                rowidcs = value(test_tree, node)
                 pivots[node] = compressor(
-                    test_tree,
-                    cbuffer,
+                    cbuffer[ridx],
                     rbuffer,
                     farassembler,
-                    node,
-                    sortedfars[node],
-                    pivots;
+                    rowidcs,
+                    colidcs;
                     tol=tol / admlevel,
                     maxrank=maxrank,
                 )
+                if length(pivots[node][1]) == 0
+                    println("node")
+                    error()
+                end
             end
         end
-        build_testbases!(
+        println("bases")
+        (levelidx > 1) && build_testbases!(
             translations,
             translationidcs,
             testmoments,
             testmomentidcs,
             cbuffer,
             pivots,
-            level,
+            clusterlink,
+            levelidx,
             test_tree;
             multithreading=multithreading,
         )
-        pushfirst!(leveledtranslations, Dict(translationidcs .=> translations))
+        push!(leveledtranslations, Dict(translationidcs .=> translations))
     end
 
     return Dict(testmomentidcs .=> testmoments), leveledtranslations, pivots
@@ -136,11 +102,11 @@ function compress_trialtree(
     trial_tree::NminTree{D},
     farassembler::Function,
     fars::Vector{Vector{Tuple{Int,Int}}},
-    compressor::ButtomUpCompressor,
+    compressor::TopDownCompressor,
     ::Type{K};
     maxrank=40,
     tol=1e-4,
-    buffer=allocate_buttomupbuffer(
+    buffer=allocate_buffer(
         K,
         reverse(channel(compressor, test_tree.num_elements; maxrank=maxrank)),
         reverse(buffer(compressor, trial_tree.num_elements; maxrank=maxrank));
@@ -152,7 +118,7 @@ function compress_trialtree(
     leveledtranslations = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,K}}[]
     pivots = [(Int[], Int[]) for i in eachindex(trial_tree.nodes)]
 
-    sortedfars = trialfarfield(trial_tree, fars)
+    sortedfars = trialfars(length(trial_tree.nodes), fars)
     clusterlink = FastBEAST.cluster_link(trial_tree)
     cbuffer, rbuffer = buffer
 
@@ -164,38 +130,50 @@ function compress_trialtree(
         end
     end
     println("Tolerance: ", tol / admlevel)
-    for level in reverse(clusterlink)
+    for (levelidx, level) in enumerate(clusterlink)
+        println("\nLevel: ", levelidx)
         translationidcs = Int[]
         translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
+        iseven(levelidx) ? ridx = 1 : ridx = 2
 
         _foreach(level) do node
-            if sortedfars[node] != []
+            print(".")
+            rowidcs = value(test_tree, sortedfars[node])
+            (node != 1) &&
+                (rowidcs = vcat(rowidcs, pivots[ClusterTrees.parent(trial_tree, node)][1]))
+            if rowidcs != []
+                colidcs = value(trial_tree, node)
                 pivots[node] = compressor(
-                    trial_tree,
                     cbuffer,
-                    rbuffer,
+                    rbuffer[ridx],
                     farassembler,
-                    sortedfars[node],
-                    node,
-                    pivots;
+                    rowidcs,
+                    colidcs;
                     tol=tol / admlevel,
                     maxrank=maxrank,
                 )
+                if length(pivots[node][1]) == 0
+                    println(length(rowidcs), ", ", length(colidcs))
+                    error()
+                end
             end
         end
-        build_trialbases!(
+        println("bases")
+        (levelidx > 1) && build_trialbases!(
             translations,
             translationidcs,
             trialmoments,
             trialmomentidcs,
             rbuffer,
             pivots,
-            level,
+            clusterlink,
+            levelidx,
             trial_tree;
             multithreading=multithreading,
         )
-        pushfirst!(leveledtranslations, Dict(translationidcs .=> translations))
+        push!(leveledtranslations, Dict(translationidcs .=> translations))
     end
 
     return Dict(trialmomentidcs .=> trialmoments), leveledtranslations, pivots
 end
+=#

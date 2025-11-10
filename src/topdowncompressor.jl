@@ -1,178 +1,104 @@
-function testfars(nnodes::Int, levelfars::Vector{Vector{Tuple{Int,Int}}})
-    sortedfars = [Int[] for i in 1:nnodes]
-    for fars in levelfars
-        for far in fars
-            push!(sortedfars[far[1]], far[2])
-        end
-    end
+## testtree
 
-    return sortedfars
-end
-
-function trialfars(nnodes::Int, levelfars::Vector{Vector{Tuple{Int,Int}}})
-    sortedfars = [Int[] for i in 1:nnodes]
-    for fars in levelfars
-        for far in fars
-            push!(sortedfars[far[2]], far[1])
-        end
-    end
-
-    return sortedfars
-end
-
-function compress_testtree(
-    test_tree::NminTree{D},
-    trial_tree::NminTree{D},
-    farassembler::Function,
-    fars::Vector{Vector{Tuple{Int,Int}}},
-    compressor::TopDownCompressor,
-    ::Type{K};
+function (compressor::TopDownCompressor)(
+    farmatrix::AbstractKernelMatrix{T},
+    farinteractions::Vector{Vector{Int}},
+    tree::BlockTree,
+    buffer::Tuple{Tuple{K,K},Channel{K}};
+    ntasks=1,
     maxrank=40,
-    tol=1e-4,
-    buffer=allocate_buffer(
-        K,
-        channel(compressor, trial_tree.num_elements; maxrank=maxrank),
-        buffer(compressor, test_tree.num_elements; maxrank=maxrank);
-    ),
-    multithreading=true,
-) where {D,K}
-    testmomentidcs = Int[]
-    testmoments = NestedCrossApproximation.H2BasisBlock{Int,K}[]
-    leveledtranslations = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,K}}[]
-    pivots = [(Int[], Int[]) for i in eachindex(test_tree.nodes)]
-
-    sortedfars = testfars(length(test_tree.nodes), fars)
-    clusterlink = FastBEAST.cluster_link(test_tree)
-    rbuffer, cbuffer = buffer
-
-    _foreach = multithreading ? ThreadsX.foreach : Base.foreach
-    admlevel = 0
-    for cl in eachindex(fars)
-        if fars[cl] != []
-            admlevel += 1
-        end
-    end
-    for (levelidx, level) in enumerate(clusterlink)
-        translationidcs = Int[]
-        translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
-        iseven(levelidx) ? ridx = 1 : ridx = 2
-        _foreach(level) do node
-            print(".")
-            colidcs = value(trial_tree, sortedfars[node])
-            (node != 1) &&
-                (colidcs = vcat(colidcs, pivots[ClusterTrees.parent(test_tree, node)][2]))
-            if colidcs != []
-                rowidcs = value(test_tree, node)
-                pivots[node] = compressor(
-                    cbuffer[ridx],
-                    rbuffer,
-                    farassembler,
-                    rowidcs,
-                    colidcs;
-                    tol=tol / admlevel,
-                    maxrank=maxrank,
+) where {T,K<:Matrix{T}}
+    basesidcs = Int[]
+    bases = H2BasisBlock{Int,T}[]
+    leveledtransfer = Dict{Int,H2BasisBlock{Int,T}}[]
+    pivots = Vector{Tuple{Vector{Int},Vector{Int}}}(undef, numberofnodes(testtree(tree)))
+    for level in levels(testtree(tree))
+        transferidcs = Int[]
+        transfer = H2BasisBlock{Int,T}[]
+        testclusters = collect(LevelIterator(testtree(tree), level))
+        @tasks for testcluster in testclusters
+            @set ntasks = ntasks
+            Ftvalues = H2Trees.values(trialtree(tree), farinteractions[testcluster])
+            isassigned(pivots, H2Trees.parent(testtree(tree), testcluster)) &&
+                append!(Ftvalues, pivots[H2Trees.parent(testtree(tree), testcluster)][2])
+            Ftvalues != [] && (
+                pivots[testcluster] = compress(
+                    compressor,
+                    farmatrix,
+                    H2Trees.values(testtree(tree), testcluster),
+                    Ftvalues,
+                    buffer[1][bufferidx(level)],
+                    buffer[2],
                 )
-                if length(pivots[node][1]) == 0
-                    println("node")
-                    error()
-                end
-            end
+            )
         end
-        println("bases")
-        (levelidx > 1) && build_testbases!(
-            translations,
-            translationidcs,
-            testmoments,
-            testmomentidcs,
-            cbuffer,
+        build_testbases!(
+            transfer,
+            transferidcs,
+            bases,
+            basesidcs,
+            buffer[1],
+            testclusters,
             pivots,
-            clusterlink,
-            levelidx,
-            test_tree;
-            multithreading=multithreading,
+            level,
+            testtree(tree);
+            ntasks=ntasks,
         )
-        push!(leveledtranslations, Dict(translationidcs .=> translations))
+        push!(leveledtransfer, Dict(transferidcs .=> transfer))
     end
 
-    return Dict(testmomentidcs .=> testmoments), leveledtranslations, pivots
+    return Dict(basesidcs .=> bases), leveledtransfer, pivots
 end
 
-function compress_trialtree(
-    test_tree::NminTree{D},
-    trial_tree::NminTree{D},
-    farassembler::Function,
-    fars::Vector{Vector{Tuple{Int,Int}}},
-    compressor::TopDownCompressor,
-    ::Type{K};
+## trialtree
+
+function (compressor::TopDownCompressor)(
+    farmatrix::AbstractKernelMatrix{T},
+    farinteractions::Vector{Vector{Int}},
+    tree::BlockTree,
+    buffer::Tuple{Channel{K},Tuple{K,K}};
+    ntasks=1,
     maxrank=40,
-    tol=1e-4,
-    buffer=allocate_buffer(
-        K,
-        reverse(channel(compressor, test_tree.num_elements; maxrank=maxrank)),
-        reverse(buffer(compressor, trial_tree.num_elements; maxrank=maxrank));
-    ),
-    multithreading=true,
-) where {D,K}
-    trialmomentidcs = Int[]
-    trialmoments = NestedCrossApproximation.H2BasisBlock{Int,K}[]
-    leveledtranslations = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,K}}[]
-    pivots = [(Int[], Int[]) for i in eachindex(trial_tree.nodes)]
+) where {T,K<:Matrix{T}}
+    basesidcs = Int[]
+    bases = H2BasisBlock{Int,T}[]
+    leveledtransfer = Dict{Int,H2BasisBlock{Int,T}}[]
+    pivots = Vector{Tuple{Vector{Int},Vector{Int}}}(undef, numberofnodes(trialtree(tree)))
 
-    sortedfars = trialfars(length(trial_tree.nodes), fars)
-    clusterlink = FastBEAST.cluster_link(trial_tree)
-    cbuffer, rbuffer = buffer
-
-    _foreach = multithreading ? ThreadsX.foreach : Base.foreach
-    admlevel = 0
-    for cl in eachindex(fars)
-        if fars[cl] != []
-            admlevel += 1
-        end
-    end
-    println("Tolerance: ", tol / admlevel)
-    for (levelidx, level) in enumerate(clusterlink)
-        println("\nLevel: ", levelidx)
-        translationidcs = Int[]
-        translations = NestedCrossApproximation.H2BasisBlock{Int,K}[]
-        iseven(levelidx) ? ridx = 1 : ridx = 2
-
-        _foreach(level) do node
-            print(".")
-            rowidcs = value(test_tree, sortedfars[node])
-            (node != 1) &&
-                (rowidcs = vcat(rowidcs, pivots[ClusterTrees.parent(trial_tree, node)][1]))
-            if rowidcs != []
-                colidcs = value(trial_tree, node)
-                pivots[node] = compressor(
-                    cbuffer,
-                    rbuffer[ridx],
-                    farassembler,
-                    rowidcs,
-                    colidcs;
-                    tol=tol / admlevel,
-                    maxrank=maxrank,
+    for level in levels(trialtree(tree))
+        transferidcs = Int[]
+        transfer = H2BasisBlock{Int,T}[]
+        trialclusters = collect(LevelIterator(trialtree(tree), level))
+        @tasks for trialcluster in trialclusters
+            @set ntasks = ntasks
+            Fsvalues = H2Trees.values(testtree(tree), farinteractions[trialcluster])
+            isassigned(pivots, H2Trees.parent(trialtree(tree), trialcluster)) &&
+                append!(Fsvalues, pivots[H2Trees.parent(trialtree(tree), trialcluster)][1])
+            Fsvalues != [] && (
+                pivots[trialcluster] = compress(
+                    compressor,
+                    farmatrix,
+                    Fsvalues,
+                    H2Trees.values(trialtree(tree), trialcluster),
+                    buffer[1],
+                    buffer[2][bufferidx(level)],
                 )
-                if length(pivots[node][1]) == 0
-                    println(length(rowidcs), ", ", length(colidcs))
-                    error()
-                end
-            end
+            )
         end
-        println("bases")
-        (levelidx > 1) && build_trialbases!(
-            translations,
-            translationidcs,
-            trialmoments,
-            trialmomentidcs,
-            rbuffer,
+        build_trialbases!(
+            transfer,
+            transferidcs,
+            bases,
+            basesidcs,
+            buffer[2],
+            trialclusters,
             pivots,
-            clusterlink,
-            levelidx,
-            trial_tree;
-            multithreading=multithreading,
+            level,
+            trialtree(tree);
+            ntasks=ntasks,
         )
-        push!(leveledtranslations, Dict(translationidcs .=> translations))
+        push!(leveledtransfer, Dict(transferidcs .=> transfer))
     end
 
-    return Dict(trialmomentidcs .=> trialmoments), leveledtranslations, pivots
+    return Dict(basesidcs .=> bases), leveledtransfer, pivots
 end

@@ -13,6 +13,21 @@ function TopDownCompressor(;
     return TopDownCompressor(factorization, representor)
 end
 
+struct BottomUpCompressor{LowRankFactorizationType,RepresentorType}
+    lrf::LowRankFactorizationType
+    representor::RepresentorType
+
+    function BottomUpCompressor(lrf, representor)
+        return new{typeof(lrf),typeof(representor)}(lrf, representor)
+    end
+end
+
+function BottomUpCompressor(;
+    factorization=AdaptiveCrossApproximation.ACA(), representor=nothing
+)
+    return BottomUpCompressor(factorization, representor)
+end
+
 function compress(
     compressor::TopDownCompressor{LRF,RP},
     farmatrix::AbstractKernelMatrix{T},
@@ -79,7 +94,7 @@ function compress(
     rowbuffer[1:npivots, 1:npivots] .= 0.0
     put!(rowchannel, rowbuffer)
 
-    return t[rows], Ft[cols]
+    return rows, cols
 end
 
 function compress(
@@ -109,7 +124,6 @@ function compress(
     )
     rowbuffer[1:npivots, s] =
         colbuffer[rows[1:npivots], 1:npivots] * rowbuffer[1:npivots, s]
-
     colbuffer[Fs, 1:npivots] .= 0.0
     put!(colchannel, colbuffer)
 
@@ -119,32 +133,34 @@ end
 function compress(
     compressor::TopDownCompressor{LRF,RP},
     farmatrix::AbstractKernelMatrix{T},
-    Fs::Vector{Int},
-    s::Vector{Int},
+    Fsvals::Vector{Int},
+    svals::Vector{Int},
     colchannel::Channel{K},
     rowbuffer::K;
     maxrank=40,
 ) where {T,K<:Matrix{T},LRF<:AdaptiveCrossApproximation.iACA,RP}
-    !isnothing(compressor.representor) && (s, Fs=compressor.representor(s, Fs))
+    !isnothing(compressor.representor) &&
+        (svals, Fsvals=compressor.representor(svals, Fsvals))
     colbuffer = take!(colchannel)
-    maxrank = min(maxrank, min(length(s), length(Fs)))
+    maxrank = min(maxrank, min(length(svals), length(Fsvals)))
     rows = zeros(Int, maxrank)
     cols = zeros(Int, maxrank)
 
-    rowbuffer[1:maxrank, s] .= 0.0
+    rowbuffer[1:maxrank, svals] .= 0.0
     npivots, rows, cols = compressor.lrf(
         farmatrix,
         colbuffer,
-        view(rowbuffer, 1:maxrank, s),
+        view(rowbuffer, 1:maxrank, svals),
         maxrank;
         rows=rows,
         cols=cols,
-        rowidcs=Fs,
-        colidcs=s,
+        rowidcs=Fsvals,
+        colidcs=svals,
     )
-    rowbuffer[1:npivots, s] = colbuffer[1:npivots, 1:npivots] * rowbuffer[1:npivots, s]
+    rowbuffer[1:npivots, svals] =
+        colbuffer[1:npivots, 1:npivots] * rowbuffer[1:npivots, svals]
     colbuffer[1:npivots, 1:npivots] .= 0.0
     put!(colchannel, colbuffer)
 
-    return Fs[rows], s[cols]
+    return rows, cols
 end

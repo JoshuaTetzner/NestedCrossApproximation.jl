@@ -42,33 +42,26 @@ function assemble_couplingmatrices(
     farmatrix::AbstractKernelMatrix{T},
     testpivots,
     trialpivots,
-    fars::Vector{Vector{Tuple{Int,Int}}},
-    dirs::Vector{Vector{Int}};
+    fars::Vector{Vector{Int}},
+    e::Vector{Vector{Int}};
     ntasks=Threads.nthreads(),
 ) where {T}
     lk = Threads.SpinLock()
     couplingblocks = DH2MatrixBlock{Int,T}[]
 
-    for level in 1:length(dirs)
-        @tasks for i in 1:length(dirs[level])
+    for (t, Ft) in enumerate(fars)
+        @tasks for sidx in eachindex(Ft)
             @set ntasks = ntasks
             blk = zeros(
                 T,
-                length(testpivots[fars[level][i][1]][dirs[level][i]][1]),
-                length(trialpivots[fars[level][i][2]][dirs[level][i]][2]),
+                length(testpivots[t][e[t][sidx]][1]),
+                length(trialpivots[Ft[sidx]][e[t][sidx]][2]),
             )
             farmatrix(
-                blk,
-                testpivots[fars[level][i][1]][dirs[level][i]][1],
-                trialpivots[fars[level][i][2]][dirs[level][i]][2],
+                blk, testpivots[t][e[t][sidx]][1], trialpivots[Ft[sidx]][e[t][sidx]][2]
             )
             lock(lk) do
-                push!(
-                    couplingblocks,
-                    DH2MatrixBlock(
-                        blk, fars[level][i][1], fars[level][i][2], dirs[level][i]
-                    ),
-                )
+                push!(couplingblocks, DH2MatrixBlock(blk, t, Ft[sidx], e[t][sidx]))
             end
         end
     end

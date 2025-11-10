@@ -25,13 +25,13 @@ mutable struct 𝒟node{F}
     parent::Int
     children::Vector{Int}
 end
+
 mutable struct 𝒟tree{F}
     level::Int
     nodes::Vector{𝒟node{F}}
 end
 
-function 𝒟tree(hs::F, k::F) where {F}
-    maxlevel = max(0, floor(log2(k * hs * 2)) + 1)
+function 𝒟tree(hs::F, maxlevel::Int) where {F}
     maxlevel == 0 && return 𝒟tree(0, 𝒟node{F}[])
     nodes = [
         𝒟node(1, 1, SVector(0, 0, 1.0), 0, Int[]),
@@ -80,6 +80,8 @@ function children(tree::𝒟tree{F}, node::Int) where {F}
 end
 
 function parent(tree::𝒟tree{F}, node::Int) where {F}
+    iszero(node) && return 0
+
     return tree.nodes[node].parent
 end
 
@@ -95,4 +97,8 @@ end
 
 function isleaf(tree::𝒟tree{F}, node::Int) where {F}
     tree.nodes[node].parent == 0 ? (return true) : (return false)
+end
+
+function isroot(tree::𝒟tree{F}, level::Int) where {F}
+    tree.level == level ? (return true) : (return false)
 end

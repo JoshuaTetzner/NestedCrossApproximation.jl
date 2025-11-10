@@ -39,6 +39,7 @@ end
 
     for level in reverse(A.trialtransfermatrices)
         for (idx, Θ) in level
+            !isassigned(xhat, Θ.children[1]) && error("missing $idx child")
             xhat[idx] = Θ.T[1] * xhat[Θ.children[1]]
             for nchd in 2:length(Θ.children)
                 xhat[idx] += Θ.T[nchd] * xhat[Θ.children[nchd]]
@@ -68,6 +69,61 @@ end
 
     for (idx, basis) in A.nestedtestbases
         y[basis.τ] = basis.T * yhat[idx]
+    end
+
+    y += A.nearinteractions * x
+
+    return y
+end
+
+function mul2(
+    y::AbstractVector, A::NestedCrossApproximation.PetrovGalerkinNCA, x::AbstractVector
+)
+    LinearMaps.check_dim_mul(y, A, x)
+
+    fill!(y, zero(eltype(y)))
+    xhat = Vector{Vector{eltype(y)}}(undef, numberofnodes(trialtree(A.tree)))
+    yhat = Vector{Vector{eltype(y)}}(undef, numberofnodes(testtree(A.tree)))
+
+    @tasks for (idx, basis) in A.nestedtrialbases
+        @set ntasks = A.ntasks
+        xhat[idx] = basis.T * x[H2Trees.values(trialtree(A.tree), idx)]
+    end
+
+    for level in reverse(A.trialtransfermatrices)
+        for (idx, Θ) in level
+            childs = collect(H2Trees.children(trialtree(A.tree), idx))
+            xhat[idx] = Θ.T[1] * xhat[childs[1]]
+            for nchd in 2:length(childs)
+                xhat[idx] += Θ.T[nchd] * xhat[childs[nchd]]
+            end
+        end
+    end
+
+    for lrb in A.couplingmatrices
+        if isassigned(yhat, lrb.row_basis)
+            yhat[lrb.row_basis] += lrb.Z * xhat[lrb.col_basis]
+        else
+            yhat[lrb.row_basis] = lrb.Z * xhat[lrb.col_basis]
+        end
+    end
+
+    for level in A.testtransfermatrices
+        for (idx, Θ) in level
+            childs = collect(H2Trees.children(testtree(A.tree), idx))
+            for chd in eachindex(childs)
+                if isassigned(yhat, childs[chd])
+                    yhat[childs[chd]] += Θ.T[chd] * yhat[idx]
+                else
+                    yhat[childs[chd]] = Θ.T[chd] * yhat[idx]
+                end
+            end
+        end
+    end
+
+    @tasks for (idx, basis) in A.nestedtestbases
+        @set ntasks = A.ntasks
+        y[H2Trees.values(testtree(A.tree), idx)] = basis.T * yhat[idx]
     end
 
     y += A.nearinteractions * x

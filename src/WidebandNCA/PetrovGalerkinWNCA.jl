@@ -20,7 +20,7 @@ struct PetrovGalerkinWNCA{
     trialtransfermatrices::TransferMatrixType
     couplingmatrices::CouplingMatrixType
     dim::Tuple{Int,Int}
-    ismultithreaded::Int
+    ntasks::Int
 
     function PetrovGalerkinWNCA{T}(
         tree,
@@ -33,7 +33,7 @@ struct PetrovGalerkinWNCA{
         trialtransfermatrices,
         couplingmatrices,
         dim,
-        ismultithreaded,
+        ntasks,
     ) where {T}
         return new{
             T,
@@ -55,31 +55,65 @@ struct PetrovGalerkinWNCA{
             trialtransfermatrices,
             couplingmatrices,
             dim,
-            ismultithreaded,
+            ntasks,
         )
     end
 end
 
-function isnear(k, treea, treeb, nodea, nodeb; ηₗ=1.0, ηₕ=4.0)
+struct IsLowFrequencyFunctor{F}
+    k::F
+end
+
+function islf(k::F) where {F}
+    return IsLowFrequencyFunctor{F}(k)
+end
+
+function (islf::IsLowFrequencyFunctor{F})(tree::TwoNTree, level::Int) where {F}
+    return (sqrt(3) * H2Trees.halfsize(tree) * islf.k) / (2.0^(level - 1) * pi) <= 1
+end
+
+function (islf::IsLowFrequencyFunctor{F})(hs::F) where {F}
+    return (sqrt(3) * hs * islf.k) / pi <= 1
+end
+
+struct IsNearFunctor{F}
+    k::F
+    ηₗ::F
+    ηₕ::F
+    islf::IsLowFrequencyFunctor{F}
+end
+
+function isnear(k::F; ηₗ::F=1.0, ηₕ::F=5.0, islf=islf(k)) where {F}
+    return IsNearFunctor{F}(k, ηₗ, ηₕ, islf)
+end
+
+function (isnear::IsNearFunctor{F})(
+    treea::TwoNTree, treeb::TwoNTree, nodea::Int, nodeb::Int
+) where {F}
     ths = H2Trees.halfsize(treea, nodea) * sqrt(3)
     shs = H2Trees.halfsize(treeb, nodeb) * sqrt(3)
     dist = norm(H2Trees.center(treea, nodea) - H2Trees.center(treeb, nodeb)) - (ths + shs)
-    if k / pi * 4 * min(ths, shs) <= 1
-        (2 * max(ths, shs) <= ηₗ * max(dist, 0.0)) ? (return false) : (return true)
+    if isnear.islf(min(ths, shs))
+        (2 * max(ths, shs) <= isnear.ηₗ * max(dist, 0.0)) ? (return false) : (return true)
     else
-        (4 * k * max(ths^2, shs^2) <= ηₕ * max(dist, 0.0)) ? (return false) : (return true)
+        if (4 * isnear.k * max(ths^2, shs^2) <= isnear.ηₕ * max(dist, 0.0))
+            (return false)
+        else
+            (return true)
+        end
     end
 end
 
-function islf(k, tree, level)
-    return k / pi * 4 * H2Trees.halfsize(tree.testcluster) / 2^(level - 1) <= 1
+function maxlevel(tree::TwoNTree, islf::IsLowFrequencyFunctor{F}) where {F}
+    level = 0
+    while !islf(tree, level)
+        level += 1
+    end
+    return level
 end
 
-function islf(k)
-    lf(tree, level) = islf(k, tree, level)
-    return lf
-end
 wavenumber(operator) = operator.wavenumber
+
 function PetrovGalerkinWNCA(
     operator,
     testspace,
@@ -89,9 +123,8 @@ function PetrovGalerkinWNCA(
     nearquadstrat=defaultnearquadstrat(operator, testspace, trialspace),
     testcompressor=TopDownCompressor(),
     trialcompressor=TopDownCompressor(),
-    lfcompressor=AdaptiveCrossApproximation.ACA(),
     ntasks=Threads.nthreads(),
-    isnear=H2Trees.isnear,
+    isnear=isnear(wavenumber(operator)),
     islf=islf(wavenumber(operator)),
     maxrank=40,
 )
@@ -100,61 +133,57 @@ function PetrovGalerkinWNCA(
     nearmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=nearquadstrat
     )
-    farmatrix = AbstractKernelMatrix(
-        operator, testspace, trialspace; quadstrat=farquadstrat
-    )
-    dtree = 𝒟tree(H2Trees.halfsize(tree.testcluster), imag(operator.gamma))
-    values, nearvalues, fars, dirs, lfvalues, lffarvalues = directionalitneractions(
-        tree, dtree, islf, isnear
+    values, nearvalues = H2Trees.nearinteractions(
+        tree; isnear=isnear, extractselfvalues=false
     )
 
     blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, length(values))
-    println("nears")
     @tasks for i in eachindex(values)
         @set ntasks = ntasks
         blk = zeros(eltype(nearmatrix), length(values[i]), length(nearvalues[i]))
         nearmatrix(blk, values[i], nearvalues[i])
         blocks[i] = blk
     end
-    nearinteractions = BlockSparseMatrix(
-        blocks, values, nearvalues, size(nearmatrix); ntasks=1
-    )
+    nearinteractions = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
 
-    println("lfs")
-    lfblocks = blockcompressor(
-        farmatrix, lfvalues, lffarvalues, lfcompressor; maxrank=maxrank, ntasks=ntasks
+    farmatrix = AbstractKernelMatrix(
+        operator, testspace, trialspace; quadstrat=farquadstrat
     )
+    dtree = 𝒟tree(H2Trees.halfsize(tree.testcluster), maxlevel(testtree(tree), islf))
+    Ft, eₜ, Fs, eₛ = directionalfarinteractions(tree, dtree; isnear=isnear)
 
     println("compress_testtree")
     nestedtestbases, testtransfermatrices, testpivots = testcompressor(
         farmatrix,
         dtree,
         tree,
-        fars,
-        dirs,
+        Ft,
+        eₜ,
         reverse(testbuffer(testcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks));
         ntasks=ntasks,
         maxrank=maxrank,
     )
+
     println("compress_trialtree")
     nestedtrialbases, trialtransfermatrices, trialpivots = trialcompressor(
         farmatrix,
         dtree,
         tree,
-        fars,
-        dirs,
+        Fs,
+        eₛ,
         trialbuffer(trialcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks);
         ntasks=ntasks,
         maxrank=maxrank,
     )
+
     @time coupling = assemble_couplingmatrices(
-        farmatrix, testpivots, trialpivots, fars, dirs; ntasks=ntasks
+        farmatrix, testpivots, trialpivots, Ft, eₜ; ntasks=ntasks
     )
     return PetrovGalerkinWNCA{ComplexF64}(
         tree,
         dtree,
         nearinteractions,
-        lfblocks,
+        Int[],
         nestedtestbases,
         nestedtrialbases,
         testtransfermatrices,
@@ -339,9 +368,9 @@ end
     #    #x[H2Trees.values(A.tree.trialcluster, lrb.col_basis)]
     #end
 
-    for lrb in A.lowfrequencyinteractions
-        y[lrb.τ] += lrb.M * x[lrb.σ]
-    end
+    #for lrb in A.lowfrequencyinteractions
+    #    y[lrb.τ] += lrb.M * x[lrb.σ]
+    #end
 
     y += A.nearinteractions * x
 

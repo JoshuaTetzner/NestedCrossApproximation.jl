@@ -6,71 +6,64 @@ function build_testbases!(
     bases::Vector{Dict{Int,H2BasisBlock{I,K}}},
     basesidcs::Vector{Int},
     blocks::Vector{Dict{Int,Matrix{K}}},
-    testclusters::Vector{Int},
     pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
     level::Int,
     dtree,
     tree;
-    ntasks=1,
+    ntasks=Threads.nthreads(),
 ) where {I,K}
     lk = Threads.SpinLock()
 
-    for node in testclusters
-        #ntasks = ntasks
-
-        if isassigned(pivots, node)
+    @tasks for t in collect(LevelIterator(tree, level))
+        @set ntasks = ntasks
+        if isassigned(pivots, t)
             localbases = H2BasisBlock{I,K}[]
-            for (dir, piv) in pivots[node]
-                if isleaf(dtree, dir)
+            for (dir, piv) in pivots[t]
+                if isroot(dtree, level) || iszero(firstchild(tree, t))
                     rows = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, node)) for
-                        idx in piv[1]
+                        findfirst(x -> x == idx, H2Trees.values(tree, t)) for idx in piv[1]
                     ]
-                    U = blocks[node][dir] / blocks[node][dir][rows, :]
+                    U = blocks[t][dir] / blocks[t][dir][rows, :]
                     push!(
-                        localbases,
-                        H2BasisBlock(U, H2Trees.values(tree, node), piv[2], Int[]),
+                        localbases, H2BasisBlock(U, H2Trees.values(tree, t), piv[2], Int[])
                     )
                 end
             end
             if localbases != []
                 lock(lk) do
-                    push!(basesidcs, node)
-                    push!(bases, Dict(keys(pivots[node]) .=> localbases))
+                    push!(basesidcs, t)
+                    push!(bases, Dict(keys(pivots[t]) .=> localbases))
                 end
             end
         end
     end
 
     level == 1 && return nothing
-
-    parentclusters = collect(H2Trees.LevelIterator(tree, level - 1))
-    for node in parentclusters
-        if !iszero(H2Trees.firstchild(tree, node)) && isassigned(pivots, node)#] != ([], [])
+    @tasks for t in collect(H2Trees.LevelIterator(tree, level - 1))
+        @set ntasks = ntasks
+        if (!iszero(firstchild(tree, t))) && isroot(dtree, level) && isassigned(pivots, t)
             transferdirs = Int[]
             dirtransfers = H2BasisBlock{I,K}[]
-            for (dir, piv) in pivots[node]
+            for (dir, piv) in pivots[t]
                 transferblocks = Matrix{K}[]
-                children = collect(H2Trees.ChildIterator(tree, node))
+                children = collect(ChildIterator(tree, t))
                 push!(transferdirs, dir)
                 for child in children
                     crows = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, node)) for
+                        findfirst(x -> x == idx, H2Trees.values(tree, t)) for
                         idx in pivots[child][parent(dtree, dir)][1]
                     ]
-                    @assert length(crows) == length(pivots[child][parent(dtree, dir)][1])
                     rows = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, node)) for
-                        idx in piv[1]
+                        findfirst(x -> x == idx, H2Trees.values(tree, t)) for idx in piv[1]
                     ]
-                    Θ = blocks[node][dir][crows, :] / blocks[node][dir][rows, :]
+                    Θ = blocks[t][dir][crows, :] / blocks[t][dir][rows, :]
 
                     push!(transferblocks, Θ)
                 end
                 push!(dirtransfers, H2BasisBlock(transferblocks, piv[1], piv[2], children))
             end
             lock(lk) do
-                push!(transferidcs, node)
+                push!(transferidcs, t)
                 push!(transfer, Dict(transferdirs .=> dirtransfers))
             end
         end
@@ -85,10 +78,10 @@ function build_testbases!(
     basesidcs::Vector{Int},
     buffer::Tuple{Matrix{K},Matrix{K}},
     testclusters::Vector{Int},
-    pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
+    pivots::Vector{Tuple{Vector{I},Vector{I}}},
     level::Int,
     tree;
-    ntasks=1,
+    ntasks=Threads.nthreads(),
 ) where {I,K}
     lk = Threads.SpinLock()
     idx = bufferidx(level)
@@ -138,6 +131,59 @@ function build_testbases!(
     end
 end
 
+# BottomUpCompressor
+function build_testbases!(
+    transfer::Vector{H2BasisBlock{I,K}},
+    transferidcs::Vector{Int},
+    bases::Vector{H2BasisBlock{I,K}},
+    basesidcs::Vector{Int},
+    buffer::Matrix{K},
+    testclusters::Vector{Int},
+    pivots::Vector{Tuple{Vector{I},Vector{I}}},
+    tree;
+    ntasks=Threads.nthreads(),
+) where {I,K}
+    lk = Threads.SpinLock()
+
+    @tasks for node in testclusters
+        @set ntasks = ntasks
+        if iszero(H2Trees.firstchild(tree, node))
+            if isassigned(pivots, node)
+                U =
+                    buffer[H2Trees.values(tree, node), 1:length(pivots[node][2])] /
+                    buffer[pivots[node][1], 1:length(pivots[node][2])]
+                lock(lk) do
+                    push!(basesidcs, node)
+                    push!(
+                        bases,
+                        H2BasisBlock(U, H2Trees.values(tree, node), pivots[node][2], Int[]),
+                    )
+                end
+            end
+        else
+            if isassigned(pivots, node)
+                transferblocks = Matrix{K}[]
+                children = collect(H2Trees.ChildIterator(tree, node))
+                for child in children
+                    Θ =
+                        buffer[pivots[child][1], 1:length(pivots[node][2])] /
+                        buffer[pivots[node][1], 1:length(pivots[node][2])]
+                    push!(transferblocks, Θ)
+                end
+                lock(lk) do
+                    push!(transferidcs, node)
+                    push!(
+                        transfer,
+                        H2BasisBlock(
+                            transferblocks, pivots[node][1], pivots[node][2], children
+                        ),
+                    )
+                end
+            end
+        end
+    end
+end
+
 # directional trialbases
 function build_trialbases!(
     transfer::Vector{Dict{Int,H2BasisBlock{I,K}}},
@@ -145,37 +191,34 @@ function build_trialbases!(
     bases::Vector{Dict{Int,H2BasisBlock{I,K}}},
     basesidcs::Vector{Int},
     blocks::Vector{Dict{Int,Matrix{K}}},
-    trialclusters::Vector{Int},
     pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
     level::Int,
     dtree,
     tree;
-    ntasks=1,
+    ntasks=Threads.nthreads(),
 ) where {I,K}
     lk = Threads.SpinLock()
 
-    for node in trialclusters
-        #ntasks = ntasks
-        if isassigned(pivots, node)
+    @tasks for s in collect(LevelIterator(tree, level))
+        @set ntasks = ntasks
+        if isassigned(pivots, s)
             localbases = H2BasisBlock{I,K}[]
-            for (dir, piv) in pivots[node]
-                if isleaf(dtree, level)
+            for (dir, piv) in pivots[s]
+                if isroot(dtree, level) || iszero(firstchild(tree, s))
                     cols = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, node)) for
-                        idx in piv[2]
+                        findfirst(x -> x == idx, H2Trees.values(tree, s)) for idx in piv[2]
                     ]
 
-                    V = blocks[node][dir][:, cols] \ blocks[node][dir]
+                    V = blocks[s][dir][:, cols] \ blocks[s][dir]
                     push!(
-                        localbases,
-                        H2BasisBlock(V, piv[1], H2Trees.values(tree, node), Int[]),
+                        localbases, H2BasisBlock(V, piv[1], H2Trees.values(tree, s), Int[])
                     )
                 end
             end
             if localbases != []
                 lock(lk) do
-                    push!(basesidcs, node)
-                    push!(bases, Dict(keys(pivots[node]) .=> localbases))
+                    push!(basesidcs, s)
+                    push!(bases, Dict(keys(pivots[s]) .=> localbases))
                 end
             end
         end
@@ -184,33 +227,31 @@ function build_trialbases!(
     level == 1 && return nothing
 
     parentclusters = collect(H2Trees.LevelIterator(tree, level - 1))
-    for node in parentclusters
-        #ntasks = ntasks
-
-        if !iszero(H2Trees.firstchild(tree, node)) && isassigned(pivots, node)#] != ([], [])
+    @tasks for s in parentclusters
+        @set ntasks = ntasks
+        if !iszero(firstchild(tree, s)) && !isroot(dtree, level) && isassigned(pivots, s)
             transferdirs = Int[]
             dirtransfers = H2BasisBlock{I,K}[]
-            for (dir, piv) in pivots[node]
+            for (dir, piv) in pivots[s]
                 transferblocks = Matrix{K}[]
-                children = collect(H2Trees.ChildIterator(tree, node))
+                children = collect(H2Trees.ChildIterator(tree, s))
                 push!(transferdirs, dir)
                 for child in children
                     ccols = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, node)) for
+                        findfirst(x -> x == idx, H2Trees.values(tree, s)) for
                         idx in pivots[child][parent(dtree, dir)][2]
                     ]
                     cols = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, node)) for
-                        idx in piv[2]
+                        findfirst(x -> x == idx, H2Trees.values(tree, s)) for idx in piv[2]
                     ]
-                    Θ = blocks[node][dir][:, cols] \ blocks[node][dir][:, ccols]
+                    Θ = blocks[s][dir][:, cols] \ blocks[s][dir][:, ccols]
 
                     push!(transferblocks, Θ)
                 end
                 push!(dirtransfers, H2BasisBlock(transferblocks, piv[1], piv[2], children))
             end
             lock(lk) do
-                push!(transferidcs, node)
+                push!(transferidcs, s)
                 push!(transfer, Dict(transferdirs .=> dirtransfers))
             end
         end
@@ -227,7 +268,7 @@ function build_trialbases!(
     pivots::Vector{Tuple{Vector{I},Vector{I}}},
     level::Int,
     tree;
-    ntasks=1,
+    ntasks=Threads.nthreads(),
 ) where {I,K}
     lk = Threads.SpinLock()
     idx = bufferidx(level)
@@ -272,6 +313,59 @@ function build_trialbases!(
                         transferblocks, pivots[node][1], pivots[node][2], children
                     ),
                 )
+            end
+        end
+    end
+end
+
+# BottomUpCompressor
+function build_trialbases!(
+    transfer::Vector{H2BasisBlock{I,K}},
+    transferidcs::Vector{Int},
+    bases::Vector{H2BasisBlock{I,K}},
+    basesidcs::Vector{Int},
+    buffer::Matrix{K},
+    trialclusters::Vector{Int},
+    pivots::Vector{Tuple{Vector{I},Vector{I}}},
+    tree;
+    ntasks=Threads.nthreads(),
+) where {I,K}
+    lk = Threads.SpinLock()
+
+    @tasks for node in trialclusters
+        @set ntasks = ntasks
+        if iszero(H2Trees.firstchild(tree, node))
+            if isassigned(pivots, node)
+                V =
+                    buffer[1:length(pivots[node][1]), pivots[node][2]] \
+                    buffer[1:length(pivots[node][1]), H2Trees.values(tree, node)]
+                lock(lk) do
+                    push!(basesidcs, node)
+                    push!(
+                        bases,
+                        H2BasisBlock(V, pivots[node][1], H2Trees.values(tree, node), Int[]),
+                    )
+                end
+            end
+        else
+            if isassigned(pivots, node)
+                transferblocks = Matrix{K}[]
+                children = collect(H2Trees.ChildIterator(tree, node))
+                for child in children
+                    Θ =
+                        buffer[1:length(pivots[node][1]), pivots[node][2]] \
+                        buffer[1:length(pivots[node][1]), pivots[child][2]]
+                    push!(transferblocks, Θ)
+                end
+                lock(lk) do
+                    push!(transferidcs, node)
+                    push!(
+                        transfer,
+                        H2BasisBlock(
+                            transferblocks, pivots[node][1], pivots[node][2], children
+                        ),
+                    )
+                end
             end
         end
     end
