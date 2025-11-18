@@ -68,3 +68,39 @@ function assemble_couplingmatrices(
 
     return couplingblocks
 end
+
+function assemble_couplingmatrices(
+    farmatrix::AbstractKernelMatrix{T},
+    testpivots,
+    trialpivots,
+    tree::BlockTree,
+    dtree::𝒟tree;
+    #fars::Vector{Vector{Int}},
+    #e::Vector{Vector{Int}};
+    isnear=H2Trees.isnear,
+    ntasks=Threads.nthreads(),
+) where {T}
+    lk = Threads.SpinLock()
+    couplingblocks = DH2MatrixBlock{Int,T}[]
+    iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
+
+    for level in levels(testtree(tree))
+        @tasks for t in collect(LevelIterator(testtree(tree), level))
+            @set ntasks = ntasks
+            for s in iterator(trialtree(tree), testtree(tree), t)
+                e = direction(
+                    center(trialtree(tree), s) - center(testtree(tree), t),
+                    dtree,
+                    max(0, dtree.level + 1 - level),
+                )
+                blk = zeros(T, length(testpivots[t][e][1]), length(trialpivots[s][e][2]))
+                farmatrix(blk, testpivots[t][e][1], trialpivots[s][e][2])
+                lock(lk) do
+                    push!(couplingblocks, DH2MatrixBlock(blk, t, s, e))
+                end
+            end
+        end
+    end
+
+    return couplingblocks
+end

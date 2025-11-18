@@ -43,18 +43,19 @@ function compress(
     rowbuffer = take!(rowchannel)
     rows = zeros(Int, maxrank)
     cols = zeros(Int, maxrank)
+
     colbuffer[tvalues, 1:maxrank] .= 0.0
+
     npivots, rowpivots, colpivots = compressor.lrf(
         farmatrix,
         view(colbuffer, tvalues, 1:maxrank),
         rowbuffer,
-        maxrank;
+        min(maxrank, length(tvalues));
         rows=rows,
         cols=cols,
         rowidcs=tvalues,
         colidcs=Ftvalues,
     )
-
     colbuffer[tvalues, 1:npivots] =
         colbuffer[tvalues, 1:npivots] * rowbuffer[1:npivots, 1:npivots]
     rowbuffer[1:npivots, 1:npivots] .= 0.0
@@ -162,7 +163,7 @@ function compress(
         farmatrix,
         colbuffer,
         view(rowbuffer, 1:maxrank, svalues),
-        maxrank;
+        min(maxrank, length(svalues));
         rows=rows,
         cols=cols,
         rowidcs=Fsvalues,
@@ -171,9 +172,10 @@ function compress(
     rowbuffer[1:npivots, svalues] =
         colbuffer[1:npivots, 1:npivots] * rowbuffer[1:npivots, svalues]
     colbuffer[1:npivots, 1:npivots] .= 0.0
+
     put!(colchannel, colbuffer)
 
-    return rowpivots, colpivots#rows[1:npivots], cols[1:npivots]
+    return rowpivots, colpivots
 end
 
 function (compressor::BottomUpCompressor)(

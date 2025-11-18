@@ -32,3 +32,22 @@ function directionalfarinteractions(tree, dtree, ishfnear; ntasks=Threads.nthrea
     end
     return testfarnodes, testdirs, trialfarnodes, trialdirs
 end
+
+function admissiblelevel(Ft, tree)
+    lflevel = 0
+    hflevel = 0
+    for level in H2Trees.levels(tree.testcluster)
+        for t in H2Trees.LevelIterator(tree.testcluster, level)
+            if length(Ft[t]) > 0
+                if eₜ[t][1] == 0
+                    lflevel += 1
+                    break
+                else
+                    hflevel += 1
+                    break
+                end
+            end
+        end
+    end
+    return max(lflevel, hflevel)
+end

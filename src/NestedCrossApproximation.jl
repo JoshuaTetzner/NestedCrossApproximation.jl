@@ -6,7 +6,7 @@ using LinearMaps
 using LinearAlgebra
 using H2Trees
 import H2Trees: testtree, trialtree, levels, LevelIterator, numberofnodes, center
-import H2Trees: parent, ChildIterator, firstchild
+import H2Trees: parent, ChildIterator, firstchild, ParentUpwardsIterator
 using OhMyThreads
 using StaticArrays
 
@@ -14,6 +14,7 @@ include("abstractkernelmatrix/abstractkernelmatrix.jl")
 include("abstractkernelmatrix/beastkernelmatrix.jl")
 
 include("NCA/AbstractNCA.jl")
+include("WidebandNCA/directionaltree.jl")
 
 include("matrixblocks.jl")
 include("coupling.jl")
@@ -26,8 +27,10 @@ include("topdowncompressor.jl")
 include("buffer.jl")
 include("NCA/PetrovGalerkinNCA.jl")
 include("MV/PetrovGalerkinNCA.jl")
-include("WidebandNCA/directionaltree.jl")
+
 #include("WidebandNCA/farinteractions.jl")
 include("WidebandNCA/topdowncompressor.jl")
+include("WidebandNCA/bottomupcompressor.jl")
 include("WidebandNCA/PetrovGalerkinWNCA.jl")
+include("utils.jl")
 end

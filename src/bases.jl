@@ -39,9 +39,12 @@ function build_testbases!(
     end
 
     level == 1 && return nothing
+
     @tasks for t in collect(H2Trees.LevelIterator(tree, level - 1))
         @set ntasks = ntasks
-        if (!iszero(firstchild(tree, t))) && isroot(dtree, level) && isassigned(pivots, t)
+        if !iszero(firstchild(tree, t)) &&
+            !isroot(dtree, level - 1) &&
+            isassigned(pivots, t)
             transferdirs = Int[]
             dirtransfers = H2BasisBlock{I,K}[]
             for (dir, piv) in pivots[t]
@@ -49,6 +52,7 @@ function build_testbases!(
                 children = collect(ChildIterator(tree, t))
                 push!(transferdirs, dir)
                 for child in children
+                    pivots[child][parent(dtree, dir)][1]
                     crows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, t)) for
                         idx in pivots[child][parent(dtree, dir)][1]
@@ -65,6 +69,78 @@ function build_testbases!(
             lock(lk) do
                 push!(transferidcs, t)
                 push!(transfer, Dict(transferdirs .=> dirtransfers))
+            end
+        end
+    end
+end
+
+# directional bottomupcompressor
+function build_butestbases!(
+    transfer::Vector{Dict{Int,H2BasisBlock{I,K}}},
+    transferidcs::Vector{Int},
+    bases::Vector{Dict{Int,H2BasisBlock{I,K}}},
+    basesidcs::Vector{Int},
+    blocks::Vector{Dict{Int,Matrix{K}}},
+    pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
+    level::Int,
+    dtree,
+    tree;
+    ntasks=Threads.nthreads(),
+) where {I,K}
+    lk = Threads.SpinLock()
+
+    @tasks for t in collect(LevelIterator(tree, level))
+        @set ntasks = ntasks
+        if isassigned(pivots, t)
+            if iszero(firstchild(tree, t)) || isroot(dtree, level)
+                localbases = H2BasisBlock{I,K}[]
+                for (dir, piv) in pivots[t]
+                    if isroot(dtree, level) || iszero(firstchild(tree, t))
+                        rows = [
+                            findfirst(x -> x == idx, H2Trees.values(tree, t)) for
+                            idx in piv[1]
+                        ]
+                        U = blocks[t][dir] / blocks[t][dir][rows, :]
+                        push!(
+                            localbases,
+                            H2BasisBlock(U, H2Trees.values(tree, t), piv[2], Int[]),
+                        )
+                    end
+                end
+                if localbases != []
+                    lock(lk) do
+                        push!(basesidcs, t)
+                        push!(bases, Dict(keys(pivots[t]) .=> localbases))
+                    end
+                end
+            else
+                transferdirs = Int[]
+                dirtransfers = H2BasisBlock{I,K}[]
+                for (dir, piv) in pivots[t]
+                    transferblocks = Matrix{K}[]
+                    children = collect(ChildIterator(tree, t))
+                    push!(transferdirs, dir)
+                    for child in children
+                        crows = [
+                            findfirst(x -> x == idx, H2Trees.values(tree, t)) for
+                            idx in pivots[child][parent(dtree, dir)][1]
+                        ]
+                        rows = [
+                            findfirst(x -> x == idx, H2Trees.values(tree, t)) for
+                            idx in piv[1]
+                        ]
+                        Θ = blocks[t][dir][crows, :] / blocks[t][dir][rows, :]
+
+                        push!(transferblocks, Θ)
+                    end
+                    push!(
+                        dirtransfers, H2BasisBlock(transferblocks, piv[1], piv[2], children)
+                    )
+                end
+                lock(lk) do
+                    push!(transferidcs, t)
+                    push!(transfer, Dict(transferdirs .=> dirtransfers))
+                end
             end
         end
     end
@@ -131,7 +207,7 @@ function build_testbases!(
     end
 end
 
-# BottomUpCompressor
+# bottomupcompressor
 function build_testbases!(
     transfer::Vector{H2BasisBlock{I,K}},
     transferidcs::Vector{Int},
@@ -184,7 +260,7 @@ function build_testbases!(
     end
 end
 
-# directional trialbases
+# directional topdowncompressor
 function build_trialbases!(
     transfer::Vector{Dict{Int,H2BasisBlock{I,K}}},
     transferidcs::Vector{Int},
@@ -226,10 +302,11 @@ function build_trialbases!(
 
     level == 1 && return nothing
 
-    parentclusters = collect(H2Trees.LevelIterator(tree, level - 1))
-    @tasks for s in parentclusters
+    @tasks for s in collect(H2Trees.LevelIterator(tree, level - 1))
         @set ntasks = ntasks
-        if !iszero(firstchild(tree, s)) && !isroot(dtree, level) && isassigned(pivots, s)
+        if !iszero(firstchild(tree, s)) &&
+            !isroot(dtree, level - 1) &&
+            isassigned(pivots, s)
             transferdirs = Int[]
             dirtransfers = H2BasisBlock{I,K}[]
             for (dir, piv) in pivots[s]
@@ -258,6 +335,83 @@ function build_trialbases!(
     end
 end
 
+#directional bottomupcompressor
+function build_butrialbases!(
+    transfer::Vector{Dict{Int,H2BasisBlock{I,K}}},
+    transferidcs::Vector{Int},
+    bases::Vector{Dict{Int,H2BasisBlock{I,K}}},
+    basesidcs::Vector{Int},
+    blocks::Vector{Dict{Int,Matrix{K}}},
+    pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
+    level::Int,
+    dtree,
+    tree;
+    ntasks=Threads.nthreads(),
+) where {I,K}
+    lk = Threads.SpinLock()
+
+    @tasks for s in collect(LevelIterator(tree, level))
+        @set ntasks = ntasks
+        if isassigned(pivots, s)
+            if iszero(firstchild(tree, s)) || isroot(dtree, level)
+                localbases = H2BasisBlock{I,K}[]
+                for (dir, piv) in pivots[s]
+                    if isroot(dtree, level) || iszero(firstchild(tree, s))
+                        cols = [
+                            findfirst(x -> x == idx, H2Trees.values(tree, s)) for
+                            idx in piv[2]
+                        ]
+
+                        V = blocks[s][dir][:, cols] \ blocks[s][dir]
+                        push!(
+                            localbases,
+                            H2BasisBlock(V, piv[1], H2Trees.values(tree, s), Int[]),
+                        )
+                    end
+                end
+                if localbases != []
+                    lock(lk) do
+                        push!(basesidcs, s)
+                        push!(bases, Dict(keys(pivots[s]) .=> localbases))
+                    end
+                end
+            else
+                transferdirs = Int[]
+                dirtransfers = H2BasisBlock{I,K}[]
+                for (dir, piv) in pivots[s]
+                    transferblocks = Matrix{K}[]
+                    children = collect(H2Trees.ChildIterator(tree, s))
+                    push!(transferdirs, dir)
+                    for child in children
+                        if !isassigned(pivots, child)
+                            println("not assigned: ", child, ", ", s)
+                        end
+                        ccols = [
+                            findfirst(x -> x == idx, H2Trees.values(tree, s)) for
+                            idx in pivots[child][parent(dtree, dir)][2]
+                        ]
+                        cols = [
+                            findfirst(x -> x == idx, H2Trees.values(tree, s)) for
+                            idx in piv[2]
+                        ]
+                        Θ = blocks[s][dir][:, cols] \ blocks[s][dir][:, ccols]
+
+                        push!(transferblocks, Θ)
+                    end
+                    push!(
+                        dirtransfers, H2BasisBlock(transferblocks, piv[1], piv[2], children)
+                    )
+                end
+                lock(lk) do
+                    push!(transferidcs, s)
+                    push!(transfer, Dict(transferdirs .=> dirtransfers))
+                end
+            end
+        end
+    end
+end
+
+# topdowncompressor
 function build_trialbases!(
     transfer::Vector{H2BasisBlock{I,K}},
     transferidcs::Vector{Int},
@@ -296,7 +450,7 @@ function build_trialbases!(
     parentclusters = collect(H2Trees.LevelIterator(tree, level - 1))
     @tasks for node in parentclusters
         @set ntasks = ntasks
-        if !iszero(H2Trees.firstchild(tree, node)) && isassigned(pivots, node)#] != ([], [])
+        if !iszero(H2Trees.firstchild(tree, node)) && isassigned(pivots, node)
             transferblocks = Matrix{K}[]
             children = collect(H2Trees.ChildIterator(tree, node))
             for child in children
@@ -318,7 +472,7 @@ function build_trialbases!(
     end
 end
 
-# BottomUpCompressor
+# bottomupcompressor
 function build_trialbases!(
     transfer::Vector{H2BasisBlock{I,K}},
     transferidcs::Vector{Int},

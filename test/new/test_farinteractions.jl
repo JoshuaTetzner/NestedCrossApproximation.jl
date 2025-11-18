@@ -1,31 +1,72 @@
-using CompScienceMeshes
+using BEAST
 using H2Trees
 using NestedCrossApproximation
+using CompScienceMeshes
+##
 
-Γ = meshsphere(1.0, 0.05)
-ttree = TwoNTree(Γ.vertices, 0.1)
-tree = BlockTree(ttree, ttree)
-
+λ = 0.6
+k = 2 * pi / λ
+Γ = meshsphere(1.0, 0.03)
 ##
-λ = 0.5
-dtree = NestedCrossApproximation.𝒟tree(1.0, 2 * pi / λ)
+op = Maxwell3D.singlelayer(; wavenumber=k)
+space = raviartthomas(Γ)
+tree = H2Trees.TwoNTree(space, space, 0.01; minvaluestest=200, minvaluestrial=200)
+length(space)
 ##
-function isnear(k, treea, treeb, nodea, nodeb; ηₗ=1.0, ηₕ=4.0)
-    ths = H2Trees.halfsize(treea, nodea) * sqrt(3)
-    shs = H2Trees.halfsize(treeb, nodeb) * sqrt(3)
-    dist = norm(H2Trees.center(treea, nodea) - H2Trees.center(treeb, nodeb)) - (ths + shs)
-    if k / pi * 4 * min(ths, shs) <= 1
-        (2 * max(ths, shs) <= ηₗ * max(dist, 0.0)) ? (return false) : (return true)
-    else
-        (4 * k * max(ths^2, shs^2) <= ηₕ * max(dist, 0.0)) ? (return false) : (return true)
-    end
-end
-myisnear(treea, treeb, nodea, nodeb) = isnear(2 * pi / λ, treea, treeb, nodea, nodeb)
-##
-tree
-a, aa, b, bb = NestedCrossApproximation.directionalfarinteractions(
-    tree, dtree; isnear=myisnear
+dtree = NestedCrossApproximation.𝒟tree(
+    H2Trees.halfsize(tree.testcluster),
+    NestedCrossApproximation.maxlevel(tree.trialcluster, NestedCrossApproximation.islf(k)),
+)
+Ft, eₜ, Fs, eₛ = NestedCrossApproximation.directionalfarinteractions(
+    tree, dtree; isnear=NestedCrossApproximation.isnear(k)
 )
 
 ##
-dtree = NestedCrossApproximation.𝒟tree(1.0, 2 * pi / λ)
+hfinteractions = Int[]
+lfinteractions = Int[]
+for level in H2Trees.levels(tree.testcluster)
+    lfinteraction = 0
+    hfinteraction = 0
+    for t in H2Trees.LevelIterator(tree.testcluster, level)
+        interactions = length(Ft[t])
+        if interactions > 0
+            if eₜ[t][1] == 0
+                lfinteraction += interactions
+            else
+                hfinteraction += interactions
+            end
+        end
+    end
+    push!(lfinteractions, lfinteraction)
+    push!(hfinteractions, hfinteraction)
+end
+
+hfinteractions
+lfinteractions
+##
+function admissiblelevel(Ft, tree)
+    lflevel = 0
+    hflevel = 0
+    for level in H2Trees.levels(tree.testcluster)
+        for t in H2Trees.LevelIterator(tree.testcluster, level)
+            if length(Ft[t]) > 0
+                if eₜ[t][1] == 0
+                    lflevel += 1
+                    break
+                else
+                    hflevel += 1
+                    break
+                end
+            end
+        end
+    end
+    return max(lflevel, hflevel)
+end
+
+@time admissiblelevel(Ft, tree)
+
+function settolerace(
+    comp::TopDownCompressor{RP,LRF}
+) where {RP<:iACA,LRF<:LowRankFactorization}
+    return comp.lrf.convergence.estimator.tol = 1e-4
+end

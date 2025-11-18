@@ -39,6 +39,7 @@ function directionalfarinteractions(
             end
         end
     end
+
     for level in levels(trialtree(tree))
         @tasks for s in LevelIterator(trialtree(tree), level)
             @set ntasks = ntasks
@@ -53,4 +54,33 @@ function directionalfarinteractions(
         end
     end
     return testfarnodes, testdirs, trialfarnodes, trialdirs
+end
+
+function bottomupfars!(tree, dtree, F, e; ntasks=Threads.nthreads())
+    for level in levels(tree)
+        level == 1 && continue
+        !isroot(dtree, level) && continue
+        @tasks for t in LevelIterator(tree, level)
+            @set ntasks = ntasks
+            append!(F[t], F[parent(tree, t)])
+            append!(e[t], map(dir -> parent(dtree, dir), e[parent(tree, t)]))
+        end
+    end
+end
+
+function admissiblelevel(Ft, eₜ, tree::BlockTree)
+    lflevel = 0
+    hflevel = 0
+    for level in levels(testtree(tree))
+        for t in LevelIterator(testtree(tree), level)
+            length(Ft[t]) > 0 && if eₜ[t][1] == 0
+                lflevel += 1
+                break
+            else
+                hflevel += 1
+                break
+            end
+        end
+    end
+    return max(lflevel, hflevel)
 end

@@ -28,6 +28,18 @@ function BottomUpCompressor(;
     return BottomUpCompressor(factorization, representor)
 end
 
+function tolerance!(
+    lrf::AdaptiveCrossApproximation.ACA{RP,CP,CC}, denominator::F
+) where {RP,CP,CC<:FNormEstimator,F}
+    return lrf.convergence.tol = lrf.convergence.tol / denominator
+end
+
+function tolerance!(
+    lrf::AdaptiveCrossApproximation.iACA{RP,CP,CC}, denominator::F
+) where {RP,CP,CC<:FNormExtrapolator,F}
+    return lrf.convergence.estimator.tol = lrf.convergence.estimator.tol / denominator
+end
+
 function compress(
     compressor::TopDownCompressor{LRF,RP},
     farmatrix::AbstractKernelMatrix{T},
@@ -90,6 +102,7 @@ function compress(
         rowidcs=t,
         colidcs=Ft,
     )
+
     colbuffer[t, 1:npivots] = colbuffer[t, 1:npivots] * rowbuffer[1:npivots, 1:npivots]
     rowbuffer[1:npivots, 1:npivots] .= 0.0
     put!(rowchannel, rowbuffer)

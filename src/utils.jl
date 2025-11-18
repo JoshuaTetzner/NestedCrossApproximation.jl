@@ -1,5 +1,5 @@
 using BlockSparseMatrices
-
+#=
 function storage(h2mat::GalerkinNCA)
     ref = size(h2mat, 1) * size(h2mat, 2)
     h2stor = 0.0
@@ -199,4 +199,53 @@ function lrbh2mat(h2mat::PetrovGalerkinNCA)
         h2mat.dim,
         h2mat.ismultithreaded,
     )
+end
+
+=#
+
+function storage(h2::NestedCrossApproximation.PetrovGalerkinWNCA)
+    ref = size(h2, 1) * size(h2, 2)
+    h2stor = 0.0
+
+    for frb in h2.nearinteractions.blocks
+        h2stor += length(frb.rowindices) * length(frb.colindices)
+    end
+
+    for lrb in h2.couplingmatrices
+        h2stor += length(lrb.Z)
+    end
+
+    for ntbs in values(h2.nestedtestbases)
+        for ntb in values(ntbs)
+            h2stor += size(ntb.T, 1) * size(ntb.T, 2)
+        end
+    end
+
+    for ntbs in values(h2.nestedtrialbases)
+        for ntb in values(ntbs)
+            h2stor += size(ntb.T, 1) * size(ntb.T, 2)
+        end
+    end
+
+    for level in h2.testtransfermatrices
+        for trans in values(level)
+            for tran in values(trans)
+                for t in tran.T
+                    h2stor += size(t, 1) * size(t, 2)
+                end
+            end
+        end
+    end
+
+    for level in h2.trialtransfermatrices
+        for trans in values(level)
+            for tran in values(trans)
+                for t in tran.T
+                    h2stor += size(t, 1) * size(t, 2)
+                end
+            end
+        end
+    end
+
+    return h2stor * 8 * 10^-9, h2stor / ref
 end
