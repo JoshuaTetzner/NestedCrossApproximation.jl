@@ -60,50 +60,6 @@ struct PetrovGalerkinWNCA{
     end
 end
 
-struct IsLowFrequencyFunctor{F}
-    k::F
-end
-
-function islf(k::F) where {F}
-    return IsLowFrequencyFunctor{F}(k)
-end
-
-function (islf::IsLowFrequencyFunctor{F})(tree::TwoNTree, level::Int) where {F}
-    return 2 * sqrt(3) * H2Trees.halfsize(tree) * islf.k / (2.0^(level - 1)) <= 1
-end
-
-function (islf::IsLowFrequencyFunctor{F})(hs::F) where {F}
-    return 2 * sqrt(3) * hs * islf.k <= 1
-end
-
-struct IsNearFunctor{F}
-    k::F
-    ηₗ::F
-    ηₕ::F
-    islf::IsLowFrequencyFunctor{F}
-end
-
-function isnear(k::F; ηₗ::F=1.0, ηₕ::F=5.0, islf=islf(k)) where {F}
-    return IsNearFunctor{F}(k, ηₗ, ηₕ, islf)
-end
-
-function (isnear::IsNearFunctor{F})(
-    treea::TwoNTree, treeb::TwoNTree, nodea::Int, nodeb::Int
-) where {F}
-    ths = H2Trees.halfsize(treea, nodea) * sqrt(3)
-    shs = H2Trees.halfsize(treeb, nodeb) * sqrt(3)
-    dist = norm(H2Trees.center(treea, nodea) - H2Trees.center(treeb, nodeb)) - (ths + shs)
-    if isnear.islf(min(ths, shs))
-        (2 * max(ths, shs) <= isnear.ηₗ * max(dist, 0.0)) ? (return false) : (return true)
-    else
-        if (4 * isnear.k * max(ths^2, shs^2) <= isnear.ηₕ * max(dist, 0.0))
-            (return false)
-        else
-            (return true)
-        end
-    end
-end
-
 function maxlevel(tree::TwoNTree, islf::IsLowFrequencyFunctor{F}) where {F}
     level = 0
     while !islf(tree, level)
@@ -136,6 +92,7 @@ function PetrovGalerkinWNCA(
     values, nearvalues = H2Trees.nearinteractions(
         tree; isnear=isnear, extractselfvalues=false
     )
+
     println("nearinteractions")
     blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, length(values))
     @time @tasks for i in eachindex(values)
@@ -149,19 +106,25 @@ function PetrovGalerkinWNCA(
     farmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=farquadstrat
     )
-    dtree = 𝒟tree(H2Trees.halfsize(tree.testcluster), maxlevel(testtree(tree), islf))
+
+    #=dtree = 𝒟tree(H2Trees.halfsize(tree.testcluster), maxlevel(testtree(tree), islf))
     Ft, eₜ, Fs, eₛ = directionalfarinteractions(tree, dtree; isnear=isnear)
-    #println(admissiblelevel(Ft, eₜ, tree))
-    tolerance!(testcompressor.lrf, admissiblelevel(Ft, eₜ, tree))
-    tolerance!(trialcompressor.lrf, admissiblelevel(Fs, eₛ, tree))
+    #println(admissiblelevel(Ft, eₜ, tree))=#
+
+    testfardata = NestedCrossApproximation.directionaltestfars(
+        tree; islf=islf, isnear=isnear
+    )
+    trialfardata = NestedCrossApproximation.directionaltrialfars(
+        tree; islf=islf, isnear=isnear
+    )
+    tolerance!(testcompressor.lrf, admissiblelevel(testtree(tree), testfardata))
+    tolerance!(trialcompressor.lrf, admissiblelevel(trialtree(tree), trialfardata))
 
     println("compress_testtree")
     @time nestedtestbases, testtransfermatrices, testpivots = testcompressor(
         farmatrix,
-        Ft,
-        eₜ,
+        testfardata,
         tree,
-        dtree,
         reverse(testbuffer(testcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks));
         ntasks=ntasks,
         maxrank=maxrank,
@@ -170,10 +133,8 @@ function PetrovGalerkinWNCA(
     println("compress_trialtree")
     @time nestedtrialbases, trialtransfermatrices, trialpivots = trialcompressor(
         farmatrix,
-        Fs,
-        eₛ,
+        trialfardata,
         tree,
-        dtree,
         trialbuffer(trialcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks);
         ntasks=ntasks,
         maxrank=maxrank,
@@ -296,7 +257,7 @@ end
         end
     end
 
-    @time y += A.nearinteractions * x
+    y += A.nearinteractions * x
 
     return y
 end

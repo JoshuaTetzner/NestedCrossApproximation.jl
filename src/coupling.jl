@@ -69,6 +69,7 @@ function assemble_couplingmatrices(
     return couplingblocks
 end
 
+#=
 function assemble_couplingmatrices(
     farmatrix::AbstractKernelMatrix{T},
     testpivots,
@@ -104,3 +105,4 @@ function assemble_couplingmatrices(
 
     return couplingblocks
 end
+=#

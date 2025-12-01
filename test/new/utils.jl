@@ -67,3 +67,52 @@ function lbases(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA{K}) where {K}
 
     return testbases, trialbases
 end
+
+function storage(h2::NestedCrossApproximation.PetrovGalerkinWNCA)
+    nears = 0
+    for block in h2.nearinteractions.blocks
+        nears += length(block)
+    end
+    println("Nearinteractions: ", nears * 8 / 10^6, " MB")
+    bases = 0
+    for (_, base) in h2.nestedtestbases
+        for (_, mat) in base
+            bases += length(mat.T)
+        end
+    end
+    for (_, base) in h2.nestedtrialbases
+        for (_, mat) in base
+            bases += length(mat.T)
+        end
+    end
+    println("Bases: ", bases * 8 / 10^6, " MB")
+
+    transfers = 0
+    for level in h2.testtransfermatrices
+        for (_, transfer) in level
+            for (_, mat) in transfer
+                for tmat in mat.T
+                    transfers += length(tmat)
+                end
+            end
+        end
+    end
+    for level in h2.trialtransfermatrices
+        for (_, transfer) in level
+            for (_, mat) in transfer
+                for tmat in mat.T
+                    transfers += length(tmat)
+                end
+            end
+        end
+    end
+    println("Transfermatrices: ", transfers * 8 / 10^6, " MB")
+
+    couplings = 0
+    for mat in h2.couplingmatrices
+        couplings += length(mat.Z)
+    end
+
+    println("Couplingmatrices: ", couplings * 8 / 10^6, " MB")
+    return (nears + bases + transfers + couplings) * 8 / 10^6
+end

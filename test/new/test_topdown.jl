@@ -7,11 +7,13 @@ using CompScienceMeshes
 using LinearAlgebra
 ##
 
-λ = 2
+λ = 0.6
 k = 2 * pi / λ
-Γ = meshsphere(1.0, 0.05)
+Γ = meshsphere(1.0, 0.03)
 op = Maxwell3D.singlelayer(; wavenumber=k)
 space = raviartthomas(Γ)
+length(space)
+
 ttree = H2Trees.KMeansTree(space.pos, 2; minvalues=100)
 tree = BlockTree(ttree, ttree)
 
@@ -22,7 +24,6 @@ function myisnear(treea, treeb, nodea, nodeb; η=1.0)
 
     (2 * max(ths, shs) <= η * max(dist, 0.0)) ? (return false) : (return true)
 end
-##
 ##
 testcompressor = NestedCrossApproximation.TopDownCompressor(
     iACA(

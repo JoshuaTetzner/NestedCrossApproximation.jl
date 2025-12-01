@@ -29,8 +29,8 @@ function (compressor::TopDownCompressor)(
 
             # add paternal directions
             dirs = unique(eₜ[t])
-            (!(dirs == [0]) && isassigned(eₜ, parent(testtree(tree), t))) &&
-                for eₜₜ in eₜ[parent(testtree(tree), t)]
+            (!(dirs == [0]) && isassigned(pivots, parent(testtree(tree), t))) &&
+                for eₜₜ in keys(pivots[parent(testtree(tree), t)])#eₜ[parent(testtree(tree), t)]
                     !in(parent(dtree, eₜₜ), dirs) && push!(dirs, parent(dtree, eₜₜ))
                 end
 
@@ -119,8 +119,8 @@ function (compressor::TopDownCompressor)(
 
             # add paternal directions
             dirs = unique(eₛ[s])
-            (!(dirs == [0]) && isassigned(eₛ, parent(trialtree(tree), s))) &&
-                for eₛₛ in eₛ[parent(trialtree(tree), s)]
+            (!(dirs == [0]) && isassigned(pivots, parent(trialtree(tree), s))) &&
+                for eₛₛ in keys(pivots[parent(trialtree(tree), s)])
                     !in(parent(dtree, eₛₛ), dirs) && push!(dirs, parent(dtree, eₛₛ))
                 end
 

@@ -14,7 +14,7 @@ include("abstractkernelmatrix/abstractkernelmatrix.jl")
 include("abstractkernelmatrix/beastkernelmatrix.jl")
 
 include("NCA/AbstractNCA.jl")
-include("WidebandNCA/directionaltree.jl")
+#include("WidebandNCA/directionaltree.jl")
 
 include("matrixblocks.jl")
 include("coupling.jl")
@@ -29,8 +29,14 @@ include("NCA/PetrovGalerkinNCA.jl")
 include("MV/PetrovGalerkinNCA.jl")
 
 #include("WidebandNCA/farinteractions.jl")
-include("WidebandNCA/topdowncompressor.jl")
-include("WidebandNCA/bottomupcompressor.jl")
-include("WidebandNCA/PetrovGalerkinWNCA.jl")
-include("utils.jl")
+#include("WidebandNCA/directionaltrees/utilities.jl")
+include("directionalfarinteractions/utilities.jl")
+include("directionalfarinteractions/abstractdirections.jl")
+include("directionalfarinteractions/twondirections.jl")
+include("directionalfarinteractions/boundingballdirections.jl")
+
+#include("WidebandNCA/topdowncompressor.jl")
+#include("WidebandNCA/bottomupcompressor.jl")
+#include("WidebandNCA/PetrovGalerkinWNCA.jl")
+#include("utils.jl")
 end

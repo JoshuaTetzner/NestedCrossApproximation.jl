@@ -52,7 +52,17 @@ function build_testbases!(
                 children = collect(ChildIterator(tree, t))
                 push!(transferdirs, dir)
                 for child in children
-                    pivots[child][parent(dtree, dir)][1]
+                    if !haskey(pivots[child], parent(dtree, dir))
+                        println(
+                            collect(keys(pivots[child])),
+                            "not assigned: ",
+                            child,
+                            ", ",
+                            dir,
+                            ", ",
+                            parent(dtree, dir),
+                        )
+                    end
                     crows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, t)) for
                         idx in pivots[child][parent(dtree, dir)][1]
@@ -100,6 +110,10 @@ function build_butestbases!(
                             findfirst(x -> x == idx, H2Trees.values(tree, t)) for
                             idx in piv[1]
                         ]
+                        if rank(blocks[t][dir][rows, :]) < length(rows)
+                            println(piv[1], piv[2])
+                            error()
+                        end
                         U = blocks[t][dir] / blocks[t][dir][rows, :]
                         push!(
                             localbases,

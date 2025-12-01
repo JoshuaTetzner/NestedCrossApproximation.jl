@@ -36,7 +36,11 @@ function (compressor::BottomUpCompressor)(
                     pivs = compress(
                         compressor, farmatrix, tree, t, dirFt, buffer[1], buffer[2]
                     )
-
+                    if length(pivs[1]) == 40
+                        println(pivs)
+                        println(t, dirFt)
+                        error()
+                    end
                     push!(
                         localblocks,
                         buffer[1][H2Trees.values(testtree(tree), t), 1:length(pivs[1])],

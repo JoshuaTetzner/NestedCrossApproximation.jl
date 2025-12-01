@@ -6,13 +6,24 @@ using CompScienceMeshes
 using LinearAlgebra
 ##
 
-λ = 0.6
-k = 2 * pi / λ
-Γ = meshsphere(1.0, 0.03)
+#λ = 0.6
+#k = 2 * pi / λ
+#Γ = meshsphere(1.0, 0.03)
+h = 0.04
+k = 0.15 / h
+λ = 2 * pi / k
+##
+path = "/home/jt286/.julia/dev/NestedCrossApproximation/test/geo/ellipsoid.geo"
+pathsave = "/home/jt286/.julia/dev/NestedCrossApproximation/test/geo/ellipsoid.msh"
+run(`gmsh $path -2 -clmax $h -format msh2 -o $pathsave`)
+##
+Γ = CompScienceMeshes.read_gmsh_mesh(pathsave)
 ##
 op = Maxwell3D.singlelayer(; wavenumber=k)
 space = raviartthomas(Γ)
-tree = H2Trees.TwoNTree(space, space, 0.01; minvaluestest=200, minvaluestrial=200)
+tree = H2Trees.TwoNTree(space, space, 0.01; minvaluestest=100, minvaluestrial=100)
+
+length(space)
 ##
 testcompressor = NestedCrossApproximation.TopDownCompressor(
     iACA(
@@ -39,10 +50,22 @@ trialcompressor = NestedCrossApproximation.TopDownCompressor(
     trialcompressor=trialcompressor,
     maxrank=50,
 );
-##
-x = rand(ComplexF64, size(wnca, 2))
-@time wnca * x;
 
+##
+storage(wnca)/(length(A)*8/10^6)
+
+##
+
+x = rand(ComplexF64, size(wnca, 2))
+y = zeros(ComplexF64, size(wnca, 1))
+y2 = zeros(ComplexF64, size(wnca, 1))
+@time mul!(y, wnca, x);
+@time mul!(y2, A, x);
+A = assemble(op, space, space)
+##
+
+##
+ass
 ##
 leveledbases = Int[]
 for level in H2Trees.levels(tree.testcluster)

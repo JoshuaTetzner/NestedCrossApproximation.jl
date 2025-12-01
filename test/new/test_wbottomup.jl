@@ -6,9 +6,9 @@ using CompScienceMeshes
 using LinearAlgebra
 ##
 
-λ = 0.5
+λ = 0.6
 k = 2 * pi / λ
-Γ = meshsphere(1.0, 0.05)
+Γ = meshsphere(1.0, 0.03)
 ##
 op = Maxwell3D.singlelayer(; wavenumber=k)
 space = raviartthomas(Γ)
@@ -17,21 +17,19 @@ tree = H2Trees.TwoNTree(space, space, 0.01; minvaluestest=200, minvaluestrial=20
 testcompressor = NestedCrossApproximation.BottomUpCompressor(
     iACA(
         MaximumValue(),
-        MimicryPivoting(space.pos, space.pos),
+        TreeMimicryPivoting(space.pos, space.pos, tree.trialcluster),
         FNormExtrapolator(iFNormEstimator(1e-3)),
     ),
     nothing,
 )
 trialcompressor = NestedCrossApproximation.BottomUpCompressor(
     iACA(
-        MimicryPivoting(space.pos, space.pos),
+        TreeMimicryPivoting(space.pos, space.pos, tree.testcluster),
         MaximumValue(),
         FNormExtrapolator(iFNormEstimator(1e-3)),
     ),
     nothing,
 )
-
-trialcompressor.lrf.convergence.estimator.tol = 1e-4
 
 @time wnca = NestedCrossApproximation.PetrovGalerkinWNCA(
     op,
@@ -41,11 +39,22 @@ trialcompressor.lrf.convergence.estimator.tol = 1e-4
     testcompressor=testcompressor,
     trialcompressor=trialcompressor,
     maxrank=50,
+    ntasks=1,
 );
 
 ##
+H2Trees.values(tree.testcluster, 285)
+##
 A = assemble(op, space, space)
+##
+t = 11
+Ft = [42, 770, 771, 772, 773, 775, 779]
 
+isnear = NestedCrossApproximation.isnear(k)
+
+for s in Ft
+    println(isnear(tree.testcluster, tree.trialcluster, t, s))
+end
 ##
 x = rand(ComplexF64, size(wnca, 2))
 norm(A * x - wnca * x) / norm(A * x)

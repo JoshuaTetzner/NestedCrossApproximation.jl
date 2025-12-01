@@ -45,12 +45,12 @@ function compress(
     cols = zeros(Int, maxrank)
 
     colbuffer[tvalues, 1:maxrank] .= 0.0
-
+    nFtvalues = length(H2Trees.values(tree.testcluster, Ft))
     npivots, rowpivots, colpivots = compressor.lrf(
         farmatrix,
         view(colbuffer, tvalues, 1:maxrank),
         rowbuffer,
-        min(maxrank, length(tvalues));
+        min(maxrank, min(length(tvalues), nFtvalues));
         rows=rows,
         cols=cols,
         rowidcs=tvalues,
@@ -158,12 +158,12 @@ function compress(
     cols = zeros(Int, maxrank)
 
     rowbuffer[1:maxrank, svalues] .= 0.0
-
+    nFsvalues = length(H2Trees.values(tree.testcluster, Fs))
     npivots, rowpivots, colpivots = compressor.lrf(
         farmatrix,
         colbuffer,
         view(rowbuffer, 1:maxrank, svalues),
-        min(maxrank, length(svalues));
+        min(maxrank, min(length(svalues), nFsvalues));
         rows=rows,
         cols=cols,
         rowidcs=Fsvalues,
