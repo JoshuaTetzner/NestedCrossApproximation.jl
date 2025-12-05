@@ -1,11 +1,5 @@
 struct PetrovGalerkinNCA{
-    T,
-    TreeType,
-    NearInteractionType,
-    NestedBasesDict,
-    TransferMatrixType,
-    CouplingMatrixType,
-    FarInteractionType,
+    T,TreeType,NearInteractionType,NestedBasesDict,TransferMatrixType,CouplingMatrixType
 } <: LinearMaps.LinearMap{T}
     tree::TreeType
     nearinteractions::NearInteractionType
@@ -14,7 +8,6 @@ struct PetrovGalerkinNCA{
     testtransfermatrices::TransferMatrixType
     trialtransfermatrices::TransferMatrixType
     couplingmatrices::CouplingMatrixType
-    fars::FarInteractionType
     dim::Tuple{Int,Int}
     ntasks::Int
 
@@ -26,7 +19,6 @@ struct PetrovGalerkinNCA{
         testtransfermatrices,
         trialtransfermatrices,
         couplingmatrices,
-        fars,
         dim,
         ntasks,
     ) where {T}
@@ -37,7 +29,6 @@ struct PetrovGalerkinNCA{
             typeof(nestedtestbases),
             typeof(testtransfermatrices),
             typeof(couplingmatrices),
-            typeof(fars),
         }(
             tree,
             nearinteractions,
@@ -46,7 +37,6 @@ struct PetrovGalerkinNCA{
             testtransfermatrices,
             trialtransfermatrices,
             couplingmatrices,
-            fars,
             dim,
             ntasks,
         )
@@ -86,10 +76,16 @@ function PetrovGalerkinNCA(
         nearmatrix(blk, values[i], nearvalues[i])
         blocks[i] = blk
     end
-    nearinteractions = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
+    nearinteractions = BlockSparseMatrix(
+        blocks,
+        values,
+        nearvalues,
+        size(nearmatrix);
+        scheduler=DynamicScheduler(; ntasks=ntasks),
+    )
 
     # far interactions
-    testdfars, trialfars = farinteractions(tree; isnear=isnear)
+    #testdfars, trialfars = farinteractions(tree; isnear=isnear)
 
     farmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=farquadstrat
@@ -98,41 +94,52 @@ function PetrovGalerkinNCA(
     println("compress_testtree")
     nestedtestbases, testtransfermatrices, testpivots = testcompressor(
         farmatrix,
-        testdfars,
+        #testdfars,
         tree,
         reverse(testbuffer(testcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks));
+        isnear=isnear,
         ntasks=ntasks,
     )
+
     println("compress_trialtree")
     nestedtrialbases, trialtransfermatrices, trialpivots = trialcompressor(
         farmatrix,
-        trialfars,
+        #trialfars,
         tree,
         trialbuffer(trialcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks);
+        isnear=isnear,
         ntasks=ntasks,
     )
 
     println("coupling")
-    couplingmatrices, fars = assemble_couplingmatrices(
+    couplingmatrices = assemble_couplingmatrices(
         farmatrix, tree, testpivots, trialpivots; isnear=isnear, ntasks=ntasks
     )
 
     return PetrovGalerkinNCA{eltype(nearmatrix)}(
         tree,
         nearinteractions,
-        nestedtestbases,
-        nestedtrialbases,
-        testtransfermatrices,
-        trialtransfermatrices,
-        couplingmatrices,
-        fars,
+        Dict(
+            i => nestedtestbases[i] for
+            i in eachindex(nestedtestbases) if isassigned(nestedtestbases, i)
+        ),
+        Dict(
+            i => nestedtrialbases[i] for
+            i in eachindex(nestedtrialbases) if isassigned(nestedtrialbases, i)
+        ),
+        Dict(
+            i => testtransfermatrices[i] for
+            i in eachindex(testtransfermatrices) if isassigned(testtransfermatrices, i)
+        ),
+        Dict(
+            i => trialtransfermatrices[i] for
+            i in eachindex(trialtransfermatrices) if isassigned(trialtransfermatrices, i)
+        ),
+        Dict(
+            i => couplingmatrices[i] for
+            i in eachindex(couplingmatrices) if isassigned(couplingmatrices, i)
+        ),
         size(farmatrix),
         ntasks,
     )
 end
-#=
-function assemble(operator, testspace, trialspace; kwargs...)
-    return PetrovGalerkinNCA(operator, testspace, trialspace; kwargs...)
-end
-=#
-##

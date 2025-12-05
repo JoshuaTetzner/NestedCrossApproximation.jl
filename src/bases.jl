@@ -14,6 +14,17 @@ function nestedtestbasis!(
     )
 end
 
+function nestedtestbasis!(
+    buffer::Matrix{K}, tree, t::Int, pivots::Tuple{Vector{I},Vector{I}}
+) where {I,K}
+    U =
+        buffer[H2Trees.values(testtree(tree), t), 1:length(pivots[1])] /
+        buffer[pivots[1], 1:length(pivots[1])]
+    return push!(
+        localbases, H2BasisBlock(U, H2Trees.values(testtree(tree), t), pivots[2], Int[])
+    )
+end
+
 # directional topdowncompressor
 function build_testbases!(
     transfer::Vector{Dict{Int,H2BasisBlock{I,K}}},

@@ -67,49 +67,56 @@ end
 
 function (compressor::BottomUpCompressor)(
     farmatrix::AbstractKernelMatrix{T},
-    farinteractions::Vector{Vector{Int}},
     tree::H2Trees.BlockTree,
     buffer::Tuple{K,Channel{K}};
     ntasks=1,
+    isnear=H2Trees.isnear,
     maxrank=40,
 ) where {T,K<:Matrix{T}}
-    basesidcs = Int[]
-    bases = NestedCrossApproximation.H2BasisBlock{Int,T}[]
-    leveledtransfer = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,T}}[]
-    pivots = Vector{Tuple{Vector{Int},Vector{Int}}}(
-        undef, length(H2Trees.testtree(tree).nodes)
-    )
-    for level in reverse(H2Trees.levels(H2Trees.testtree(tree)))
-        transferidcs = Int[]
-        transfer = NestedCrossApproximation.H2BasisBlock{Int,T}[]
-        testclusters = collect(H2Trees.LevelIterator(H2Trees.testtree(tree), level))
+    nestedbases = Vector{K}(undef, numberofnodes(testtree(tree)))
+    transfermatrices = Vector{Vector{K}}(undef, numberofnodes(testtree(tree)))
+    pivots = Vector{Tuple{Vector{Int},Vector{Int}}}(undef, length(testtree(tree).nodes))
+
+    iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
+
+    for level in reverse(levels(testtree(tree)))
+        testclusters = collect(LevelIterator(testtree(tree), level))
         @tasks for t in testclusters
             @set ntasks = ntasks
-            nodes = vcat(
-                t, collect(H2Trees.ParentUpwardsIterator(H2Trees.testtree(tree), t))
-            )
-            nodes != [] ? (fars = reduce(vcat, farinteractions[nodes])) : (fars = [])
-            fars != [] && (
-                pivots[t] = compress(
-                    compressor, farmatrix, tree, t, fars, buffer[1], buffer[2]
+
+            Ft = collect(iterator(trialtree(tree), testtree(tree), t))
+            !(parent(testtree(tree), t) == 0) && (
+                Ft = Vector{Int}(
+                    vcat(
+                        Ft,
+                        mapreduce(vcat, ParentUpwardsIterator(testtree(tree), t)) do tp
+                            collect(iterator(trialtree(tree), testtree(tree), tp))
+                        end,
+                    ),
                 )
             )
+
+            if Ft != []
+                pivots[t] = compress(
+                    compressor, farmatrix, tree, t, Ft, buffer[1], buffer[2]
+                )
+
+                if H2Trees.firstchild(testtree(tree), t) == 0
+                    nestedbases[t] =
+                        buffer[1][
+                            H2Trees.values(testtree(tree), t), 1:length(pivots[t][1])
+                        ] / buffer[1][pivots[t][1], 1:length(pivots[t][1])]
+                else
+                    transfermatrices[t] = map(ChildIterator(testtree(tree), t)) do tc
+                        buffer[1][pivots[tc][1], 1:length(pivots[t][2])] /
+                        buffer[1][pivots[t][1], 1:length(pivots[t][2])]
+                    end
+                end
+            end
         end
-        build_testbases!(
-            transfer,
-            transferidcs,
-            bases,
-            basesidcs,
-            buffer[1],
-            testclusters,
-            pivots,
-            H2Trees.testtree(tree);
-            ntasks=ntasks,
-        )
-        push!(leveledtransfer, Dict(transferidcs .=> transfer))
     end
 
-    return Dict(basesidcs .=> bases), reverse!(leveledtransfer), pivots
+    return nestedbases, transfermatrices, pivots
 end
 
 # trialtree
@@ -180,47 +187,53 @@ end
 
 function (compressor::BottomUpCompressor)(
     farmatrix::AbstractKernelMatrix{T},
-    farinteractions::Vector{Vector{Int}},
     tree::H2Trees.BlockTree,
     buffer::Tuple{Channel{K},K};
     ntasks=1,
+    isnear=H2Trees.isnear,
     maxrank=40,
 ) where {T,K<:Matrix{T}}
-    basesidcs = Int[]
-    bases = NestedCrossApproximation.H2BasisBlock{Int,T}[]
-    leveledtransfer = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,T}}[]
-    pivots = Vector{Tuple{Vector{Int},Vector{Int}}}(
-        undef, length(H2Trees.testtree(tree).nodes)
-    )
-    for level in reverse(H2Trees.levels(H2Trees.trialtree(tree)))
-        transferidcs = Int[]
-        transfer = NestedCrossApproximation.H2BasisBlock{Int,T}[]
-        trialclusters = collect(H2Trees.LevelIterator(H2Trees.trialtree(tree), level))
+    nestedbases = Vector{K}(undef, numberofnodes(trialtree(tree)))
+    transfermatrices = Vector{Vector{K}}(undef, numberofnodes(testtree(tree)))
+    pivots = Vector{Tuple{Vector{Int},Vector{Int}}}(undef, length(testtree(tree).nodes))
+
+    iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
+
+    for level in reverse(levels(trialtree(tree)))
+        trialclusters = collect(LevelIterator(trialtree(tree), level))
         @tasks for s in trialclusters
             @set ntasks = ntasks
-            nodes = vcat(
-                s, collect(H2Trees.ParentUpwardsIterator(H2Trees.trialtree(tree), s))
-            )
-            nodes != [] ? (fars = reduce(vcat, farinteractions[nodes])) : (fars = [])
-            fars != [] && (
-                pivots[s] = compress(
-                    compressor, farmatrix, tree, fars, s, buffer[1], buffer[2]
+
+            Fs = collect(iterator(testtree(tree), trialtree(tree), s))
+            !(parent(trialtree(tree), s) == 0) && (
+                Fs = Vector{Int}(
+                    vcat(
+                        Fs,
+                        mapreduce(vcat, ParentUpwardsIterator(trialtree(tree), s)) do sp
+                            collect(iterator(testtree(tree), trialtree(tree), sp))
+                        end,
+                    ),
                 )
             )
+            if Fs != []
+                pivots[s] = compress(
+                    compressor, farmatrix, tree, Fs, s, buffer[1], buffer[2]
+                )
+
+                if H2Trees.isleaf(trialtree(tree), s)
+                    nestedbases[s] =
+                        buffer[2][1:length(pivots[s][1]), pivots[s][2]] \ buffer[2][
+                            1:length(pivots[s][1]), H2Trees.values(trialtree(tree), s)
+                        ]
+                else
+                    transfermatrices[s] = map(ChildIterator(trialtree(tree), s)) do sc
+                        buffer[2][1:length(pivots[s][2]), pivots[s][2]] \
+                        buffer[2][1:length(pivots[s][2]), pivots[sc][2]]
+                    end
+                end
+            end
         end
-        build_trialbases!(
-            transfer,
-            transferidcs,
-            bases,
-            basesidcs,
-            buffer[2],
-            trialclusters,
-            pivots,
-            H2Trees.testtree(tree);
-            ntasks=ntasks,
-        )
-        push!(leveledtransfer, Dict(transferidcs .=> transfer))
     end
 
-    return Dict(basesidcs .=> bases), reverse!(leveledtransfer), pivots
+    return nestedbases, transfermatrices, pivots
 end
