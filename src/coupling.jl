@@ -35,7 +35,36 @@ struct DH2MatrixBlock{I,K}
     Z::Matrix{K}
     row_basis::I
     col_basis::I
-    dir::Int
+    dir::Tuple{Int,Int}
+end
+
+function assemble_couplingmatrices(
+    farmatrix::AbstractKernelMatrix{T},
+    testpivots::Vector{D},
+    trialpivots::Vector{D},
+    testdata::DirectionalData,
+    trialdata::DirectionalData;
+    ntasks=Threads.nthreads(),
+) where {T,D<:Dict{Int,Tuple{Vector{Int},Vector{Int}}}}
+    cmats = Vector{Dict{Tuple{Int,Int},Matrix{T}}}(undef, length(testpivots))
+
+    @tasks for t in eachindex(testdata.F)
+        @set ntasks = ntasks
+        cdirs = Tuple{Int,Int}[]
+        ncmats = Matrix{T}[]
+        for sidx in eachindex(testdata.F[t])
+            s = testdata.F[t][sidx]
+            eₜ = testdata.𝓔[t][sidx]
+            eₛ = trialdata.𝓔[s][findfirst(x -> x == t, trialdata.F[s])]
+            blk = zeros(T, length(testpivots[t][eₜ][1]), length(trialpivots[s][eₛ][2]))
+            farmatrix(blk, testpivots[t][eₜ][1], trialpivots[s][eₛ][2])
+            push!(ncmats, blk)
+            push!(cdirs, (eₜ, eₛ))
+        end
+        cmats[t] = Dict(cdirs .=> ncmats)
+    end
+
+    return cmats
 end
 
 function assemble_couplingmatrices(

@@ -12,6 +12,11 @@ function (islf::IsLowFrequencyFunctor{F})(tree::TwoNTree, level::Int) where {F}
     return 2 * sqrt(3) * H2Trees.halfsize(tree) * islf.k / (2.0^(level - 1)) <= 1
 end
 
+function (islf::IsLowFrequencyFunctor{F})(tree::BoundingBallTree, node::Int) where {F}
+    parent(tree, node) == 0 && return islf(2radius(tree, node))
+    return islf(radius(tree, parent(tree, node)))
+end
+
 function (islf::IsLowFrequencyFunctor{F})(diam::F) where {F}
     return diam * islf.k <= 1
 end

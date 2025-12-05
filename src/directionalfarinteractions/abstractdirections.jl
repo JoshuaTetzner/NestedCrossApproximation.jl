@@ -18,8 +18,8 @@ function admissiblelevel(tree, data::DirectionalData)
             end
             (hflevelinteractions != 0 && lflevelinteractions != 0) && break
         end
-        hflevelinteractions != 0 && hflevel += 1
-        lflevelinteractions != 0 && lflevel += 1
+        hflevelinteractions != 0 && (hflevel += 1)
+        lflevelinteractions != 0 && (lflevel += 1)
     end
 
     return max(lflevel, hflevel)

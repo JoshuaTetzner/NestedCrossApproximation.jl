@@ -4,13 +4,10 @@ using H2Trees
 using CompScienceMeshes
 using StaticArrays
 
-Γ = meshrectangle(1.0, 1.0, 0.01)
-#Γ2a = translate(meshrectangle(1.0, 1.0, 0.05), SVector(6.0, 0.0, 0.0))
-#Γ2b = translate(meshrectangle(1.0, 1.0, 0.05), SVector(-5.0, 0.0, 0.0))
-#Γ2 = weld(Γ2a, Γ2b)
-##
-λ = 0.2
+λ = 0.1
 k = 2π / λ
+
+Γ = meshrectangle(1.0, 1.0, 0.01)
 islf = NestedCrossApproximation.islf(k)
 isnear = NestedCrossApproximation.isnear(k)
 
@@ -47,53 +44,21 @@ for level in H2Trees.levels(ttree)
     )
 end
 ##
-ttree = TwoNTree(Γ1.vertices, 0.25; minvalues=400)
-stree = TwoNTree(Γ2.vertices, 0.25; minvalues=400)
+ttree = TwoNTree(Γ.vertices, 0.25; minvalues=400)
+stree = TwoNTree(Γ.vertices, 0.25; minvalues=400)
 tree = BlockTree(ttree, stree)
-
-H2Trees.halfsize(ttree, 2)
-Γ1.vertices
 
 testfardata = NestedCrossApproximation.directionaltestfars(tree; islf=islf, isnear=isnear)
 trialfardata = NestedCrossApproximation.directionaltrialfars(tree; islf=islf, isnear=isnear)
+
+##
 testfardata.𝓔
-
-NestedCrossApproximation.maxlevel(ttree, islf)
-H2Trees.halfsize(ttree)
-islf(ttree, 5)
-2 * sqrt(3) * H2Trees.halfsize(ttree) * islf.k / (2.0^(6 - 1))# <= 1
-k
-2 * sqrt(3) * H2Trees.halfsize(ttree) / 2^2
-
-sqrt(3) * 2 * H2Trees.halfsize(ttree) / 2^6
-islf(2 * 0.025)
-
-##
-lambda = 2 * pi#1.0
-k = 2pi / lambda
-diamX = 1.0
-
+testfardata.inherited𝓔
 ##
 
-2 * pi * diamX < lambda
+a = [[1, 2, 3], [1, 2, 3], [1, 2, 3]]
 
-##
-#angle between (1,0,0) and (1,1,1)
-ang6p = acos(1 / sqrt(3))
-
-# for N=6*2^(n+1) points on the unit sphere
-angNp(n) = ang6p / 2^n
-
-n(N) = log(2, N / (2 * 6)) + 1
-n(6)
-
-diamX = 1.0
-N = 6 * 4^log(2, (acos(1 / sqrt(3)) * k * diamX))
-
-angle(6 * 4)
-##
-lambda = 2 * pi#1.0
-k = 2pi / lambda
-diamX = 1.0
-
-N = 6 * 4^(log(2, acos(1 / sqrt(3)) / asin(1 / (k * diamX))))
+mapreduce(vcat, a) do b
+    b[1] == 1 && return b
+    return Int[]
+end

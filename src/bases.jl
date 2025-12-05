@@ -1,4 +1,19 @@
 
+function nestedtestbasis!(
+    localbases::Vector{H2BasisBlock{I,K}},
+    buffer::Matrix{K},
+    tree,
+    t::Int,
+    pivots::Tuple{Vector{I},Vector{I}},
+) where {I,K}
+    U =
+        buffer[H2Trees.values(testtree(tree), t), 1:length(pivots[1])] /
+        buffer[pivots[1], 1:length(pivots[1])]
+    return push!(
+        localbases, H2BasisBlock(U, H2Trees.values(testtree(tree), t), pivots[2], Int[])
+    )
+end
+
 # directional topdowncompressor
 function build_testbases!(
     transfer::Vector{Dict{Int,H2BasisBlock{I,K}}},
@@ -8,7 +23,7 @@ function build_testbases!(
     blocks::Vector{Dict{Int,Matrix{K}}},
     pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
     level::Int,
-    dtree,
+    data::DirectionalData,
     tree;
     ntasks=Threads.nthreads(),
 ) where {I,K}
@@ -19,7 +34,7 @@ function build_testbases!(
         if isassigned(pivots, t)
             localbases = H2BasisBlock{I,K}[]
             for (dir, piv) in pivots[t]
-                if isroot(dtree, level) || iszero(firstchild(tree, t))
+                if isroot(data, tree, node)
                     rows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, t)) for idx in piv[1]
                     ]
@@ -42,9 +57,7 @@ function build_testbases!(
 
     @tasks for t in collect(H2Trees.LevelIterator(tree, level - 1))
         @set ntasks = ntasks
-        if !iszero(firstchild(tree, t)) &&
-            !isroot(dtree, level - 1) &&
-            isassigned(pivots, t)
+        if !isroot(data, tree, t) && isassigned(pivots, t)
             transferdirs = Int[]
             dirtransfers = H2BasisBlock{I,K}[]
             for (dir, piv) in pivots[t]
@@ -52,20 +65,9 @@ function build_testbases!(
                 children = collect(ChildIterator(tree, t))
                 push!(transferdirs, dir)
                 for child in children
-                    if !haskey(pivots[child], parent(dtree, dir))
-                        println(
-                            collect(keys(pivots[child])),
-                            "not assigned: ",
-                            child,
-                            ", ",
-                            dir,
-                            ", ",
-                            parent(dtree, dir),
-                        )
-                    end
                     crows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, t)) for
-                        idx in pivots[child][parent(dtree, dir)][1]
+                        idx in pivots[child][data.𝓔map[idx]][1]
                     ]
                     rows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, t)) for idx in piv[1]
@@ -272,6 +274,21 @@ function build_testbases!(
             end
         end
     end
+end
+
+function nestedtrialbasis!(
+    localbases::Vector{H2BasisBlock{I,K}},
+    buffer::Matrix{K},
+    tree,
+    s::Int,
+    pivots::Tuple{Vector{I},Vector{I}},
+) where {I,K}
+    V =
+        buffer[1:length(pivots[1]), pivots[2]] \
+        buffer[1:length(pivots[1]), H2Trees.values(trialtree(tree), s)]
+    return push!(
+        localbases, H2BasisBlock(V, pivots[1], H2Trees.values(trialtree(tree), s), Int[])
+    )
 end
 
 # directional topdowncompressor

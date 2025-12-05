@@ -1,10 +1,176 @@
 
 function (compressor::TopDownCompressor)(
     farmatrix::AbstractKernelMatrix{T},
-    Ft::Vector{Vector{Int}},
-    eₜ::Vector{Vector{Int}},
+    dirdata::DirectionalData,
     tree::BlockTree,
-    dtree::𝒟tree,
+    buffer::Tuple{Tuple{K,K},Channel{K}};
+    islf=islf(wavenumber(farmatrix.operator)),
+    ntasks=Threads.nthreads(),
+    maxrank=40,
+) where {T,K<:Matrix{T}}
+    nestedbases = Vector{Dict{Int,H2BasisBlock{Int,T}}}(
+        undef, numberofnodes(testtree(tree))
+    )
+    transfermatrices = Vector{Dict{Int,Vector{Tuple{Int,K}}}}(
+        undef, numberofnodes(testtree(tree))
+    )
+    pivots = Vector{Dict{Int,Tuple{Vector{Int},Vector{Int}}}}(
+        undef, numberofnodes(testtree(tree))
+    )
+    blocks = Vector{Dict{Int,Matrix{T}}}(undef, numberofnodes(testtree(tree)))
+
+    for level in levels(testtree(tree))
+        @tasks for t in collect(LevelIterator(testtree(tree), level))
+            @set ntasks = ntasks
+
+            localblocks = Matrix{T}[]
+            localbases = H2BasisBlock{Int,T}[]
+            localpivots = Tuple{Vector{Int},Vector{Int}}[]
+            for dir in directions(dirdata, t)
+                Ftvals = H2Trees.values(
+                    trialtree(tree), dirdata.F[t][findall(x -> x == dir, dirdata.𝓔[t])]
+                )
+                append!(
+                    Ftvals,
+                    inheritedtrialpivots(
+                        dirdata, pivots, testtree(tree), t, dir; islf=islf
+                    ),
+                )
+
+                if Ftvals != []
+                    pivs = compress(
+                        compressor,
+                        farmatrix,
+                        H2Trees.values(testtree(tree), t),
+                        Ftvals,
+                        buffer[1][bufferidx(level)],
+                        buffer[2];
+                        maxrank=maxrank,
+                    )
+                    push!(localpivots, pivs)
+
+                    isdirectionalleaf(dirdata, testtree(tree), t) && nestedtestbasis!(
+                        localbases, buffer[1][bufferidx(level)], tree, t, pivs
+                    )
+
+                    push!(
+                        localblocks,
+                        buffer[1][bufferidx(level)][
+                            H2Trees.values(testtree(tree), t), 1:length(pivs[2])
+                        ],
+                    )
+                end
+            end
+            localbases != [] &&
+                (nestedbases[t] = Dict(directions(dirdata, t) .=> localbases))
+            if directions(dirdata, t) != []
+                pivots[t] = Dict(directions(dirdata, t) .=> localpivots)
+                blocks[t] = Dict(directions(dirdata, t) .=> localblocks)
+            end
+        end
+        level != 1 && testtransfermatrices!(
+            transfermatrices,
+            level - 1,
+            blocks,
+            pivots,
+            testtree(tree),
+            dirdata;
+            ntasks=ntasks,
+        )
+    end
+
+    return nestedbases, transfermatrices, pivots
+end
+
+function (compressor::TopDownCompressor)(
+    farmatrix::AbstractKernelMatrix{T},
+    dirdata::DirectionalData,
+    tree::H2Trees.BlockTree,
+    buffer::Tuple{Channel{K},Tuple{K,K}};
+    islf=islf(wavenumber(farmatrix.operator)),
+    ntasks=Threads.nthreads(),
+    maxrank=40,
+) where {T,K<:Matrix{T}}
+    nestedbases = Vector{Dict{Int,H2BasisBlock{Int,T}}}(
+        undef, numberofnodes(trialtree(tree))
+    )
+    transfermatrices = Vector{Dict{Int,Vector{Tuple{Int,K}}}}(
+        undef, numberofnodes(trialtree(tree))
+    )
+    pivots = Vector{Dict{Int,Tuple{Vector{Int},Vector{Int}}}}(
+        undef, numberofnodes(trialtree(tree))
+    )
+    blocks = Vector{Dict{Int,Matrix{T}}}(undef, numberofnodes(trialtree(tree)))
+
+    for level in levels(trialtree(tree))
+        @tasks for s in collect(LevelIterator(trialtree(tree), level))
+            @set ntasks = ntasks
+
+            localblocks = Matrix{T}[]
+            localbases = H2BasisBlock{Int,T}[]
+            localpivots = Tuple{Vector{Int},Vector{Int}}[]
+
+            for dir in directions(dirdata, s)
+                Fsvals = H2Trees.values(
+                    testtree(tree), dirdata.F[s][findall(x -> x == dir, dirdata.𝓔[s])]
+                )
+                append!(
+                    Fsvals,
+                    inheritedtestpivots(
+                        dirdata, pivots, trialtree(tree), s, dir; islf=islf
+                    ),
+                )
+                if Fsvals != []
+                    pivs = compress(
+                        compressor,
+                        farmatrix,
+                        Fsvals,
+                        H2Trees.values(trialtree(tree), s),
+                        buffer[1],
+                        buffer[2][bufferidx(level)];
+                        maxrank=maxrank,
+                    )
+
+                    push!(localpivots, pivs)
+
+                    isdirectionalleaf(dirdata, trialtree(tree), s) && nestedtrialbasis!(
+                        localbases, buffer[2][bufferidx(level)], tree, s, pivs
+                    )
+
+                    push!(
+                        localblocks,
+                        buffer[2][bufferidx(level)][
+                            1:length(pivs[1]), H2Trees.values(trialtree(tree), s)
+                        ],
+                    )
+                end
+            end
+            localbases != [] &&
+                (nestedbases[s] = Dict(directions(dirdata, s) .=> localbases))
+            if directions(dirdata, s) != []
+                pivots[s] = Dict(directions(dirdata, s) .=> localpivots)
+                blocks[s] = Dict(directions(dirdata, s) .=> localblocks)
+            end
+        end
+        level != 1 && trialtransfermatrices!(
+            transfermatrices,
+            level - 1,
+            blocks,
+            pivots,
+            trialtree(tree),
+            dirdata;
+            ntasks=ntasks,
+        )
+    end
+
+    return nestedbases, transfermatrices, pivots
+end
+
+#=
+function (compressor::TopDownCompressor)(
+    farmatrix::AbstractKernelMatrix{T},
+    dirdata::DirectionalData,
+    tree::BlockTree,
     buffer::Tuple{Tuple{K,K},Channel{K}};
     ntasks=Threads.nthreads(),
     maxrank=40,
@@ -13,9 +179,9 @@ function (compressor::TopDownCompressor)(
     bases = Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,T}}[]
     leveledtransfer = Dict{Int,Dict{Int,NestedCrossApproximation.H2BasisBlock{Int,T}}}[]
     pivots = Vector{Dict{Int,Tuple{Vector{Int},Vector{Int}}}}(
-        undef, length(H2Trees.testtree(tree).nodes)
+        undef, numberofnodes(testtree(tree))
     )
-    blocks = Vector{Dict{Int,Matrix{T}}}(undef, length(H2Trees.testtree(tree).nodes))
+    blocks = Vector{Dict{Int,Matrix{T}}}(undef, numberofnodes(testtree(tree)))
 
     for level in levels(testtree(tree))
         transferidcs = Int[]
@@ -27,24 +193,13 @@ function (compressor::TopDownCompressor)(
             localdirs = Int[]
             localpivots = Tuple{Vector{Int},Vector{Int}}[]
 
-            # add paternal directions
-            dirs = unique(eₜ[t])
-            (!(dirs == [0]) && isassigned(pivots, parent(testtree(tree), t))) &&
-                for eₜₜ in keys(pivots[parent(testtree(tree), t)])#eₜ[parent(testtree(tree), t)]
-                    !in(parent(dtree, eₜₜ), dirs) && push!(dirs, parent(dtree, eₜₜ))
-                end
-
-            for dir in dirs
-                Ftvals = H2Trees.values(
-                    trialtree(tree), Ft[t][findall(x -> x == dir, eₜ[t])]
+            for dir in directions(data, t)
+                Ft = data.F[t][findall(x -> x == dir, data.𝓔[t])]
+                append!(
+                    Ft, inheritedtestpivots(data, pivots, testtree(tree), t, dir; islf=islf)
                 )
-                if isassigned(pivots, parent(testtree(tree), t)) && dir != 0
-                    for child in children(dtree, dir)
-                        haskey(pivots[parent(testtree(tree), t)], child) &&
-                            append!(Ftvals, pivots[parent(testtree(tree), t)][child][2])
-                    end
-                end
-                if Ftvals != []
+
+                if Ft != []
                     pivs = compress(
                         compressor,
                         farmatrix,
@@ -88,7 +243,8 @@ function (compressor::TopDownCompressor)(
     end
     return Dict(basesidcs .=> bases), leveledtransfer, pivots
 end
-
+=#
+#=
 function (compressor::TopDownCompressor)(
     farmatrix::AbstractKernelMatrix{T},
     Fs::Vector{Vector{Int}},
@@ -117,28 +273,17 @@ function (compressor::TopDownCompressor)(
             localdirs = Int[]
             localpivots = Tuple{Vector{Int},Vector{Int}}[]
 
-            # add paternal directions
-            dirs = unique(eₛ[s])
-            (!(dirs == [0]) && isassigned(pivots, parent(trialtree(tree), s))) &&
-                for eₛₛ in keys(pivots[parent(trialtree(tree), s)])
-                    !in(parent(dtree, eₛₛ), dirs) && push!(dirs, parent(dtree, eₛₛ))
-                end
-
-            for dir in dirs
-                Fsvals = H2Trees.values(
-                    testtree(tree), Fs[s][findall(x -> x == dir, eₛ[s])]
+            for dir in directions(data, s)
+                Fs = data.F[t][findall(x -> x == dir, data.𝓔[t])]
+                append!(
+                    Fs, inheritedtestpivots(data, pivots, testtree(tree), t, dir; islf=islf)
                 )
-                if isassigned(pivots, parent(trialtree(tree), s)) && dir != 0
-                    for child in children(dtree, dir)
-                        haskey(pivots[H2Trees.parent(tree.trialcluster, s)], child) &&
-                            append!(Fsvals, pivots[parent(trialtree(tree), s)][child][1])
-                    end
-                end
-                if Fsvals != []
+
+                if Fs != []
                     pivs = compress(
                         compressor,
                         farmatrix,
-                        Fsvals,
+                        Fs,
                         H2Trees.values(trialtree(tree), s),
                         buffer[1],
                         buffer[2][bufferidx(level)];
@@ -151,6 +296,9 @@ function (compressor::TopDownCompressor)(
                             1:length(pivs[1]), H2Trees.values(trialtree(tree), s)
                         ],
                     )
+
+                    if isroot(tree)
+
                     push!(localpivots, pivs)
                     push!(localdirs, dir)
                 end
@@ -169,11 +317,13 @@ function (compressor::TopDownCompressor)(
             blocks,
             pivots,
             level,
-            dtree,
+            data,
             trialtree(tree);
             ntasks=ntasks,
         )
         push!(leveledtransfer, Dict(transferidcs .=> transfer))
     end
+
     return Dict(basesidcs .=> bases), leveledtransfer, pivots
 end
+=#

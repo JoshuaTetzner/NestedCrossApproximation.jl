@@ -1,19 +1,10 @@
 using LinearMaps
 
 struct PetrovGalerkinWNCA{
-    T,
-    TreeType,
-    DirectionTreeType,
-    NearInteractionType,
-    LFInteractionType,
-    NestedBasesDict,
-    TransferMatrixType,
-    CouplingMatrixType,
+    T,TreeType,NearInteractionType,NestedBasesDict,TransferMatrixType,CouplingMatrixType
 } <: LinearMaps.LinearMap{T}
     tree::TreeType
-    dtree::DirectionTreeType
     nearinteractions::NearInteractionType
-    lowfrequencyinteractions::LFInteractionType
     nestedtestbases::NestedBasesDict
     nestedtrialbases::NestedBasesDict
     testtransfermatrices::TransferMatrixType
@@ -24,9 +15,7 @@ struct PetrovGalerkinWNCA{
 
     function PetrovGalerkinWNCA{T}(
         tree,
-        dtree,
         nearinteractions,
-        lowfrequencyinteractions,
         nestedtestbases,
         nestedtrialbases,
         testtransfermatrices,
@@ -38,17 +27,13 @@ struct PetrovGalerkinWNCA{
         return new{
             T,
             typeof(tree),
-            typeof(dtree),
             typeof(nearinteractions),
-            typeof(lowfrequencyinteractions),
             typeof(nestedtestbases),
             typeof(testtransfermatrices),
             typeof(couplingmatrices),
         }(
             tree,
-            dtree,
             nearinteractions,
-            lowfrequencyinteractions,
             nestedtestbases,
             nestedtrialbases,
             testtransfermatrices,
@@ -58,14 +43,6 @@ struct PetrovGalerkinWNCA{
             ntasks,
         )
     end
-end
-
-function maxlevel(tree::TwoNTree, islf::IsLowFrequencyFunctor{F}) where {F}
-    level = 0
-    while !islf(tree, level)
-        level += 1
-    end
-    return level
 end
 
 wavenumber(operator) = operator.wavenumber
@@ -107,15 +84,11 @@ function PetrovGalerkinWNCA(
         operator, testspace, trialspace; quadstrat=farquadstrat
     )
 
-    #=dtree = 𝒟tree(H2Trees.halfsize(tree.testcluster), maxlevel(testtree(tree), islf))
-    Ft, eₜ, Fs, eₛ = directionalfarinteractions(tree, dtree; isnear=isnear)
-    #println(admissiblelevel(Ft, eₜ, tree))=#
-
     testfardata = NestedCrossApproximation.directionaltestfars(
-        tree; islf=islf, isnear=isnear
+        tree; islf=islf, isnear=isnear, ntasks=ntasks
     )
     trialfardata = NestedCrossApproximation.directionaltrialfars(
-        tree; islf=islf, isnear=isnear
+        tree; islf=islf, isnear=isnear, ntasks=ntasks
     )
     tolerance!(testcompressor.lrf, admissiblelevel(testtree(tree), testfardata))
     tolerance!(trialcompressor.lrf, admissiblelevel(trialtree(tree), trialfardata))
@@ -129,8 +102,8 @@ function PetrovGalerkinWNCA(
         ntasks=ntasks,
         maxrank=maxrank,
     )
-
     println("compress_trialtree")
+
     @time nestedtrialbases, trialtransfermatrices, trialpivots = trialcompressor(
         farmatrix,
         trialfardata,
@@ -139,20 +112,31 @@ function PetrovGalerkinWNCA(
         ntasks=ntasks,
         maxrank=maxrank,
     )
+    println("couplingmatrices")
 
-    println("assemble_couplingmatrices2")
     @time coupling = assemble_couplingmatrices(
-        farmatrix, testpivots, trialpivots, tree, dtree; ntasks=ntasks, isnear=isnear
+        farmatrix, testpivots, trialpivots, testfardata, trialfardata; ntasks=ntasks
     )
+
     return PetrovGalerkinWNCA{ComplexF64}(
         tree,
-        dtree,
         nearinteractions,
-        Int[],
-        nestedtestbases,
-        nestedtrialbases,
-        testtransfermatrices,
-        trialtransfermatrices,
+        Dict(
+            i => nestedtestbases[i] for
+            i in eachindex(nestedtestbases) if isassigned(nestedtestbases, i)
+        ),
+        Dict(
+            i => nestedtrialbases[i] for
+            i in eachindex(nestedtrialbases) if isassigned(nestedtrialbases, i)
+        ),
+        Dict(
+            i => testtransfermatrices[i] for
+            i in eachindex(testtransfermatrices) if isassigned(testtransfermatrices, i)
+        ),
+        Dict(
+            i => trialtransfermatrices[i] for
+            i in eachindex(trialtransfermatrices) if isassigned(trialtransfermatrices, i)
+        ),
         coupling,
         size(farmatrix),
         ntasks,
@@ -184,28 +168,41 @@ function Base.size(A::Adjoint{T}, dim=nothing) where {T<:PetrovGalerkinWNCA}
 end
 
 @views function LinearAlgebra.mul!(
-    y::AbstractVecOrMat, A::PetrovGalerkinWNCA, x::AbstractVector
-)
+    y::AbstractVecOrMat, A::PetrovGalerkinWNCA{K}, x::AbstractVector
+) where {K}
     LinearMaps.check_dim_mul(y, A, x)
 
-    fill!(y, zero(eltype(y)))
+    fill!(y, zero(K))
 
-    xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trialcluster.nodes))
-    yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.testcluster.nodes))
+    xhat = Vector{Dict{Int,Vector{K}}}(undef, length(A.tree.trialcluster.nodes))
+    yhat = Vector{Dict{Int,Vector{K}}}(undef, length(A.tree.testcluster.nodes))
 
-    type = eltype(y)
-    for s in collect(keys(A.nestedtrialbases))
-        res = Vector{type}[]
-        for (k, dir) in A.nestedtrialbases[s]
+    for s in keys(A.nestedtrialbases)
+        res = Vector{K}[]
+        for (dir, nb) in A.nestedtrialbases[s]
             # use the trial-index vector stored in the direction/basis (dir.σ)
             push!(res, dir.T * x[dir.σ])
         end
         xhat[s] = Dict(keys(A.nestedtrialbases[s]) .=> res)
     end
 
+    for level in reverse(levels(trialtree(A.tree)))
+        for node in collect(H2Trees.LevelIterator(trialtree(A.tree), level))
+            if haskey(A.trialtransfermatrices, node)
+                res = Vector{K}[]
+                for (dir, dtmats) in A.trialtransfermatrices[node]
+                    chds = collect(children(trialtree(A.tree), node))
+                    mapreduce(+, enumerate(chds)) do (cidx, chd)
+                        tmat * xhat
+                    end
+                end
+            end
+        end
+    end
+
     for nodes in reverse(A.trialtransfermatrices)
         for (node, data) in nodes
-            res = Vector{eltype(y)}[]
+            res = Vector{K}[]
             for (dir, transfers) in data
                 # transfers.children holds the child indices for the transfer; use those
                 xhatdir = transfers.T[1] * xhat[transfers.children[1]][parent(A.dtree, dir)]
