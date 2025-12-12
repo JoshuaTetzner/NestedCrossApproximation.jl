@@ -121,15 +121,6 @@ function paternaldirection(data::TwoNDirectionalData, _::Int, dir::Int)
     return parent(data.𝓣ₑ, dir)
 end
 
-function isdirectionalleaf(data::TwoNDirectionalData, tree::TwoNTree, node::Int)
-    firstchild(tree, node) == 0 && return true
-    dirleaf = true
-    for dir in data.𝓔[node]
-        dirleaf = dirleaf && isleaf(data.𝓣ₑ, dir)
-    end
-    return dirleaf
-end
-
 function inheritedtrialpivots(
     data::TwoNDirectionalData, pivots::Vector{T}, tree, t::Int, e::Int; islf=islf(1.0)
 ) where {T}
@@ -227,7 +218,7 @@ function directionaltestfars(
                     inherited𝓔[t] = Int[]
                 end
             else
-                𝓔[t] = Int[]
+                F[t] == [] ? (𝓔[t] = Int[]) : (𝓔[t] = Int[0])
                 inherited𝓔[t] = Int[]
             end
         end
@@ -266,7 +257,7 @@ function directionaltrialfars(
                     inherited𝓔[s] = Int[]
                 end
             else
-                𝓔[s] = Int[]
+                F[s] == [] ? (𝓔[s] = Int[]) : (𝓔[s] = Int[0])
                 inherited𝓔[s] = Int[]
             end
         end

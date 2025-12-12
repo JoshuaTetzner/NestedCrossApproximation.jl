@@ -43,33 +43,33 @@ end
 function compress(
     compressor::TopDownCompressor{LRF,RP},
     farmatrix::AbstractKernelMatrix{T},
-    t::Vector{Int},
-    Ft::Vector{Int},
+    tvals::Vector{Int},
+    Ftvals::Vector{Int},
     colbuffer::K,
     rowchannel::Channel{K};
     maxrank=40,
 ) where {T,K<:Matrix{T},LRF<:AdaptiveCrossApproximation.ACA,RP}
-    !isnothing(compressor.representor) && (t, Ft=compressor.representor(t, Ft))
+    !isnothing(compressor.representor) &&
+        (tvals, Ftvals=compressor.representor(tvals, Ftvals))
     rowbuffer = take!(rowchannel)
     rows = zeros(Int, maxrank)
     cols = zeros(Int, maxrank)
 
-    colbuffer[t, 1:maxrank] .= 0.0
+    colbuffer[tvals, 1:maxrank] .= 0.0
     npivots = compressor.lrf(
         farmatrix,
-        view(colbuffer, t, 1:maxrank),
-        view(rowbuffer, 1:maxrank, Ft),
-        min(maxrank, min(length(t), length(Ft)));
+        view(colbuffer, tvals, 1:maxrank),
+        view(rowbuffer, 1:maxrank, Ftvals),
+        min(maxrank, min(length(tvals), length(Ftvals)));
         rows=rows,
         cols=cols,
-        rowidcs=t,
-        colidcs=Ft,
+        rowidcs=tvals,
+        colidcs=Ftvals,
     )
 
-    colbuffer[t, 1:npivots] =
-        colbuffer[t, 1:npivots] * rowbuffer[1:npivots, cols[1:npivots]]
-
-    rowbuffer[1:npivots, Ft] .= 0.0
+    colbuffer[tvals, 1:npivots] =
+        colbuffer[tvals, 1:npivots] * rowbuffer[1:npivots, cols[1:npivots]]
+    rowbuffer[1:npivots, Ftvals] .= 0.0
     put!(rowchannel, rowbuffer)
 
     return rows[1:npivots], cols[1:npivots]
@@ -110,6 +110,7 @@ function compress(
     return rows, cols
 end
 
+# trial
 function compress(
     compressor::TopDownCompressor{LRF,RP},
     farmatrix::AbstractKernelMatrix{T},

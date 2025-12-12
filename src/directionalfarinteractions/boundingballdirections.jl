@@ -13,27 +13,8 @@ function directions(data::BoundingBallDirectionalData, node::Int)
 end
 
 function paternaldirection(data::BoundingBallDirectionalData, cnode::Int, dir::Int)
+    dir == 0 && return 0
     return data.𝓔map[cnode][dir]
-end
-
-function isdirectionalleaf(
-    data::BoundingBallDirectionalData, tree::BoundingBallTree, node::Int
-)
-    firstchild(tree, node) == 0 && return true
-    union(data.𝓔[node], data.𝓔map[node]) == [] && return false
-    dirleaf = true
-    for child in ChildIterator(tree, node)
-        dirleaf = dirleaf && union(data.𝓔[child], data.𝓔map[child]) == []
-    end
-    return dirleaf
-end
-
-function isdirectionalroot(
-    dirdata::BoundingBallDirectionalData, tree::BoundingBallTree, node::Int
-)
-    parent(tree, node) == 0 && return true
-    isdirectionalleaf(dirdata, tree, parent(tree, node)) && return true
-    return false
 end
 
 function inheritedtrialpivots(
@@ -44,8 +25,10 @@ function inheritedtrialpivots(
     e::Int;
     islf=islf(1.0),
 ) where {T}
-    (isdirectionalroot(dirdata, tree, t) || !isassigned(pivots, parent(tree, t))) &&
-        return Int[]
+    (
+        isdirectionalroot(dirdata, tree, parent(tree, t)) ||
+        !isassigned(pivots, parent(tree, t))
+    ) && return Int[]
     islf(radius(tree, parent(tree, t))) && return pivots[parent(tree, t)][0][2]
     e in dirdata.𝓔map[t] && return Vector{Int}(
         mapreduce(vcat, findall(x -> x == e, dirdata.𝓔map[t])) do dir
@@ -88,8 +71,10 @@ function inheritedtestpivots(
     e::Int;
     islf=islf(1.0),
 ) where {T}
-    (isdirectionalroot(dirdata, tree, s) || !isassigned(pivots, parent(tree, s))) &&
-        return Int[]
+    (
+        isdirectionalroot(dirdata, tree, parent(tree, s)) ||
+        !isassigned(pivots, parent(tree, s))
+    ) && return Int[]
     islf(radius(tree, parent(tree, s))) && return pivots[parent(tree, s)][0][1]
     e in dirdata.𝓔map[s] && return Vector{Int}(
         mapreduce(vcat, findall(x -> x == e, dirdata.𝓔map[s])) do dir
@@ -140,9 +125,9 @@ function fibonacci_sphere(diamX::F, k::F) where {F}
 end
 
 function hasinteractions(
-    𝓕::T, 𝓔::T, 𝓔map::T, tree::BoundingBallTree, t::Int
+    F::T, 𝓔::T, 𝓔map::T, tree::BoundingBallTree, t::Int
 ) where {T<:Vector{Vector{Int}}}
-    𝓕[t] != [] && return true
+    F[t] != [] && return true
     parent(tree, t) == 0 && return false
     return (𝓔[parent(tree, t)] != [] || 𝓔map[parent(tree, t)] != [])
 end
@@ -151,20 +136,20 @@ function directionaltestfars(
     tree::BlockTree{T}; islf=islf(1.0), isnear=isnear(1.0), ntasks=Threads.nthreads()
 ) where {T<:BoundingBallTree}
     iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
-    𝓕 = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
+    F = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
     𝓔 = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
     𝓔map = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
     𝓔vec = Vector{Vector{SVector{3,Float64}}}(undef, numberofnodes(testtree(tree)))
 
     for level in levels(testtree(tree))
         for t in collect(H2Trees.LevelIterator(testtree(tree), level))
-            𝓕[t] = collect(iterator(trialtree(tree), testtree(tree), t))
+            F[t] = collect(iterator(trialtree(tree), testtree(tree), t))
 
-            if !islf(testtree(tree), t) && hasinteractions(𝓕, 𝓔, 𝓔map, testtree(tree), t)
+            if !islf(testtree(tree), t) && hasinteractions(F, 𝓔, 𝓔map, testtree(tree), t)
                 total𝓔vec = fibonacci_sphere(2 * radius(testtree(tree), t), isnear.k)
 
                 𝓔[t] = Vector{Int}(
-                    map(𝓕[t]) do node
+                    map(F[t]) do node
                         r = center(trialtree(tree), node) - center(testtree(tree), t)
                         findmin(x -> angle(x, r), total𝓔vec)[2]
                     end,
@@ -191,33 +176,33 @@ function directionaltestfars(
                 end
 
             else
-                𝓔[t] = Int[]
+                F[t] == [] ? (𝓔[t] = Int[]) : (𝓔[t] = Int[0])
                 𝓔map[t] = Int[]
             end
         end
     end
 
-    return BoundingBallDirectionalData(𝓕, 𝓔, 𝓔map)
+    return BoundingBallDirectionalData(F, 𝓔, 𝓔map)
 end
 
 function directionaltrialfars(
     tree::BlockTree{T}; islf=islf(1.0), isnear=isnear(1.0), ntasks=Threads.nthreads()
 ) where {T<:BoundingBallTree}
     iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
-    𝓕 = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
+    F = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
     𝓔 = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
     𝓔map = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
     𝓔vec = Vector{Vector{SVector{3,Float64}}}(undef, numberofnodes(trialtree(tree)))
 
     for level in levels(trialtree(tree))
         for s in collect(H2Trees.LevelIterator(trialtree(tree), level))
-            𝓕[s] = collect(iterator(testtree(tree), trialtree(tree), s))
+            F[s] = collect(iterator(testtree(tree), trialtree(tree), s))
 
-            if !islf(trialtree(tree), s) && hasinteractions(𝓕, 𝓔, 𝓔map, trialtree(tree), s)
+            if !islf(trialtree(tree), s) && hasinteractions(F, 𝓔, 𝓔map, trialtree(tree), s)
                 total𝓔vec = fibonacci_sphere(2 * radius(trialtree(tree), s), isnear.k)
 
                 𝓔[s] = Vector{Int}(
-                    map(𝓕[s]) do node
+                    map(F[s]) do node
                         r = center(testtree(tree), node) - center(trialtree(tree), s)
                         findmin(x -> angle(x, r), total𝓔vec)[2]
                     end,
@@ -244,11 +229,11 @@ function directionaltrialfars(
                 end
 
             else
-                𝓔[s] = Int[]
+                F[s] == [] ? (𝓔[s] = Int[]) : (𝓔[s] = Int[0])
                 𝓔map[s] = Int[]
             end
         end
     end
 
-    return BoundingBallDirectionalData(𝓕, 𝓔, 𝓔map)
+    return BoundingBallDirectionalData(F, 𝓔, 𝓔map)
 end

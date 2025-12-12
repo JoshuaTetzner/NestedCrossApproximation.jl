@@ -86,3 +86,45 @@ end
 ##
 @time getvalues(comb);
 @time getvalues2(comb);
+
+using CompScienceMeshes
+using LinearAlgebra
+using PlotlyJS
+using StaticArrays
+# vertices: v₁, v₂, v₃, ...
+curve(t) = SVector((9 / 20 - (1 / 9)cos(5t)) * cos(t), (9 / 20 - (1 / 9)cos(5t)) * sin(t))
+
+# Detect closed curve
+msh = meshcurve(curve, 0.1; tend=Float64(2π))
+verts = msh.vertices
+
+# segments: (start_index, end_index)
+segs = msh.faces
+
+xs = Float64[]
+ys = Float64[]
+
+for (i, j) in segs
+    vi = verts[i]
+    vj = verts[j]
+    push!(xs, vi[1], vj[1], NaN)  # NaN separates segments
+    push!(ys, vi[2], vj[2], NaN)
+end
+
+plt = plot(
+    scatter(;
+        x    = xs,
+        y    = ys,
+        mode = "lines+markers",  # markers show vertices
+        name = "segments",
+    ),
+    Layout(;
+        xaxis = attr(; scaleanchor="y"),
+        yaxis = attr(; scaleratio=1),
+        title = "Piecewise linear curve",
+    ),
+)
+
+display(plt)
+
+PlotlyJS.plot(wireframe(msh))

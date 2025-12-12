@@ -177,11 +177,12 @@ end
     xhat = Vector{Dict{Int,Vector{K}}}(undef, length(A.tree.trialcluster.nodes))
     yhat = Vector{Dict{Int,Vector{K}}}(undef, length(A.tree.testcluster.nodes))
 
-    for s in keys(A.nestedtrialbases)
+    for (s, dirnbs) in collect(A.nestedtrialbases)
+        #@set ntasks = A.ntasks
         res = Vector{K}[]
-        for (dir, nb) in A.nestedtrialbases[s]
+        for (dir, nb) in dirnbs
             # use the trial-index vector stored in the direction/basis (dir.σ)
-            push!(res, dir.T * x[dir.σ])
+            push!(res, nb * x[H2Trees.values(trialtree(A.tree), s)])
         end
         xhat[s] = Dict(keys(A.nestedtrialbases[s]) .=> res)
     end
@@ -190,67 +191,77 @@ end
         for node in collect(H2Trees.LevelIterator(trialtree(A.tree), level))
             if haskey(A.trialtransfermatrices, node)
                 res = Vector{K}[]
-                for (dir, dtmats) in A.trialtransfermatrices[node]
-                    chds = collect(children(trialtree(A.tree), node))
-                    mapreduce(+, enumerate(chds)) do (cidx, chd)
-                        tmat * xhat
-                    end
+                for dtmats in values(A.trialtransfermatrices[node])
+                    chds = collect(ChildIterator(trialtree(A.tree), node))
+                    push!(
+                        res,
+                        mapreduce(+, enumerate(chds)) do (cidx, chd)
+                            dtmats[cidx][2] * xhat[chd][dtmats[cidx][1]]
+                        end,
+                    )
                 end
+                xhat[node] = Dict(keys(A.trialtransfermatrices[node]) .=> res)
             end
         end
     end
 
-    for nodes in reverse(A.trialtransfermatrices)
-        for (node, data) in nodes
+    for t in eachindex(A.couplingmatrices)
+        #  @set ntasks = A.ntasks
+        if A.couplingmatrices[t] != Dict()
+            dirs = Int[]
             res = Vector{K}[]
-            for (dir, transfers) in data
-                # transfers.children holds the child indices for the transfer; use those
-                xhatdir = transfers.T[1] * xhat[transfers.children[1]][parent(A.dtree, dir)]
-                for i in 2:length(transfers.children)
-                    xhatdir +=
-                        transfers.T[i] * xhat[transfers.children[i]][parent(A.dtree, dir)]
+            for (st, dircmat) in A.couplingmatrices[t]
+                if dircmat[1][1] ∈ dirs
+                    idx = findfirst(x -> x == dircmat[1][1], dirs)
+                    res[idx] += dircmat[2] * xhat[st[2]][dircmat[1][2]]
+                else
+                    push!(dirs, dircmat[1][1])
+                    push!(res, dircmat[2] * xhat[st[2]][dircmat[1][2]])
                 end
-                push!(res, xhatdir)
             end
-            xhat[node] = Dict(keys(data) .=> res)
+            yhat[t] = Dict(dirs .=> res)
         end
     end
 
-    for lrb in A.couplingmatrices
-        if isassigned(yhat, lrb.row_basis)
-            if haskey(yhat[lrb.row_basis], lrb.dir)
-                yhat[lrb.row_basis][lrb.dir] += lrb.Z * xhat[lrb.col_basis][lrb.dir]
-            else
-                yhat[lrb.row_basis][lrb.dir] = lrb.Z * xhat[lrb.col_basis][lrb.dir]
-            end
-        else
-            yhat[lrb.row_basis] = Dict(lrb.dir => lrb.Z * xhat[lrb.col_basis][lrb.dir])
-        end
-    end
-
-    for nodes in A.testtransfermatrices
-        for (node, data) in nodes
-            for (dir, transfers) in data
-                childdir = parent(A.dtree, dir)
-                for (i, child) in enumerate(transfers.children)
-                    if isassigned(yhat, child)
-                        if haskey(yhat[child], childdir)
-                            yhat[child][childdir] += transfers.T[i] * yhat[node][dir]
+    for level in levels(testtree(A.tree))
+        for node in collect(H2Trees.LevelIterator(testtree(A.tree), level))
+            if haskey(A.testtransfermatrices, node)
+                for (dir, dtmats) in A.testtransfermatrices[node]
+                    chds = collect(ChildIterator(testtree(A.tree), node))
+                    for (cidx, chd) in enumerate(chds)
+                        if isassigned(yhat, chd)
+                            if haskey(yhat[chd], dtmats[cidx][1])
+                                yhat[chd][dtmats[cidx][1]] +=
+                                    dtmats[cidx][2] * yhat[node][dir]
+                            else
+                                yhat[chd][dtmats[cidx][1]] =
+                                    dtmats[cidx][2] * yhat[node][dir]
+                            end
                         else
-                            yhat[child][childdir] = transfers.T[i] * yhat[node][dir]
+                            yhat[chd] = Dict(
+                                dtmats[cidx][1] => dtmats[cidx][2] * yhat[node][dir]
+                            )
                         end
-                    else
-                        yhat[child] = Dict(childdir => transfers.T[i] * yhat[node][dir])
                     end
                 end
             end
         end
     end
 
-    for t in collect(keys(A.nestedtestbases))
-        for (dir, basis) in A.nestedtestbases[t]
+    for (s, dirnbs) in collect(A.nestedtrialbases)
+        #@set ntasks = A.ntasks
+        res = Vector{K}[]
+        for (dir, nb) in dirnbs
+            # use the trial-index vector stored in the direction/basis (dir.σ)
+            push!(res, nb * x[H2Trees.values(trialtree(A.tree), s)])
+        end
+        xhat[s] = Dict(keys(A.nestedtrialbases[s]) .=> res)
+    end
+
+    for (node, dnbs) in collect(A.nestedtestbases)
+        for (dir, nb) in dnbs
             # write into the basis' target indices
-            y[basis.τ] += basis.T * yhat[t][dir]
+            y[H2Trees.values(testtree(A.tree), node)] += nb * yhat[node][dir]
         end
     end
 
@@ -371,7 +382,7 @@ end
         xhat[idx] = Dict(keys(moment) .=> res)
     end
 
-    for nodes in reverse(A.testtransfermatrices)
+    for nodes in reverse(levels(trialtree(A.tree)))
         for (node, data) in nodes
             res = Vector{eltype(y)}[]
             for (dir, transfers) in data

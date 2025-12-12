@@ -1,4 +1,4 @@
-function farinteractions(tree; isnear=H2Trees.isnear, ntasks=Threads.nthreads())
+#=function farinteractions(tree; isnear=H2Trees.isnear, ntasks=Threads.nthreads())
     iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
     testfarnodes = Vector{Vector{Int}}(undef, length(tree.testcluster.nodes))
     trialfarnodes = Vector{Vector{Int}}(undef, length(tree.trialcluster.nodes))
@@ -84,3 +84,4 @@ function admissiblelevel(Ft, eₜ, tree::BlockTree)
     end
     return max(lflevel, hflevel)
 end
+=#

@@ -10,7 +10,7 @@ function testtransfermatrices!(
 ) where {I,K,D<:Dict{Int,Matrix{K}}}
     @tasks for t in collect(H2Trees.LevelIterator(tree, level))
         @set ntasks = ntasks
-        if !isdirectionalleaf(dirdata, tree, t) && isassigned(pivots, t)
+        if !isdirectionalroot(dirdata, tree, t) && isassigned(pivots, t)
             ntmats = Vector{Tuple{Int,Matrix{K}}}[]
             for (dir, piv) in pivots[t]
                 dntmats = Tuple{Int,Matrix{K}}[]
@@ -43,13 +43,12 @@ function trialtransfermatrices!(
     dirdata::DirectionalData;
     ntasks=Threads.nthreads(),
 ) where {I,K,D<:Dict{Int,Matrix{K}}}
-    @tasks for s in collect(H2Trees.LevelIterator(tree, level - 1))
+    @tasks for s in collect(H2Trees.LevelIterator(tree, level))
         @set ntasks = ntasks
-        if !isdirectionalleaf(dirdata, tree, s) && isassigned(pivots, s)
+        if !isdirectionalroot(dirdata, tree, s) && isassigned(pivots, s)
             ntmats = Vector{Tuple{Int,Matrix{K}}}[]
             for (dir, piv) in pivots[s]
                 dntmats = Tuple{Int,Matrix{K}}[]
-                #cdirs = Int[]
                 for child in ChildIterator(tree, s)
                     ccols = [
                         findfirst(x -> x == idx, H2Trees.values(tree, s)) for

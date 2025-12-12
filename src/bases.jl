@@ -1,6 +1,6 @@
 
 function nestedtestbasis!(
-    localbases::Vector{H2BasisBlock{I,K}},
+    localbases::Vector{Matrix{K}},
     buffer::Matrix{K},
     tree,
     t::Int,
@@ -9,20 +9,7 @@ function nestedtestbasis!(
     U =
         buffer[H2Trees.values(testtree(tree), t), 1:length(pivots[1])] /
         buffer[pivots[1], 1:length(pivots[1])]
-    return push!(
-        localbases, H2BasisBlock(U, H2Trees.values(testtree(tree), t), pivots[2], Int[])
-    )
-end
-
-function nestedtestbasis!(
-    buffer::Matrix{K}, tree, t::Int, pivots::Tuple{Vector{I},Vector{I}}
-) where {I,K}
-    U =
-        buffer[H2Trees.values(testtree(tree), t), 1:length(pivots[1])] /
-        buffer[pivots[1], 1:length(pivots[1])]
-    return push!(
-        localbases, H2BasisBlock(U, H2Trees.values(testtree(tree), t), pivots[2], Int[])
-    )
+    return push!(localbases, U)
 end
 
 # directional topdowncompressor
@@ -288,7 +275,7 @@ function build_testbases!(
 end
 
 function nestedtrialbasis!(
-    localbases::Vector{H2BasisBlock{I,K}},
+    localbases::Vector{Matrix{K}},
     buffer::Matrix{K},
     tree,
     s::Int,
@@ -297,9 +284,7 @@ function nestedtrialbasis!(
     V =
         buffer[1:length(pivots[1]), pivots[2]] \
         buffer[1:length(pivots[1]), H2Trees.values(trialtree(tree), s)]
-    return push!(
-        localbases, H2BasisBlock(V, pivots[1], H2Trees.values(trialtree(tree), s), Int[])
-    )
+    return push!(localbases, V)
 end
 
 # directional topdowncompressor

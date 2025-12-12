@@ -24,3 +24,15 @@ function admissiblelevel(tree, data::DirectionalData)
 
     return max(lflevel, hflevel)
 end
+
+function isdirectionalleaf(dirdata::DirectionalData, tree::H2Trees.H2ClusterTree, node::Int)
+    parent(tree, node) == 0 && return true
+    isdirectionalroot(dirdata, tree, parent(tree, node)) && return true
+    return false
+end
+
+function isdirectionalroot(dirdata::DirectionalData, tree::H2Trees.H2ClusterTree, node::Int)
+    firstchild(tree, node) == 0 && return true
+    (dirdata.𝓔[node] != [0] && dirdata.𝓔[firstchild(tree, node)] == [0]) && return true
+    return false
+end

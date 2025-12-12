@@ -7,16 +7,16 @@ using CompScienceMeshes
 using LinearAlgebra
 
 h = 0.04
-λ = 20h
+λ = 10
 k = 2π / λ
 ##
 Γ = meshsphere(1.0, h)
 op = Maxwell3D.singlelayer(; wavenumber=k)
 space = raviartthomas(Γ)
-#tree = H2Trees.TwoNTree(space, space, 0.01; minvaluestest=100, minvaluestrial=100)
-ttree = KMeansTree(space.pos, 2; minvalues=100)
-stree = ttree
-tree = BlockTree(ttree, stree)
+tree = H2Trees.TwoNTree(space, space, 0.01; minvaluestest=100, minvaluestrial=100)
+#ttree = KMeansTree(space.pos, 2; minvalues=100)
+#stree = ttree
+#tree = BlockTree(ttree, stree)
 #
 ##
 
@@ -44,11 +44,12 @@ trialcompressor = NestedCrossApproximation.TopDownCompressor(
     testcompressor=testcompressor,
     trialcompressor=trialcompressor,
     maxrank=50,
-    #ntasks=8,
+    ntasks=10,
 );
 
 ##
 @time A = assemble(op, space, space);
 x = rand(ComplexF64, length(space))
 ##
-wnca.testtransfermatrices
+
+norm(wnca * x - A * x) / norm(A * x)
