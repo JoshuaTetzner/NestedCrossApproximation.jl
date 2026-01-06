@@ -86,3 +86,51 @@ function reconstruct(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA)
 
     return A_h2
 end
+
+function informations(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA)
+    leveltransfers = Int[]
+    leveledranks = Tuple{Int,Int}[]
+    leveldbases = Int[]
+    for level in H2Trees.levels(h2mat.tree.testcluster)
+        lrank = (100, 0)
+        ntransfers = 0
+        nbases = 0
+        for blk in H2Trees.LevelIterator(h2mat.tree.testcluster, level)
+            if haskey(h2mat.testtransfermatrices, blk)
+                ntransfers += 1
+
+                for mats in values(h2mat.testtransfermatrices[blk])
+                    for mat in mats
+                        lrank = (
+                            min(lrank[1], size(mat[2], 1)), max(lrank[2], size(mat[2], 1))
+                        )
+                    end
+                end
+            end
+            if haskey(h2mat.nestedtestbases, blk)
+                nbases += 1
+                for mat in values(h2mat.nestedtestbases[blk])
+                    lrank = (min(lrank[1], size(mat, 2)), max(lrank[2], size(mat, 2)))
+                end
+            end
+        end
+        push!(leveledranks, lrank)
+        push!(leveldbases, nbases)
+        push!(leveltransfers, ntransfers)
+    end
+
+    return leveltransfers, leveldbases, leveledranks
+end
+
+for level in H2Trees.levels(wnca.tree.testcluster)
+    for t in H2Trees.LevelIterator(wnca.tree.testcluster, level)
+        for (idcs, coupling) in wnca.couplingmatrices[t]
+            tidcs = H2Trees.values(wnca.tree.testcluster, t)
+            sidcs = H2Trees.values(wnca.tree.trialcluster, idcs[2])
+            err = norm(fullwnca[tidcs, sidcs] - A[tidcs, sidcs]) / norm(A[tidcs, sidcs])
+            if err > 1e-2
+                println("level $level between clusters $t and $(idcs[2])., error = $err")
+            end
+        end
+    end
+end

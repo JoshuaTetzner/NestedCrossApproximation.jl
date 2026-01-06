@@ -61,12 +61,10 @@ function testfarfield(
         Ft = data.F[t][findall(x -> x == e, data.𝓔[t])]
         𝓔t = findall(x -> x == e, data.𝓔map[t])
         for parent in ParentUpwardsIterator(tree, t)
-            data.F[parent] == Int[] && continue
+            data.F[parent] == Int[] && (𝓔t = findall(x -> x in 𝓔t, data.𝓔map[parent]);
+            continue)
             append!(Ft, data.F[parent][findall(x -> x in 𝓔t, data.𝓔[parent])])
-            𝓔t = findall(
-                x -> x in data.𝓔[parent][findall(x -> x in 𝓔t, data.𝓔[parent])],
-                data.𝓔map[parent],
-            )
+            𝓔t = findall(x -> x in 𝓔t, data.𝓔map[parent])
         end
         return Ft
     end
@@ -107,12 +105,10 @@ function trialfarfield(
         Fs = data.F[s][findall(x -> x == e, data.𝓔[s])]
         𝓔s = findall(x -> x == e, data.𝓔map[s])
         for parent in ParentUpwardsIterator(tree, s)
-            data.F[parent] == Int[] && continue
+            data.F[parent] == Int[] && (𝓔s = findall(x -> x in 𝓔s, data.𝓔map[parent]);
+            continue)
             append!(Fs, data.F[parent][findall(x -> x in 𝓔s, data.𝓔[parent])])
-            𝓔s = findall(
-                x -> x in data.𝓔[parent][findall(x -> x in 𝓔s, data.𝓔[parent])],
-                data.𝓔map[parent],
-            )
+            𝓔s = findall(x -> x in 𝓔s, data.𝓔map[parent])
         end
         return Fs
     end

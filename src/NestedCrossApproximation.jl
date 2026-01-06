@@ -40,7 +40,7 @@ include("MV/PetrovGalerkinNCA.jl")
 #include("WidebandNCA/directionaltrees/utilities.jl")
 
 include("WidebandNCA/topdowncompressor.jl")
-#include("WidebandNCA/bottomupcompressor.jl")
+include("WidebandNCA/bottomupcompressor.jl")
 include("WidebandNCA/PetrovGalerkinWNCA.jl")
 include("utils.jl")
 end

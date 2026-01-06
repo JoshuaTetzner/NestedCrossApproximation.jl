@@ -40,6 +40,36 @@ function tolerance!(
     return lrf.convergence.estimator.tol = lrf.convergence.estimator.tol / denominator
 end
 
+function cleancompression(
+    compressor::TopDownCompressor{LRF,RP},
+    farmatrix::AbstractKernelMatrix{T},
+    t::Vector{Int},
+    Ft::Vector{Int},
+    colbuffer::K,
+    rowbuffer::K;
+    maxrank=40,
+) where {T,K<:Matrix{T},LRF<:AdaptiveCrossApproximation.iACA,RP}
+    maxrank = min(maxrank, min(length(t), length(Ft)))
+    colbuffer[t, 1:maxrank] .= 0.0
+
+    npivots, rows, cols = compressor.lrf(
+        farmatrix,
+        colbuffer,
+        rowbuffer,
+        maxrank;
+        rows=zeros(Int, maxrank),
+        cols=zeros(Int, maxrank),
+        rowidcs=t,
+        colidcs=Ft,
+    )
+
+    colbuffer[t, 1:npivots] = colbuffer[t, 1:npivots] * rowbuffer[1:npivots, 1:npivots]
+    rowbuffer[1:npivots, 1:npivots] .= 0.0
+    put!(rowchannel, rowbuffer)
+
+    return rows, cols
+end
+
 function compress(
     compressor::TopDownCompressor{LRF,RP},
     farmatrix::AbstractKernelMatrix{T},

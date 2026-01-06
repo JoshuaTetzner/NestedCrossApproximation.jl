@@ -89,7 +89,6 @@ function PetrovGalerkinWNCA(
     )
     tolerance!(testcompressor.lrf, admissiblelevel(testtree(tree), testfardata))
     tolerance!(trialcompressor.lrf, admissiblelevel(trialtree(tree), trialfardata))
-
     println("compress_testtree")
     @time nestedtestbases, testtransfermatrices, testpivots = testcompressor(
         farmatrix,

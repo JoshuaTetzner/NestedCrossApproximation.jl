@@ -1,4 +1,24 @@
 # directional topdowncompressor
+function testtransfermatrix(
+    t::Int,
+    dir::Int,
+    pivs::Tuple{Vector{Int},Vector{Int}},
+    buffer::Matrix{K},
+    pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
+    tree,
+    dirdata::DirectionalData,
+) where {I,K}
+    tmats = Tuple{Int,Matrix{K}}[]
+    for child in ChildIterator(tree, t)
+        crows = pivots[child][paternaldirection(dirdata, child, dir)][1]
+        rows = pivs[1]
+        tmat = buffer[crows, 1:length(rows)] / buffer[rows, 1:length(rows)]
+
+        push!(tmats, (paternaldirection(dirdata, child, dir), tmat))
+    end
+    return tmats
+end
+
 function testtransfermatrices!(
     tmats::Vector{Dict{Int,Vector{Tuple{Int,Matrix{K}}}}},
     level::Int,
@@ -32,6 +52,27 @@ function testtransfermatrices!(
             tmats[t] = Dict(keys(pivots[t]) .=> ntmats)
         end
     end
+end
+
+# directional topdowncompressor
+function trialtransfermatrix(
+    s::Int,
+    dir::Int,
+    pivs,
+    buffer::Matrix{K},
+    pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
+    tree,
+    dirdata::DirectionalData,
+) where {I,K}
+    tmats = Tuple{Int,Matrix{K}}[]
+    for child in ChildIterator(tree, s)
+        ccols = pivots[child][paternaldirection(dirdata, child, dir)][2]
+        cols = pivs[2]
+        tmat = buffer[1:length(cols), cols] \ buffer[1:length(cols), ccols]
+
+        push!(tmats, (paternaldirection(dirdata, child, dir), tmat))
+    end
+    return tmats
 end
 
 function trialtransfermatrices!(
