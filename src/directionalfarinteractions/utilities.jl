@@ -14,7 +14,7 @@ end
 
 function (islf::IsLowFrequencyFunctor{F})(tree::BoundingBallTree, node::Int) where {F}
     parent(tree, node) == 0 && return islf(2radius(tree, node))
-    return islf(radius(tree, parent(tree, node)))
+    return islf(2genradius(tree, node))
 end
 
 function (islf::IsLowFrequencyFunctor{F})(diam::F) where {F}
@@ -49,13 +49,13 @@ function (isnear::IsNearFunctor{F})(
     end
 end
 
-function (isnear::NestedCrossApproximation.IsNearFunctor{F})(
+function (isnear::IsNearFunctor{F})(
     treea::H2Trees.BoundingBallTree, treeb::H2Trees.BoundingBallTree, nodea::Int, nodeb::Int
 ) where {F}
     ths = H2Trees.radius(treea, nodea)
     shs = H2Trees.radius(treeb, nodeb)
     dist = norm(H2Trees.center(treea, nodea) - H2Trees.center(treeb, nodeb)) - (ths + shs)
-    if isnear.islf(min(ths, shs))
+    if isnear.islf(2genradius(treea, nodea))
         (2 * max(ths, shs) <= isnear.ηₗ * max(dist, 0.0)) ? (return false) : (return true)
     else
         if (4 * isnear.k * max(ths^2, shs^2) <= isnear.ηₕ * max(dist, 0.0))

@@ -58,7 +58,6 @@ function PetrovGalerkinWNCA(
     trialcompressor=TopDownCompressor(),
     ntasks=Threads.nthreads(),
     isnear=isnear(wavenumber(operator)),
-    islf=islf(wavenumber(operator)),
     maxrank=40,
 )
 
@@ -66,9 +65,7 @@ function PetrovGalerkinWNCA(
     nearmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=nearquadstrat
     )
-    values, nearvalues = H2Trees.nearinteractions(
-        tree; isnear=isnear, extractselfvalues=false
-    )
+    values, nearvalues = nearinteractions(tree; isnear=isnear)
 
     println("nearinteractions")
     blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, length(values))
@@ -78,17 +75,17 @@ function PetrovGalerkinWNCA(
         nearmatrix(blk, values[i], nearvalues[i])
         blocks[i] = blk
     end
-    nearinteractions = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
+    nears = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
 
     farmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=farquadstrat
     )
 
     testfardata = NestedCrossApproximation.directionaltestfars(
-        tree; islf=islf, isnear=isnear, ntasks=ntasks
+        tree; isnear=isnear, ntasks=ntasks
     )
     trialfardata = NestedCrossApproximation.directionaltrialfars(
-        tree; islf=islf, isnear=isnear, ntasks=ntasks
+        tree; isnear=isnear, ntasks=ntasks
     )
     tolerance!(testcompressor.lrf, admissiblelevel(testtree(tree), testfardata))
     tolerance!(trialcompressor.lrf, admissiblelevel(trialtree(tree), trialfardata))
@@ -99,6 +96,7 @@ function PetrovGalerkinWNCA(
         testfardata,
         tree,
         reverse(testbuffer(testcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks));
+        islf=isnear.islf,
         ntasks=ntasks,
         maxrank=maxrank,
     )
@@ -109,6 +107,7 @@ function PetrovGalerkinWNCA(
         trialfardata,
         tree,
         trialbuffer(trialcompressor, farmatrix; maxrank=maxrank, ntasks=ntasks);
+        islf=isnear.islf,
         ntasks=ntasks,
         maxrank=maxrank,
     )
@@ -120,7 +119,7 @@ function PetrovGalerkinWNCA(
 
     return PetrovGalerkinWNCA{ComplexF64}(
         tree,
-        nearinteractions,
+        nears,
         Dict(
             i => nestedtestbases[i] for
             i in eachindex(nestedtestbases) if isassigned(nestedtestbases, i)
@@ -174,8 +173,8 @@ end
 
     fill!(y, zero(K))
 
-    xhat = Vector{Dict{Int,Vector{K}}}(undef, length(A.tree.trialcluster.nodes))
-    yhat = Vector{Dict{Int,Vector{K}}}(undef, length(A.tree.testcluster.nodes))
+    xhat = Vector{Dict{Int,Vector{K}}}(undef, numberofnodes(trialtree(A.tree)))
+    yhat = Vector{Dict{Int,Vector{K}}}(undef, numberofnodes(testtree(A.tree)))
 
     for (s, dirnbs) in collect(A.nestedtrialbases)
         #@set ntasks = A.ntasks
@@ -251,7 +250,7 @@ end
     for (s, dirnbs) in collect(A.nestedtrialbases)
         #@set ntasks = A.ntasks
         res = Vector{K}[]
-        for (dir, nb) in dirnbs
+        for nb in values(dirnbs)
             # use the trial-index vector stored in the direction/basis (dir.σ)
             push!(res, nb * x[H2Trees.values(trialtree(A.tree), s)])
         end
@@ -270,179 +269,113 @@ end
     return y
 end
 
+## Only symmetric case
 @views function LinearAlgebra.mul!(
     y::AbstractVecOrMat,
     At::LinearMaps.TransposeMap{<:Any,<:PetrovGalerkinWNCA},
     x::AbstractVector,
 )
-    A = At.lmap
-    LinearMaps.check_dim_mul(y, A, x)
-
-    fill!(y, zero(eltype(y)))
-
-    xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trialcluster.nodes))
-    yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.testcluster.nodes))
-
-    for (idx, moment) in A.nestedtestbases
-        res = Vector{eltype(y)}[]
-        for (k, dir) in moment
-            push!(res, transpose(dir.T) * x[dir.τ])
-        end
-        xhat[idx] = Dict(keys(moment) .=> res)
-    end
-
-    for nodes in reverse(A.testtransfermatrices)
-        for (node, data) in nodes
-            res = Vector{eltype(y)}[]
-            for (dir, transfers) in data
-                #childs = collect(H2Trees.children(A.tree.testcluster, node))
-                xhatdir =
-                    transpose(transfers.T[1]) *
-                    xhat[transfers.children[1]][parent(A.dtree, dir)]
-                for (i, transfer) in enumerate(transfers.T[2:end])
-                    xhatdir +=
-                        transpose(transfer) *
-                        xhat[transfers.children[i + 1]][parent(A.dtree, dir)]
-                end
-                push!(res, xhatdir)
-            end
-            xhat[node] = Dict(keys(data) .=> res)
-        end
-    end
-
-    for lrb in A.couplingmatrices
-        if isassigned(yhat, lrb.col_basis)
-            if haskey(yhat[lrb.col_basis], lrb.dir)
-                yhat[lrb.col_basis][lrb.dir] +=
-                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
-            else
-                yhat[lrb.col_basis][lrb.dir] =
-                    transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
-            end
-        else
-            yhat[lrb.col_basis] = Dict(
-                lrb.dir => transpose(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
-            )
-        end
-    end
-
-    for nodes in A.trialtransfermatrices
-        for (node, data) in nodes
-            #childs = collect(H2Trees.children(A.tree.trial_cluster, node))
-            for (dir, transfers) in data
-                childdir = parent(A.dtree, dir)
-                for (i, child) in enumerate(transfers.children)
-                    if isassigned(yhat, child)
-                        if haskey(yhat[child], childdir)
-                            yhat[child][childdir] +=
-                                transpose(transfers.T[i]) * yhat[node][dir]
-                        else
-                            yhat[child][childdir] =
-                                transpose(transfers.T[i]) * yhat[node][dir]
-                        end
-                    else
-                        yhat[child] = Dict(
-                            childdir => transpose(transfers.T[i]) * yhat[node][dir]
-                        )
-                    end
-                end
-            end
-        end
-    end
-
-    for (idx, moment) in A.nestedtrialbases
-        for (dir, basis) in moment
-            y[basis.σ] += transpose(basis.T) * yhat[idx][dir]
-        end
-    end
-
-    y += transpose(A.nearinteractions) * x
-
-    return y
+    return mul!(y, At.lmap, x)
 end
 
 @views function LinearAlgebra.mul!(
     y::AbstractVecOrMat,
-    At::LinearMaps.AdjointMap{<:Any,<:PetrovGalerkinWNCA},
+    At::LinearMaps.AdjointMap{<:Any,<:PetrovGalerkinWNCA{K}},
     x::AbstractVector,
-)
+) where {K}
     A = At.lmap
     LinearMaps.check_dim_mul(y, A, x)
 
-    fill!(y, zero(eltype(y)))
+    fill!(y, zero(K))
 
-    xhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.trialcluster.nodes))
-    yhat = Vector{Dict{Int,Vector{eltype(y)}}}(undef, length(A.tree.testcluster.nodes))
+    xhat = Vector{Dict{Int,Vector{K}}}(undef, numberofnodes(trialtree(A.tree)))
+    yhat = Vector{Dict{Int,Vector{K}}}(undef, numberofnodes(testtree(A.tree)))
 
-    for (idx, moment) in A.nestedtestbases
-        res = Vector{eltype(y)}[]
-        for (k, dir) in moment
-            push!(res, adjoint(dir.T) * x[dir.τ])
+    for (s, dirnbs) in collect(A.nestedtrialbases)
+        #@set ntasks = A.ntasks
+        res = Vector{K}[]
+        for (dir, nb) in dirnbs
+            # use the trial-index vector stored in the direction/basis (dir.σ)
+            push!(res, conj.(nb) * x[H2Trees.values(trialtree(A.tree), s)])
         end
-        xhat[idx] = Dict(keys(moment) .=> res)
+        xhat[s] = Dict(keys(A.nestedtrialbases[s]) .=> res)
     end
 
-    for nodes in reverse(levels(trialtree(A.tree)))
-        for (node, data) in nodes
-            res = Vector{eltype(y)}[]
-            for (dir, transfers) in data
-                #childs = collect(H2Trees.children(A.tree.testcluster, node))
-                xhatdir =
-                    adjoint(transfers.T[1]) *
-                    xhat[transfers.children[1]][parent(A.dtree, dir)]
-                for (i, transfer) in enumerate(transfers.T[2:end])
-                    xhatdir +=
-                        adjoint(transfer) *
-                        xhat[transfers.children[i + 1]][parent(A.dtree, dir)]
+    for level in reverse(levels(trialtree(A.tree)))
+        for node in collect(H2Trees.LevelIterator(trialtree(A.tree), level))
+            if haskey(A.trialtransfermatrices, node)
+                res = Vector{K}[]
+                for dtmats in values(A.trialtransfermatrices[node])
+                    chds = collect(ChildIterator(trialtree(A.tree), node))
+                    push!(
+                        res,
+                        mapreduce(+, enumerate(chds)) do (cidx, chd)
+                            conj.(dtmats[cidx][2]) * xhat[chd][dtmats[cidx][1]]
+                        end,
+                    )
                 end
-                push!(res, xhatdir)
+                xhat[node] = Dict(keys(A.trialtransfermatrices[node]) .=> res)
             end
-            xhat[node] = Dict(keys(data) .=> res)
         end
     end
 
-    for lrb in A.couplingmatrices
-        if isassigned(yhat, lrb.col_basis)
-            if haskey(yhat[lrb.col_basis], lrb.dir)
-                yhat[lrb.col_basis][lrb.dir] +=
-                    adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
-            else
-                yhat[lrb.col_basis][lrb.dir] = adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
+    for t in eachindex(A.couplingmatrices)
+        #  @set ntasks = A.ntasks
+        if A.couplingmatrices[t] != Dict()
+            dirs = Int[]
+            res = Vector{K}[]
+            for (st, dircmat) in A.couplingmatrices[t]
+                if dircmat[1][1] ∈ dirs
+                    idx = findfirst(x -> x == dircmat[1][1], dirs)
+                    res[idx] += conj.(dircmat[2]) * xhat[st[2]][dircmat[1][2]]
+                else
+                    push!(dirs, dircmat[1][1])
+                    push!(res, conj.(dircmat[2]) * xhat[st[2]][dircmat[1][2]])
+                end
             end
-        else
-            yhat[lrb.col_basis] = Dict(
-                lrb.dir => adjoint(lrb.Z) * xhat[lrb.row_basis][lrb.dir]
-            )
+            yhat[t] = Dict(dirs .=> res)
         end
     end
 
-    for nodes in A.trialtransfermatrices
-        for (node, data) in nodes
-            #childs = collect(H2Trees.children(A.tree.trial_cluster, node))
-            for (dir, transfers) in data
-                childdir = parent(A.dtree, dir)
-                for (i, child) in enumerate(transfers.children)
-                    if isassigned(yhat, child)
-                        if haskey(yhat[child], childdir)
-                            yhat[child][childdir] +=
-                                adjoint(transfers.T[i]) * yhat[node][dir]
+    for level in levels(testtree(A.tree))
+        for node in collect(H2Trees.LevelIterator(testtree(A.tree), level))
+            if haskey(A.testtransfermatrices, node)
+                for (dir, dtmats) in A.testtransfermatrices[node]
+                    chds = collect(ChildIterator(testtree(A.tree), node))
+                    for (cidx, chd) in enumerate(chds)
+                        if isassigned(yhat, chd)
+                            if haskey(yhat[chd], dtmats[cidx][1])
+                                yhat[chd][dtmats[cidx][1]] +=
+                                    conj.(dtmats[cidx][2]) * yhat[node][dir]
+                            else
+                                yhat[chd][dtmats[cidx][1]] =
+                                    conj.(dtmats[cidx][2]) * yhat[node][dir]
+                            end
                         else
-                            yhat[child][childdir] =
-                                adjoint(transfers.T[i]) * yhat[node][dir]
+                            yhat[chd] = Dict(
+                                dtmats[cidx][1] => conj.(dtmats[cidx][2]) * yhat[node][dir]
+                            )
                         end
-                    else
-                        yhat[child] = Dict(
-                            childdir => adjoint(transfers.T[i]) * yhat[node][dir]
-                        )
                     end
                 end
             end
         end
     end
 
-    for (idx, moment) in A.nestedtrialbases
-        for (dir, basis) in moment
-            y[basis.σ] += adjoint(basis.T) * yhat[idx][dir]
+    for (s, dirnbs) in collect(A.nestedtrialbases)
+        #@set ntasks = A.ntasks
+        res = Vector{K}[]
+        for nb in values(dirnbs)
+            # use the trial-index vector stored in the direction/basis (dir.σ)
+            push!(res, conj.(nb) * x[H2Trees.values(trialtree(A.tree), s)])
+        end
+        xhat[s] = Dict(keys(A.nestedtrialbases[s]) .=> res)
+    end
+
+    for (node, dnbs) in collect(A.nestedtestbases)
+        for (dir, nb) in dnbs
+            # write into the basis' target indices
+            y[H2Trees.values(testtree(A.tree), node)] += conj.(nb) * yhat[node][dir]
         end
     end
 

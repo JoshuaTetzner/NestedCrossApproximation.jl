@@ -89,7 +89,6 @@ function compress(
     maxrank = min(maxrank, min(length(t), length(Ft)))
     rows = zeros(Int, maxrank)
     cols = zeros(Int, maxrank)
-
     colbuffer[t, 1:maxrank] .= 0.0
 
     npivots, rows, cols = compressor.lrf(

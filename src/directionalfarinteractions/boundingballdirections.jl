@@ -12,6 +12,15 @@ function directions(data::BoundingBallDirectionalData, node::Int)
     return union(data.𝓔[node], data.𝓔map[node])
 end
 
+function genradius(tree::BoundingBallTree, t::Int)
+    pt = parent(tree, t)
+    pt == 0 && return H2Trees.radius(tree, t)
+    radius = mapreduce(+, H2Trees.children(tree, pt)) do c
+        H2Trees.radius(tree, c)
+    end
+    return radius / length(collect(H2Trees.children(tree, pt)))
+end
+
 function paternaldirection(data::BoundingBallDirectionalData, cnode::Int, dir::Int)
     dir == 0 && return 0
     return data.𝓔map[cnode][dir]
@@ -29,7 +38,7 @@ function inheritedtrialpivots(
         isdirectionalroot(dirdata, tree, parent(tree, t)) ||
         !isassigned(pivots, parent(tree, t))
     ) && return Int[]
-    islf(radius(tree, parent(tree, t))) && return pivots[parent(tree, t)][0][2]
+    islf(2genradius(tree, t)) && return pivots[parent(tree, t)][0][2]
     e in dirdata.𝓔map[t] && return Vector{Int}(
         mapreduce(vcat, findall(x -> x == e, dirdata.𝓔map[t])) do dir
             pivots[parent(tree, t)][dir][2]
@@ -41,10 +50,10 @@ end
 function testfarfield(
     data::BoundingBallDirectionalData, tree, t::Int, e::Int; islf=islf(1.0)
 )
-    if islf(radius(tree, parent(tree, t)))
+    if islf(2genradius(tree, t))
         Ft = data.F[t]
         for parent in ParentUpwardsIterator(tree, t)
-            !islf(radius(tree, parent(tree, parent))) && return Ft
+            !islf(2genradius(tree, parent)) && return Ft
             append!(Ft, data.F[parent])
         end
         return Ft
@@ -75,7 +84,7 @@ function inheritedtestpivots(
         isdirectionalroot(dirdata, tree, parent(tree, s)) ||
         !isassigned(pivots, parent(tree, s))
     ) && return Int[]
-    islf(radius(tree, parent(tree, s))) && return pivots[parent(tree, s)][0][1]
+    islf(2genradius(tree, s)) && return pivots[parent(tree, s)][0][1]
     e in dirdata.𝓔map[s] && return Vector{Int}(
         mapreduce(vcat, findall(x -> x == e, dirdata.𝓔map[s])) do dir
             pivots[parent(tree, s)][dir][1]
@@ -87,10 +96,10 @@ end
 function trialfarfield(
     data::BoundingBallDirectionalData, tree, s::Int, e::Int; islf=islf(1.0)
 )
-    if islf(radius(tree, parent(tree, s)))
+    if islf(2genradius(tree, s))
         Fs = data.F[s]
         for parent in ParentUpwardsIterator(tree, s)
-            !islf(radius(tree, parent(tree, parent))) && return Fs
+            !islf(2genradius(tree, parent)) && return Fs
             append!(Fs, data.F[parent])
         end
         return Fs
@@ -133,19 +142,18 @@ function hasinteractions(
 end
 
 function directionaltestfars(
-    tree::BlockTree{T}; islf=islf(1.0), isnear=isnear(1.0), ntasks=Threads.nthreads()
+    tree::BlockTree{T}; isnear=isnear(1.0), ntasks=Threads.nthreads()
 ) where {T<:BoundingBallTree}
-    iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
-    F = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
+    #iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
+    F = farinteractions(testtree(tree), trialtree(tree); isnear=isnear)#Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
     𝓔 = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
     𝓔map = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
     𝓔vec = Vector{Vector{SVector{3,Float64}}}(undef, numberofnodes(testtree(tree)))
 
     for level in levels(testtree(tree))
         for t in collect(H2Trees.LevelIterator(testtree(tree), level))
-            F[t] = collect(iterator(trialtree(tree), testtree(tree), t))
-
-            if !islf(testtree(tree), t) && hasinteractions(F, 𝓔, 𝓔map, testtree(tree), t)
+            if !isnear.islf(testtree(tree), t) &&
+                hasinteractions(F, 𝓔, 𝓔map, testtree(tree), t)
                 total𝓔vec = fibonacci_sphere(2 * radius(testtree(tree), t), isnear.k)
 
                 𝓔[t] = Vector{Int}(
@@ -186,19 +194,20 @@ function directionaltestfars(
 end
 
 function directionaltrialfars(
-    tree::BlockTree{T}; islf=islf(1.0), isnear=isnear(1.0), ntasks=Threads.nthreads()
+    tree::BlockTree{T}; isnear=isnear(1.0), ntasks=Threads.nthreads()
 ) where {T<:BoundingBallTree}
-    iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
-    F = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
+    #iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
+    F = farinteractions(trialtree(tree), testtree(tree); isnear=isnear)#Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
     𝓔 = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
     𝓔map = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
     𝓔vec = Vector{Vector{SVector{3,Float64}}}(undef, numberofnodes(trialtree(tree)))
 
     for level in levels(trialtree(tree))
         for s in collect(H2Trees.LevelIterator(trialtree(tree), level))
-            F[s] = collect(iterator(testtree(tree), trialtree(tree), s))
+            #F[s] = collect(iterator(testtree(tree), trialtree(tree), s))
 
-            if !islf(trialtree(tree), s) && hasinteractions(F, 𝓔, 𝓔map, trialtree(tree), s)
+            if !isnear.islf(trialtree(tree), s) &&
+                hasinteractions(F, 𝓔, 𝓔map, trialtree(tree), s)
                 total𝓔vec = fibonacci_sphere(2 * radius(trialtree(tree), s), isnear.k)
 
                 𝓔[s] = Vector{Int}(

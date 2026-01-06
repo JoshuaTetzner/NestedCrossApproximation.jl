@@ -27,6 +27,7 @@ function (compressor::TopDownCompressor)(
                 Ftvals = H2Trees.values(
                     trialtree(tree), dirdata.F[t][findall(x -> x == dir, dirdata.𝓔[t])]
                 )
+
                 append!(
                     Ftvals,
                     inheritedtrialpivots(
@@ -112,12 +113,14 @@ function (compressor::TopDownCompressor)(
                 Fsvals = H2Trees.values(
                     testtree(tree), dirdata.F[s][findall(x -> x == dir, dirdata.𝓔[s])]
                 )
+
                 append!(
                     Fsvals,
                     inheritedtestpivots(
                         dirdata, pivots, trialtree(tree), s, dir; islf=islf
                     ),
                 )
+
                 if Fsvals != []
                     pivs = compress(
                         compressor,

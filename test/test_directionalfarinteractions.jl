@@ -4,23 +4,37 @@ using H2Trees
 using CompScienceMeshes
 using StaticArrays
 
-λ = 0.1
+h = 0.05
+λ = 20h
 k = 2π / λ
-
-Γ = meshrectangle(1.0, 1.0, 0.01)
+##
+Γ = meshsphere(1.0, h)
 islf = NestedCrossApproximation.islf(k)
 isnear = NestedCrossApproximation.isnear(k)
 
 ##
-ttree = KMeansTree(Γ.vertices, 2; minvalues=10)
+space = raviartthomas(Γ)
+ttree = KMeansTree(space.pos, 2; minvalues=100)
 stree = ttree
 tree = BlockTree(ttree, stree)
 
-testfardata = NestedCrossApproximation.directionaltestfars(tree; islf=islf, isnear=isnear);
-trialfardata = NestedCrossApproximation.directionaltrialfars(tree; islf=islf, isnear=isnear)
+testfardata = NestedCrossApproximation.directionaltestfars(tree; isnear=isnear);
+##
+testfardata.F[460]
+tdata.F[460]
 
-testfardata.𝓔
-testfardata.F
+isnear(ttree, stree, 460, 403)
+
+iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
+fars = collect(iterator(H2Trees.trialtree(tree), H2Trees.testtree(tree), 460))
+
+islfnear = H2Trees._LeafNearFunctor(isnear)
+nears = collect(
+    H2Trees.NearNodeIterator(
+        H2Trees.trialtree(tree), H2Trees.testtree(tree), 460; isnear=islfnear
+    ),
+)
+
 ##
 node = 9
 println("child ", testfardata.𝓔[node])

@@ -19,12 +19,4 @@ end
 
 NestedCrossApproximation.wavenumber(operator::BEAST.IntegralOperator) = imag(operator.gamma)
 
-function assembleblockprimer(assembler)
-    return BEAST.assembleblock_primer(
-        assembler.operator,
-        assembler.testspace,
-        assembler.trialspace;
-        quadstrat=assembler.quadstrat,
-    )
-end
 end

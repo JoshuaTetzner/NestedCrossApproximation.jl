@@ -199,50 +199,67 @@ function lrbh2mat(h2mat::PetrovGalerkinNCA)
         h2mat.dim,
         h2mat.ismultithreaded,
     )
-end
+end=#
 
-=#
+function lrbh2mat(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA)
+    blocks = BlockSparseMatrices.DenseMatrixBlock{
+        ComplexF64,Matrix{ComplexF64},Vector{Int}
+    }[]
+    nears = BlockSparseMatrix(blocks, h2mat.dim)
+
+    return PetrovGalerkinWNCA{ComplexF64}(
+        h2mat.tree,
+        nears,
+        h2mat.nestedtestbases,
+        h2mat.nestedtrialbases,
+        h2mat.testtransfermatrices,
+        h2mat.trialtransfermatrices,
+        h2mat.couplingmatrices,
+        h2mat.dim,
+        h2mat.ntasks,
+    )
+end
 
 function storage(h2::NestedCrossApproximation.PetrovGalerkinWNCA)
     ref = size(h2, 1) * size(h2, 2)
     h2stor = 0.0
 
-    for frb in h2.nearinteractions.blocks
-        h2stor += length(frb.rowindices) * length(frb.colindices)
+    for frb in eachindex(h2.nearinteractions.blocks)
+        h2stor +=
+            length(h2.nearinteractions.rowindices[frb]) *
+            length(h2.nearinteractions.colindices[frb])
     end
 
-    for lrb in h2.couplingmatrices
-        h2stor += length(lrb.Z)
+    for t in h2.couplingmatrices
+        for blk in values(t)
+            h2stor += length(blk[2])
+        end
     end
 
     for ntbs in values(h2.nestedtestbases)
         for ntb in values(ntbs)
-            h2stor += size(ntb.T, 1) * size(ntb.T, 2)
+            h2stor += length(ntb)
         end
     end
 
     for ntbs in values(h2.nestedtrialbases)
         for ntb in values(ntbs)
-            h2stor += size(ntb.T, 1) * size(ntb.T, 2)
+            h2stor += length(ntb)
         end
     end
 
-    for level in h2.testtransfermatrices
-        for trans in values(level)
-            for tran in values(trans)
-                for t in tran.T
-                    h2stor += size(t, 1) * size(t, 2)
-                end
+    for trans in values(h2.testtransfermatrices)
+        for ttrans in values(trans)
+            for tran in ttrans
+                h2stor += length(tran)
             end
         end
     end
 
-    for level in h2.trialtransfermatrices
-        for trans in values(level)
-            for tran in values(trans)
-                for t in tran.T
-                    h2stor += size(t, 1) * size(t, 2)
-                end
+    for trans in values(h2.trialtransfermatrices)
+        for ttrans in values(trans)
+            for tran in ttrans
+                h2stor += length(tran)
             end
         end
     end

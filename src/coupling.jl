@@ -10,7 +10,7 @@ function assemble_couplingmatrices(
     iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
 
     for level in H2Trees.levels(testtree(tree))
-        @tasks for t in tcollect(LevelIterator(testtree(tree), level))
+        @tasks for t in collect(LevelIterator(testtree(tree), level))
             @set ntasks = ntasks
             ncmats = Tuple{Int,Matrix{T}}[]
             for s in iterator(H2Trees.trialtree(tree), H2Trees.testtree(tree), t)
