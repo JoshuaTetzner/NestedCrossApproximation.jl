@@ -25,7 +25,7 @@ function (compressor::TopDownCompressor)(
             localpivots = Tuple{Vector{Int},Vector{Int}}[]
             for dir in directions(dirdata, t)
                 Ftvals = H2Trees.values(
-                    trialtree(tree), dirdata.F[t][findall(x -> x == dir, dirdata.𝓔[t])]
+                    trialtree(tree), dirdata.F[t][findall(x -> x == dir, dirdata.E[t])]
                 )
 
                 append!(
@@ -111,7 +111,7 @@ function (compressor::TopDownCompressor)(
 
             for dir in directions(dirdata, s)
                 Fsvals = H2Trees.values(
-                    testtree(tree), dirdata.F[s][findall(x -> x == dir, dirdata.𝓔[s])]
+                    testtree(tree), dirdata.F[s][findall(x -> x == dir, dirdata.E[s])]
                 )
 
                 append!(

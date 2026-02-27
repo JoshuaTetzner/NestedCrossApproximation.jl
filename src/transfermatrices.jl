@@ -12,8 +12,11 @@ function testtransfermatrix(
     for child in ChildIterator(tree, t)
         crows = pivots[child][paternaldirection(dirdata, child, dir)][1]
         rows = pivs[1]
-        tmat = buffer[crows, 1:length(rows)] / buffer[rows, 1:length(rows)]
 
+        @assert length(crows) == length(unique(crows))
+        @assert length(rows) == length(unique(rows))
+
+        @views tmat = buffer[crows, 1:length(rows)] / buffer[rows, 1:length(rows)]
         push!(tmats, (paternaldirection(dirdata, child, dir), tmat))
     end
     return tmats
@@ -68,7 +71,7 @@ function trialtransfermatrix(
     for child in ChildIterator(tree, s)
         ccols = pivots[child][paternaldirection(dirdata, child, dir)][2]
         cols = pivs[2]
-        tmat = buffer[1:length(cols), cols] \ buffer[1:length(cols), ccols]
+        @views tmat = buffer[1:length(cols), cols] \ buffer[1:length(cols), ccols]
 
         push!(tmats, (paternaldirection(dirdata, child, dir), tmat))
     end

@@ -18,7 +18,7 @@ childfaces = [
         SVector(0.0, 1.0, -1.0),
     ],
 ]
-mutable struct 𝓔Node{F}
+mutable struct ENode{F}
     level::Int
     face::Int
     e::SVector{3,F}
@@ -26,20 +26,20 @@ mutable struct 𝓔Node{F}
     children::Vector{Int}
 end
 
-mutable struct 𝓔Tree{F}
+mutable struct ETree{F}
     level::Int
-    nodes::Vector{𝓔Node{F}}
+    nodes::Vector{ENode{F}}
 end
 
-function (tree::𝓔Tree{F})(hs::F, maxlevel::Int) where {F}
-    tree.level != 0 && warning("Rerouting an existing 𝓔Tree will overwrite previous data.")
+function (tree::ETree{F})(hs::F, maxlevel::Int) where {F}
+    tree.level != 0 && warning("Rerouting an existing ETree will overwrite previous data.")
     tree.nodes = [
-        𝓔Node(1, 1, SVector(0, 0, 1.0), 0, Int[]),
-        𝓔Node(1, 1, SVector(0, 0, -1.0), 0, Int[]),
-        𝓔Node(1, 2, SVector(0, 1.0, 0), 0, Int[]),
-        𝓔Node(1, 2, SVector(0, -1.0, 0), 0, Int[]),
-        𝓔Node(1, 3, SVector(1.0, 0, 0), 0, Int[]),
-        𝓔Node(1, 3, SVector(-1.0, 0, 0), 0, Int[]),
+        ENode(1, 1, SVector(0, 0, 1.0), 0, Int[]),
+        ENode(1, 1, SVector(0, 0, -1.0), 0, Int[]),
+        ENode(1, 2, SVector(0, 1.0, 0), 0, Int[]),
+        ENode(1, 2, SVector(0, -1.0, 0), 0, Int[]),
+        ENode(1, 3, SVector(1.0, 0, 0), 0, Int[]),
+        ENode(1, 3, SVector(-1.0, 0, 0), 0, Int[]),
     ]
     tree.level = maxlevel
     for node in 1:6
@@ -47,7 +47,7 @@ function (tree::𝓔Tree{F})(hs::F, maxlevel::Int) where {F}
     end
 end
 
-function root!(tree::𝓔Tree{F}, node, level, maxlevel, hs) where {F}
+function root!(tree::ETree{F}, node, level, maxlevel, hs) where {F}
     level == maxlevel && return nothing
     append!(
         tree.nodes[node].children, Vector((length(tree.nodes) + 1):(length(tree.nodes) + 4))
@@ -55,7 +55,7 @@ function root!(tree::𝓔Tree{F}, node, level, maxlevel, hs) where {F}
     for child in 1:4
         push!(
             tree.nodes,
-            𝓔Node(
+            ENode(
                 tree.nodes[node].level + 1,
                 tree.nodes[node].face,
                 tree.nodes[node].e + childfaces[tree.nodes[node].face][child] .* hs,
@@ -69,12 +69,12 @@ function root!(tree::𝓔Tree{F}, node, level, maxlevel, hs) where {F}
     end
 end
 
-function children(tree::𝓔Tree{F}, node::Int) where {F}
+function children(tree::ETree{F}, node::Int) where {F}
     iszero(node) && return Vector(1:6)
     return tree.nodes[node].children
 end
 
-function parent(tree::𝓔Tree{F}, node::Int) where {F}
+function parent(tree::ETree{F}, node::Int) where {F}
     iszero(node) && return 0
 
     return tree.nodes[node].parent
@@ -90,11 +90,11 @@ function direction(interaction, tree, maxdepth; depth=0, dir=0)
     )
 end
 
-function isleaf(tree::𝓔Tree{F}, node::Int) where {F}
+function isleaf(tree::ETree{F}, node::Int) where {F}
     tree.nodes[node].parent == 0 ? (return true) : (return false)
 end
 
-function isleaflevel(tree::𝓔Tree{F}, level::Int) where {F}
+function isleaflevel(tree::ETree{F}, level::Int) where {F}
     tree.level == level ? (return true) : (return false)
 end
 
@@ -108,13 +108,13 @@ end
 
 struct TwoNDirectionalData{T<:Vector{Vector{Int}}} <: DirectionalData
     F::T
-    𝓣ₑ::𝓔Tree
-    𝓔::T
-    inherited𝓔::T
+    𝓣ₑ::ETree
+    E::T
+    inheritedE::T
 end
 
 function directions(data::TwoNDirectionalData, node::Int)
-    return union(data.𝓔[node], data.inherited𝓔[node])
+    return union(data.E[node], data.inheritedE[node])
 end
 
 function paternaldirection(data::TwoNDirectionalData, _::Int, dir::Int)
@@ -135,20 +135,21 @@ function inheritedtrialpivots(
 end
 
 function testfarfield(data::TwoNDirectionalData, tree, t::Int, e::Int; islf=islf(1.0))
+    #println(t, ", in ther its ", islf(tree, level(tree, t)))
     if islf(tree, level(tree, t))
-        Ft = data.F[t]
+        Ft = copy(data.F[t])
         for parent in ParentUpwardsIterator(tree, t)
             !islf(tree, level(tree, parent)) && return Ft
             append!(Ft, data.F[parent])
         end
         return Ft
     else
-        Ft = data.F[t][findall(x -> x == e, data.𝓔[t])]
-        𝓔t = children(data.𝓣ₑ, e)
+        Ft = data.F[t][findall(x -> x == e, data.E[t])]
+        Et = children(data.𝓣ₑ, e)
         for parent in ParentUpwardsIterator(tree, t)
             data.F[parent] == Int[] && continue
-            append!(Ft, data.F[parent][findall(x -> x in 𝓔t, data.𝓔[parent])])
-            𝓔t = map(e -> children(data.𝓣ₑ, e), 𝓔t)
+            append!(Ft, data.F[parent][findall(x -> x in Et, data.E[parent])])
+            Et = reduce(vcat, map(x -> children(data.𝓣ₑ, x), Et))
         end
         return Ft
     end
@@ -169,40 +170,38 @@ end
 
 function trialfarfield(data::TwoNDirectionalData, tree, s::Int, e::Int; islf=islf(1.0))
     if islf(tree, level(tree, s))
-        Fs = data.F[s]
+        Fs = copy(data.F[s])
         for parent in ParentUpwardsIterator(tree, s)
             !islf(tree, level(tree, parent)) && return Fs
             append!(Fs, data.F[parent])
         end
         return Fs
     else
-        Fs = data.F[s][findall(x -> x == e, data.𝓔[s])]
-        𝓔s = children(data.𝓣ₑ, e)
+        Fs = data.F[s][findall(x -> x == e, data.E[s])]
+        Es = children(data.𝓣ₑ, e)
         for parent in ParentUpwardsIterator(tree, s)
             data.F[parent] == Int[] && continue
-            append!(Fs, data.F[parent][findall(x -> x in 𝓔s, data.𝓔[parent])])
-            𝓔s = map(e -> children(data.𝓣ₑ, e), 𝓔s)
+            append!(Fs, data.F[parent][findall(x -> x in Es, data.E[parent])])
+            Es = reduce(vcat, map(e -> children(data.𝓣ₑ, e), Es))
         end
         return Fs
     end
 end
 
 function directionaltestfars(
-    tree::BlockTree{T}; islf=islf(k), isnear=isnear(k), ntasks=Threads.nthreads()
+    tree::BlockTree{T}; isnear=isnear(1.0), ntasks=Threads.nthreads()
 ) where {N,D,K,T<:TwoNTree{N,D,K}}
-    iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
-    F = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
-    𝓔 = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
-    inherited𝓔 = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
-    𝓣ₑ = 𝓔Tree(0, 𝓔Node{K}[])
-    dirmaxlevel = maxlevel(testtree(tree), islf)
+    F = farinteractions(testtree(tree), trialtree(tree); isnear=isnear)
+    E = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
+    inheritedE = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
+    𝓣ₑ = ETree(0, ENode{K}[])
+    dirmaxlevel = maxlevel(testtree(tree), isnear.islf)
 
     for level in levels(testtree(tree))
         for t in collect(H2Trees.LevelIterator(testtree(tree), level))
-            F[t] = collect(iterator(trialtree(tree), testtree(tree), t))
-            if F[t] != Int[] && !islf(testtree(tree), level)
+            if F[t] != Int[] && !isnear.islf(testtree(tree), level)
                 𝓣ₑ.level == 0 && 𝓣ₑ(halfsize(testtree(tree), t), dirmaxlevel - level + 1)
-                𝓔[t] = Vector{Int}(
+                E[t] = Vector{Int}(
                     map(F[t]) do s
                         r = center(trialtree(tree), s) - center(testtree(tree), t)
                         direction(r, 𝓣ₑ, dirmaxlevel - level + 1)
@@ -211,38 +210,36 @@ function directionaltestfars(
 
                 pt = parent(testtree(tree), t)
                 if pt != 0 && F[pt] != Int[]
-                    inherited𝓔[t] = unique(
-                        Vector{Int}(map(e -> parent(𝓣ₑ, e), union(inherited𝓔[pt], 𝓔[pt])))
+                    inheritedE[t] = unique(
+                        Vector{Int}(map(e -> parent(𝓣ₑ, e), union(inheritedE[pt], E[pt])))
                     )
                 else
-                    inherited𝓔[t] = Int[]
+                    inheritedE[t] = Int[]
                 end
             else
-                F[t] == [] ? (𝓔[t] = Int[]) : (𝓔[t] = Int[0])
-                inherited𝓔[t] = Int[]
+                isnear.islf(testtree(tree), level) ? (E[t] = Int[0]) : (E[t] = Int[])
+                inheritedE[t] = Int[]
             end
         end
     end
 
-    return TwoNDirectionalData(F, 𝓣ₑ, 𝓔, inherited𝓔)
+    return TwoNDirectionalData(F, 𝓣ₑ, E, inheritedE)
 end
 
 function directionaltrialfars(
-    tree::BlockTree{T}; islf=islf(k), isnear=isnear(k), ntasks=Threads.nthreads()
+    tree::BlockTree{T}; isnear=isnear(1.0), ntasks=Threads.nthreads()
 ) where {N,D,K,T<:TwoNTree{N,D,K}}
-    iterator = H2Trees.WellSeparatedIterator(; isnear=(tree) -> isnear)(tree)
-    F = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
-    𝓔 = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
-    inherited𝓔 = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
-    𝓣ₑ = 𝓔Tree(0, 𝓔Node{K}[])
-    dirmaxlevel = maxlevel(trialtree(tree), islf)
+    F = farinteractions(trialtree(tree), testtree(tree); isnear=isnear)
+    E = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
+    inheritedE = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
+    𝓣ₑ = ETree(0, ENode{K}[])
+    dirmaxlevel = maxlevel(trialtree(tree), isnear.islf)
 
     for level in levels(trialtree(tree))
         for s in collect(H2Trees.LevelIterator(trialtree(tree), level))
-            F[s] = collect(iterator(testtree(tree), trialtree(tree), s))
-            if F[s] != Int[] && !islf(trialtree(tree), level)
+            if F[s] != Int[] && !isnear.islf(trialtree(tree), level)
                 𝓣ₑ.level == 0 && 𝓣ₑ(halfsize(trialtree(tree), s), dirmaxlevel - level + 1)
-                𝓔[s] = Vector{Int}(
+                E[s] = Vector{Int}(
                     map(F[s]) do t
                         r = center(testtree(tree), t) - center(trialtree(tree), s)
                         direction(r, 𝓣ₑ, dirmaxlevel - level + 1)
@@ -250,18 +247,18 @@ function directionaltrialfars(
                 )
                 ps = parent(trialtree(tree), s)
                 if ps != 0 && F[ps] != Int[]
-                    inherited𝓔[s] = unique(
-                        Vector{Int}(map(e -> parent(𝓣ₑ, e), union(inherited𝓔[ps], 𝓔[ps])))
+                    inheritedE[s] = unique(
+                        Vector{Int}(map(e -> parent(𝓣ₑ, e), union(inheritedE[ps], E[ps])))
                     )
                 else
-                    inherited𝓔[s] = Int[]
+                    inheritedE[s] = Int[]
                 end
             else
-                F[s] == [] ? (𝓔[s] = Int[]) : (𝓔[s] = Int[0])
-                inherited𝓔[s] = Int[]
+                isnear.islf(trialtree(tree), level) ? (E[s] = Int[0]) : (E[s] = Int[])
+                inheritedE[s] = Int[]
             end
         end
     end
 
-    return TwoNDirectionalData(F, 𝓣ₑ, 𝓔, inherited𝓔)
+    return TwoNDirectionalData(F, 𝓣ₑ, E, inheritedE)
 end

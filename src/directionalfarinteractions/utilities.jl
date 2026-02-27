@@ -55,7 +55,7 @@ function (isnear::IsNearFunctor{F})(
     ths = H2Trees.radius(treea, nodea)
     shs = H2Trees.radius(treeb, nodeb)
     dist = norm(H2Trees.center(treea, nodea) - H2Trees.center(treeb, nodeb)) - (ths + shs)
-    if isnear.islf(2genradius(treea, nodea))
+    if isnear.islf(min(2genradius(treea, nodea), 2genradius(treeb, nodeb)))
         (2 * max(ths, shs) <= isnear.ηₗ * max(dist, 0.0)) ? (return false) : (return true)
     else
         if (4 * isnear.k * max(ths^2, shs^2) <= isnear.ηₕ * max(dist, 0.0))

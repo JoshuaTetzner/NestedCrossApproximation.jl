@@ -1,60 +1,27 @@
 using BEAST
 using FastBEAST
-using ParallelKMeans
 using H2Trees
+using ParallelKMeans
 using AdaptiveCrossApproximation
 using NestedCrossApproximation
 using CompScienceMeshes
 using LinearAlgebra
 using Random
+using Test
 
 h = 0.025
-λ = 20h
-k = 2π / λ
-##
 Γ = meshsphere(1.0, h)
-op = Maxwell3D.singlelayer(; wavenumber=k)
+##
+_, _, h = edgeinfo(Γ)
+λ = 20h     # Wavelength
+k = 2 * π / λ   # Wavenumber
+op = Maxwell3D.singlelayer(; wavenumber=k, alpha=-im * k, beta=zero(λ) * im)
 space = raviartthomas(Γ)
-Random.seed!(3)
+Random.seed!(1)
 ttree = KMeansTree(space.pos, 2; minvalues=100)
-stree = ttree
-tree = BlockTree(ttree, stree)
+stree = KMeansTree(space.pos, 2; minvalues=100)
+tree = BlockTree(ttree, ttree)
 
-##
-
-testcompressor = NestedCrossApproximation.TopDownCompressor(
-    iACA(
-        MaximumValue(),
-        MimicryPivoting(space.pos, space.pos),
-        FNormExtrapolator(iFNormEstimator(1e-3)),
-    ),
-    nothing,
-)
-trialcompressor = NestedCrossApproximation.TopDownCompressor(
-    iACA(
-        MimicryPivoting(space.pos, space.pos),
-        MaximumValue(),
-        FNormExtrapolator(iFNormEstimator(1e-3)),
-    ),
-    nothing,
-)
-@time wnca = NestedCrossApproximation.PetrovGalerkinWNCA(
-    op,
-    space,
-    space,
-    tree;
-    testcompressor=testcompressor,
-    trialcompressor=trialcompressor,
-    maxrank=50,
-    #ntasks=,
-);
-
-##
-@time A = assemble(op, space, space);
-x = rand(ComplexF64, length(space))
-##
-
-estimate_reldifference(wnca, A)
 ##
 
 testcompressor = NestedCrossApproximation.BottomUpCompressor(
@@ -64,7 +31,7 @@ testcompressor = NestedCrossApproximation.BottomUpCompressor(
         FNormExtrapolator(iFNormEstimator(1e-3)),
     ),
     nothing,
-)
+);
 trialcompressor = NestedCrossApproximation.BottomUpCompressor(
     iACA(
         TreeMimicryPivoting(space.pos, space.pos, tree.testcluster),
@@ -72,7 +39,7 @@ trialcompressor = NestedCrossApproximation.BottomUpCompressor(
         FNormExtrapolator(iFNormEstimator(1e-3)),
     ),
     nothing,
-)
+);
 @time wnca = NestedCrossApproximation.PetrovGalerkinWNCA(
     op,
     space,
@@ -81,5 +48,5 @@ trialcompressor = NestedCrossApproximation.BottomUpCompressor(
     testcompressor=testcompressor,
     trialcompressor=trialcompressor,
     maxrank=50,
-    #ntasks=1,
+    ntasks=10,
 );

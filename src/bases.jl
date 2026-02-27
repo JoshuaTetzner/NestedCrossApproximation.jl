@@ -6,7 +6,7 @@ function nestedtestbasis!(
     t::Int,
     pivots::Tuple{Vector{I},Vector{I}},
 ) where {I,K}
-    U =
+    @views U =
         buffer[H2Trees.values(testtree(tree), t), 1:length(pivots[1])] /
         buffer[pivots[1], 1:length(pivots[1])]
     return push!(localbases, U)
@@ -65,7 +65,7 @@ function build_testbases!(
                 for child in children
                     crows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, t)) for
-                        idx in pivots[child][data.𝓔map[idx]][1]
+                        idx in pivots[child][data.Emap[idx]][1]
                     ]
                     rows = [
                         findfirst(x -> x == idx, H2Trees.values(tree, t)) for idx in piv[1]
@@ -281,7 +281,7 @@ function nestedtrialbasis!(
     s::Int,
     pivots::Tuple{Vector{I},Vector{I}},
 ) where {I,K}
-    V =
+    @views V =
         buffer[1:length(pivots[1]), pivots[2]] \
         buffer[1:length(pivots[1]), H2Trees.values(trialtree(tree), s)]
     return push!(localbases, V)

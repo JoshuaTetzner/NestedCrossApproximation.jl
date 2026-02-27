@@ -43,11 +43,11 @@ function assemble_couplingmatrices(
         cdirs = Tuple{Int,Int}[]
         ncmats = Matrix{T}[]
         for (sidx, s) in enumerate(testdata.F[t])
-            testdata.𝓔[t] == [0] ? (eₜ = 0) : (eₜ = testdata.𝓔[t][sidx])
-            if trialdata.𝓔[s] == [0]
+            testdata.E[t] == [0] ? (eₜ = 0) : (eₜ = testdata.E[t][sidx])
+            if trialdata.E[s] == [0]
                 eₛ = 0
             else
-                eₛ = trialdata.𝓔[s][findfirst(x -> x == t, trialdata.F[s])]
+                eₛ = trialdata.E[s][findfirst(x -> x == t, trialdata.F[s])]
             end
             blk = zeros(T, length(testpivots[t][eₜ][1]), length(trialpivots[s][eₛ][2]))
             farmatrix(blk, testpivots[t][eₜ][1], trialpivots[s][eₛ][2])

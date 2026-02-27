@@ -1,5 +1,5 @@
 function lbases(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA{K}) where {K}
-    trialbases = Vector{Dict{Int,Matrix{K}}}(undef, length(h2mat.tree.testcluster.nodes))
+    trialbases = Vector{Dict{Int,Matrix{K}}}(undef, length(h2mat.tree.trialcluster.nodes))
     testbases = Vector{Dict{Int,Matrix{K}}}(undef, length(h2mat.tree.testcluster.nodes))
 
     for (i, nb) in h2mat.nestedtestbases
@@ -14,7 +14,7 @@ function lbases(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA{K}) where {K}
         for t in H2Trees.LevelIterator(h2mat.tree.testcluster, level)
             !haskey(h2mat.testtransfermatrices, t) && continue
             dirmats = Matrix{ComplexF64}[]
-            for transfer in values(h2mat.testtransfermatrices[t])
+            for (_, transfer) in h2mat.testtransfermatrices[t]
                 push!(
                     dirmats,
                     mapreduce(
@@ -33,7 +33,7 @@ function lbases(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA{K}) where {K}
         for s in H2Trees.LevelIterator(h2mat.tree.trialcluster, level)
             !haskey(h2mat.trialtransfermatrices, s) && continue
             dirmats = Matrix{ComplexF64}[]
-            for transfer in values(h2mat.trialtransfermatrices[s])
+            for (_, transfer) in h2mat.trialtransfermatrices[s]
                 push!(
                     dirmats,
                     mapreduce(
@@ -120,17 +120,4 @@ function informations(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA)
     end
 
     return leveltransfers, leveldbases, leveledranks
-end
-
-for level in H2Trees.levels(wnca.tree.testcluster)
-    for t in H2Trees.LevelIterator(wnca.tree.testcluster, level)
-        for (idcs, coupling) in wnca.couplingmatrices[t]
-            tidcs = H2Trees.values(wnca.tree.testcluster, t)
-            sidcs = H2Trees.values(wnca.tree.trialcluster, idcs[2])
-            err = norm(fullwnca[tidcs, sidcs] - A[tidcs, sidcs]) / norm(A[tidcs, sidcs])
-            if err > 1e-2
-                println("level $level between clusters $t and $(idcs[2])., error = $err")
-            end
-        end
-    end
 end

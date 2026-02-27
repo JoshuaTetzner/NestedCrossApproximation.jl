@@ -1,5 +1,33 @@
-import H2Trees: isleaf, testtree, trialtree, root, children
+import H2Trees: isleaf, testtree, trialtree, root, children, BoundingBallTree
+#=
+struct IsNearFunctor{F}
+    η::F
+end
 
+function isnear(; η=1.0)
+    return IsNearFunctor(η)
+end
+
+function isnear(k::F; ηₗ=F(1.0), ηₕ=F(5.0), islf=islf(k)) where {F}
+    return IsNearFrequencyFunctor(k, ηₗ, ηₕ, islf)
+end
+
+function (isnear::IsNearFunctor)(treea::TwoNTree, treeb::TwoNTree, nodea::Int, nodeb::Int)
+    ths = halfsize(treea, nodea) * sqrt(3)
+    shs = halfsize(treeb, nodeb) * sqrt(3)
+    dist = norm(center(treea, nodea) - center(treeb, nodeb)) - (ths + shs)
+    return 2 * max(ths, shs) > isnear.η * max(dist, 0.0)
+end
+
+function (isnear::IsNearFunctor)(
+    treea::BoundingBallTree, treeb::BoundingBallTree, nodea::Int, nodeb::Int
+)
+    ths = radius(treea, nodea)
+    shs = radius(treeb, nodeb)
+    dist = norm(center(treea, nodea) - center(treeb, nodeb)) - (ths + shs)
+    return 2 * max(ths, shs) > isnear.ηₗ * max(dist, 0.0)
+end
+=#
 function nears!(
     tree,
     values::Vector{V},
@@ -30,7 +58,7 @@ function nears!(
     end
 end
 
-function nearinteractions(tree::H2Trees.BlockTree; isnear=H2Trees.isnear)
+function nearinteractions(tree::BlockTree; isnear=H2Trees.isnear)
     !isnear(testtree(tree), trialtree(tree), root(testtree(tree)), root(trialtree(tree))) &&
         return Vector{Int}(), Vector{Int}[]
     values = Vector{Int}[]

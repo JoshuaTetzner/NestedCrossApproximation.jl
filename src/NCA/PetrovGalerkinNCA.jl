@@ -43,46 +43,32 @@ struct PetrovGalerkinNCA{
     end
 end
 
-function defaultfarquadstrat(operator, testspace, trialspace) end
-
-function defaultnearquadstrat(operator, testspace, trialspace) end
-
 function PetrovGalerkinNCA(
     operator,
     testspace,
     trialspace,
     tree;
-    tol=1e-4,
     farquadstrat=defaultfarquadstrat(operator, testspace, trialspace),
     nearquadstrat=defaultnearquadstrat(operator, testspace, trialspace),
     testcompressor=TopDownCompressor(),
     trialcompressor=TopDownCompressor(),
     ntasks=Threads.nthreads(),
-    isnear=H2Trees.isnear,
+    isnear=isnear(),
     maxrank=40,
 )
 
-    # near interactions
+    #near interactions
     nearmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=nearquadstrat
     )
-    values, nearvalues = H2Trees.nearinteractions(
-        tree; isnear=isnear, extractselfvalues=false
-    )
-    blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, length(values))
-    @tasks for i in eachindex(values)
+    values, nearvalues = nearinteractions(tree; isnear=isnear)
+    println("nearinteractions")
+    blocks = zeros.(eltype(nearmatrix), length.(values), length.(nearvalues))
+    @time @tasks for i in eachindex(blocks)
         @set ntasks = ntasks
-        blk = zeros(eltype(nearmatrix), length(values[i]), length(nearvalues[i]))
-        nearmatrix(blk, values[i], nearvalues[i])
-        blocks[i] = blk
+        nearmatrix(blocks[i], values[i], nearvalues[i])
     end
-    nearinteractions = BlockSparseMatrix(
-        blocks,
-        values,
-        nearvalues,
-        size(nearmatrix);
-        scheduler=DynamicScheduler(; ntasks=ntasks),
-    )
+    nears = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
 
     # far interactions
     #testdfars, trialfars = farinteractions(tree; isnear=isnear)
@@ -90,7 +76,7 @@ function PetrovGalerkinNCA(
     farmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=farquadstrat
     )
-
+    testfars, trialfars = farinteractions(tree; isnear=isnear)
     println("compress_testtree")
     nestedtestbases, testtransfermatrices, testpivots = testcompressor(
         farmatrix,

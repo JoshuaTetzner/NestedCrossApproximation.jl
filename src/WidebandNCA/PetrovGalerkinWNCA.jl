@@ -1,5 +1,3 @@
-using LinearMaps
-
 struct PetrovGalerkinWNCA{
     T,TreeType,NearInteractionType,NestedBasesDict,TransferMatrixType,CouplingMatrixType
 } <: LinearMaps.LinearMap{T}
@@ -47,6 +45,9 @@ end
 
 wavenumber(operator) = operator.wavenumber
 
+function defaultfarquadstrat(operator, testspace, trialspace) end
+function defaultnearquadstrat(operator, testspace, trialspace) end
+
 function PetrovGalerkinWNCA(
     operator,
     testspace,
@@ -66,29 +67,31 @@ function PetrovGalerkinWNCA(
         operator, testspace, trialspace; quadstrat=nearquadstrat
     )
     values, nearvalues = nearinteractions(tree; isnear=isnear)
-
     println("nearinteractions")
-    blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, length(values))
-    @time @tasks for i in eachindex(values)
+    blocks = zeros.(eltype(nearmatrix), length.(values), length.(nearvalues))
+    @time @tasks for i in eachindex(blocks)
         @set ntasks = ntasks
-        blk = zeros(eltype(nearmatrix), length(values[i]), length(nearvalues[i]))
-        nearmatrix(blk, values[i], nearvalues[i])
-        blocks[i] = blk
+        nearmatrix(blocks[i], values[i], nearvalues[i])
     end
-    nears = BlockSparseMatrix(blocks, values, nearvalues, size(nearmatrix))
+    nears = BlockSparseMatrix(
+        blocks, values, nearvalues, size(nearmatrix); scheduler=DynamicScheduler()
+    )
 
     farmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; quadstrat=farquadstrat
     )
-
     testfardata = NestedCrossApproximation.directionaltestfars(
         tree; isnear=isnear, ntasks=ntasks
     )
     trialfardata = NestedCrossApproximation.directionaltrialfars(
         tree; isnear=isnear, ntasks=ntasks
     )
+
     tolerance!(testcompressor.lrf, admissiblelevel(testtree(tree), testfardata))
     tolerance!(trialcompressor.lrf, admissiblelevel(trialtree(tree), trialfardata))
+    println(testcompressor.lrf.convergence.estimator.tol)
+    println(trialcompressor.lrf.convergence.estimator.tol)
+
     println("compress_testtree")
     @time nestedtestbases, testtransfermatrices, testpivots = testcompressor(
         farmatrix,
@@ -100,7 +103,6 @@ function PetrovGalerkinWNCA(
         maxrank=maxrank,
     )
     println("compress_trialtree")
-
     @time nestedtrialbases, trialtransfermatrices, trialpivots = trialcompressor(
         farmatrix,
         trialfardata,
@@ -111,7 +113,6 @@ function PetrovGalerkinWNCA(
         maxrank=maxrank,
     )
     println("couplingmatrices")
-
     @time coupling = assemble_couplingmatrices(
         farmatrix, testpivots, trialpivots, testfardata, trialfardata; ntasks=ntasks
     )
@@ -175,8 +176,10 @@ end
     xhat = Vector{Dict{Int,Vector{K}}}(undef, numberofnodes(trialtree(A.tree)))
     yhat = Vector{Dict{Int,Vector{K}}}(undef, numberofnodes(testtree(A.tree)))
 
-    for (s, dirnbs) in collect(A.nestedtrialbases)
-        #@set ntasks = A.ntasks
+    mul!(y, A.nearinteractions, x)
+
+    @tasks for (s, dirnbs) in collect(A.nestedtrialbases)
+        @set ntasks = A.ntasks
         res = Vector{K}[]
         for (dir, nb) in dirnbs
             # use the trial-index vector stored in the direction/basis (dir.σ)
@@ -186,7 +189,8 @@ end
     end
 
     for level in reverse(levels(trialtree(A.tree)))
-        for node in collect(H2Trees.LevelIterator(trialtree(A.tree), level))
+        @tasks for node in collect(H2Trees.LevelIterator(trialtree(A.tree), level))
+            @set ntasks = A.ntasks
             if haskey(A.trialtransfermatrices, node)
                 res = Vector{K}[]
                 for dtmats in values(A.trialtransfermatrices[node])
@@ -203,8 +207,8 @@ end
         end
     end
 
-    for t in eachindex(A.couplingmatrices)
-        #  @set ntasks = A.ntasks
+    @tasks for t in eachindex(A.couplingmatrices)
+        @set ntasks = A.ntasks
         if A.couplingmatrices[t] != Dict()
             dirs = Int[]
             res = Vector{K}[]
@@ -222,7 +226,8 @@ end
     end
 
     for level in levels(testtree(A.tree))
-        for node in collect(H2Trees.LevelIterator(testtree(A.tree), level))
+        @tasks for node in collect(H2Trees.LevelIterator(testtree(A.tree), level))
+            @set ntasks = A.ntasks
             if haskey(A.testtransfermatrices, node)
                 for (dir, dtmats) in A.testtransfermatrices[node]
                     chds = collect(ChildIterator(testtree(A.tree), node))
@@ -245,25 +250,24 @@ end
             end
         end
     end
-
-    for (s, dirnbs) in collect(A.nestedtrialbases)
-        #@set ntasks = A.ntasks
+    #=
+    @tasks for (s, dirnbs) in collect(A.nestedtrialbases)
+        @set ntasks = A.ntasks
         res = Vector{K}[]
         for nb in values(dirnbs)
             # use the trial-index vector stored in the direction/basis (dir.σ)
             push!(res, nb * x[H2Trees.values(trialtree(A.tree), s)])
         end
         xhat[s] = Dict(keys(A.nestedtrialbases[s]) .=> res)
-    end
+    end=#
 
     for (node, dnbs) in collect(A.nestedtestbases)
+        # ntasks = A.ntasks
         for (dir, nb) in dnbs
             # write into the basis' target indices
             y[H2Trees.values(testtree(A.tree), node)] += nb * yhat[node][dir]
         end
     end
-
-    y += A.nearinteractions * x
 
     return y
 end
@@ -286,9 +290,9 @@ end
     LinearMaps.check_dim_mul(y, A, x)
 
     fill!(y, zero(K))
-
     xhat = Vector{Dict{Int,Vector{K}}}(undef, numberofnodes(trialtree(A.tree)))
     yhat = Vector{Dict{Int,Vector{K}}}(undef, numberofnodes(testtree(A.tree)))
+    mul!(y, adjoint(A.nearinteractions), x)
 
     for (s, dirnbs) in collect(A.nestedtrialbases)
         #@set ntasks = A.ntasks
@@ -377,8 +381,6 @@ end
             y[H2Trees.values(testtree(A.tree), node)] += conj.(nb) * yhat[node][dir]
         end
     end
-
-    y += adjoint(A.nearinteractions) * x
 
     return y
 end
