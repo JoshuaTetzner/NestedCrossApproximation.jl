@@ -65,9 +65,8 @@ function cleancompression(
 
     colbuffer[t, 1:npivots] = colbuffer[t, 1:npivots] * rowbuffer[1:npivots, 1:npivots]
     rowbuffer[1:npivots, 1:npivots] .= 0.0
-    put!(rowchannel, rowbuffer)
 
-    return rows, cols
+    return rows[1:npivots], cols[1:npivots]
 end
 
 function compress(

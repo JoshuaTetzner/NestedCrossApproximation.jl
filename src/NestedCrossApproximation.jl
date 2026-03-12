@@ -2,14 +2,45 @@ module NestedCrossApproximation
 
 using AdaptiveCrossApproximation
 using BlockSparseMatrices
+using H2Trees
 using LinearMaps
 using LinearAlgebra
-using H2Trees
-import H2Trees: testtree, trialtree, levels, LevelIterator, numberofnodes, center
-import H2Trees: parent, ChildIterator, firstchild, ParentUpwardsIterator, BoundingBallTree
 using OhMyThreads
 using StaticArrays
 
+function defaultmatrixdata(operator, testspace, trialspace)
+    return error("No default matrix data available for type $(typeof(operator)).")
+end
+function defaultfarmatrixdata(operator, testspace, trialspace)
+    return error("No default far matrix data available for type $(typeof(operator)).")
+end
+
+include("kernelmatrix/abstractkernelmatrix.jl")
+include("kernelmatrix/beastkernelmatrix.jl")
+include("kernelmatrix/pointmatrix.jl")
+
+include("nearinteractions.jl")
+include("farinteractions.jl")
+
+include("directionalsubdivision/abstractdirections.jl")
+include("directionalsubdivision/twondirections.jl")
+include("directionalsubdivision/boundingballdirections.jl")
+
+include("utils.jl")
+include("nestedbasis.jl")
+include("buffer.jl")
+include("transfermatrices.jl")
+include("topdown.jl")
+include("bottomup.jl")
+include("factorization.jl")
+include("couplingmatrices.jl")
+
+include("nca/abstractnca.jl")
+include("nca/petrovgalerkinnca.jl")
+
+#import H2Trees: testtree, trialtree, levels, LevelIterator, numberofnodes, center
+#import H2Trees: parent, ChildIterator, firstchild, ParentUpwardsIterator, BoundingBallTree
+#=
 struct H2MatrixBlock{I,K}
     Z::Matrix{K}
     row_basis::I
@@ -28,6 +59,7 @@ include("abstractkernelmatrix/beastkernelmatrix.jl")
 
 #include("NCA/AbstractNCA.jl")
 #include("WidebandNCA/directionaltree.jl")
+
 include("directionalfarinteractions/utilities.jl")
 include("directionalfarinteractions/abstractdirfars.jl")
 
@@ -58,4 +90,5 @@ include("WidebandNCA/compressor.jl")
 include("WidebandNCA/bottomupcompressor.jl")
 include("WidebandNCA/PetrovGalerkinWNCA.jl")
 include("utils.jl")
+=#
 end

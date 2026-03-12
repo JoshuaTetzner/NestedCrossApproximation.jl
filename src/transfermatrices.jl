@@ -1,3 +1,103 @@
+function _build_transfer_store(
+    transfer::Vector{Vector{Matrix{T}}},
+    level_transfer_nodes::Vector{Vector{Int}},
+    level_child_counts::Vector{Vector{Int}},
+    tree,
+) where {T}
+    nlevels = length(level_transfer_nodes)
+    level_ptr = Vector{Int}(undef, nlevels + 1)
+    level_ptr[1] = 1
+    for level in 1:nlevels
+        level_ptr[level + 1] = level_ptr[level] + length(level_transfer_nodes[level])
+    end
+
+    nnodes = level_ptr[end] - 1
+    level_nodes = Vector{Int}(undef, nnodes)
+    node_child_counts = Vector{Int}(undef, nnodes)
+    idx = 1
+    @inbounds for level in 1:nlevels
+        nodes = level_transfer_nodes[level]
+        counts = level_child_counts[level]
+        for i in eachindex(nodes)
+            level_nodes[idx] = nodes[i]
+            node_child_counts[idx] = counts[i]
+            idx += 1
+        end
+    end
+
+    node_ptr = Vector{Int}(undef, nnodes + 1)
+    node_ptr[1] = 1
+    for i in 1:nnodes
+        node_ptr[i + 1] = node_ptr[i] + node_child_counts[i]
+    end
+
+    nedges = node_ptr[end] - 1
+    edge_child = Vector{Int}(undef, nedges)
+    blocks = Vector{Matrix{T}}(undef, nedges)
+
+    e = 1
+    @inbounds for i in 1:nnodes
+        node = level_nodes[i]
+        children = collect(H2Trees.ChildIterator(tree, node))
+        tblocks = transfer[node]
+        for j in eachindex(children)
+            edge_child[e] = children[j]
+            blocks[e] = tblocks[j]
+            e += 1
+        end
+    end
+
+    plan = TransferTraversalPlan(level_ptr, level_nodes, node_ptr, edge_child)
+    return TransferStore{T}(plan, blocks)
+end
+
+function testtransfermatrices!(
+    tree, transfer, levelnodes, pivots, buf; scheduler=DynamicScheduler()
+)
+    levelnodecounts = Vector{Int}(undef, length(levelnodes))
+    @tasks for nodeidx in eachindex(levelnodes)
+        @set scheduler = scheduler
+        node = levelnodes[nodeidx]
+        children = collect(H2Trees.ChildIterator(tree, node))
+        nodetransfers = Vector{Matrix{eltype(buf)}}(undef, length(children))
+        @inbounds for j in eachindex(children)
+            child = children[j]
+            nodetransfers[j] = testtransfer(pivots[node], pivots[child], buf)
+        end
+        transfer[node] = nodetransfers
+        levelnodecounts[nodeidx] = length(children)
+    end
+    return levelnodecounts
+end
+
+function testtransfer(rows, childrows, buf)
+    return buf[childrows, 1:length(rows)] / buf[rows, 1:length(rows)]
+end
+
+function trialtransfermatrices!(
+    tree, transfer, levelnodes, pivots, buf; scheduler=DynamicScheduler()
+)
+    levelnodecounts = Vector{Int}(undef, length(levelnodes))
+    @tasks for nodeidx in eachindex(levelnodes)
+        @set scheduler = scheduler
+        node = levelnodes[nodeidx]
+        children = collect(H2Trees.ChildIterator(tree, node))
+        nodetransfers = Vector{Matrix{eltype(buf)}}(undef, length(children))
+        @inbounds for j in eachindex(children)
+            child = children[j]
+            nodetransfers[j] = trialtransfer(pivots[node], pivots[child], buf)
+        end
+        transfer[node] = nodetransfers
+        levelnodecounts[nodeidx] = length(children)
+    end
+    return levelnodecounts
+end
+
+function trialtransfer(cols, childcols, buf)
+    return buf[1:length(cols), cols] \ buf[1:length(cols), childcols]
+end
+
+#=
 # directional topdowncompressor
 function testtransfermatrix(
     t::Int,
@@ -111,3 +211,4 @@ function trialtransfermatrices!(
         end
     end
 end
+=#

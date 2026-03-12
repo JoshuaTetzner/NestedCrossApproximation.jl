@@ -1,33 +1,105 @@
-import H2Trees: isleaf, testtree, trialtree, root, children
+import H2Trees: isleaf, testtree, trialtree, root, children, numberofnodes
 
-function fars!(
-    treea, treeb, farnodes::Vector{V}, tnode::Int, snodes::V; isnear=H2Trees.isnear
-) where {V<:Vector{Int}}
-    childnodes = Int[]
-    localfarnodes = Int[]
-    for snode in snodes
-        if !isnear(treea, treeb, tnode, snode)
-            push!(localfarnodes, snode)
-        else
-            append!(childnodes, collect(children(treeb, snode)))
-        end
-    end
-    farnodes[tnode] = localfarnodes
-    for child in children(treea, tnode)
-        fars!(treea, treeb, farnodes, child, childnodes; isnear=isnear)
-    end
+struct FarData{I<:Integer}
+    farptr::Vector{I}
+    fars::Vector{I}
 end
 
-function farinteractions(treea, treeb; isnear=isnear())#isnear::IsNearFunctor)
-    farnodes = Vector{Vector{Int}}(undef, length(treea.nodes))
-    !isnear(treea, treeb, root(treea), root(treeb)) &&
-        (farnodes[root(treea)] = root(treeb); return farnodes)
-    fars!(treea, treeb, farnodes, root(treea), [root(treeb)]; isnear=isnear)
-    return farnodes
+@inline farptr(data::FarData) = data.farptr
+@inline fars(data::FarData) = data.fars
+function farfield(tree, fardata::FarData, node::Int)
+    fp = farptr(fardata)
+    fs = fars(fardata)
+    far_nodes = Int[]
+    for i in fp[node]:(fp[node + 1] - 1)
+        push!(far_nodes, fs[i])
+    end
+    for parent in H2Trees.ParentUpwardsIterator(tree, node)
+        for i in fp[parent]:(fp[parent + 1] - 1)
+            push!(far_nodes, fs[i])
+        end
+    end
+    return far_nodes
+end
+
+function farptr(counter::AbstractVector{<:Integer})
+    ptr = Vector{Int}(undef, length(counter) + 1)
+    ptr[1] = 1
+    @inbounds for i in eachindex(counter)
+        ptr[i + 1] = ptr[i] + Int(counter[i])
+    end
+    return ptr
+end
+
+function reorder_fars(
+    fars::AbstractVector{<:Tuple{Int,Int}},
+    farptr::AbstractVector{<:Integer},
+    tupleindex::Int,
+)
+    sorted = Vector{Tuple{Int,Int}}(undef, length(fars))
+    writeptr = Int.(farptr)
+    @inbounds for far in fars
+        node = far[tupleindex]
+        sorted[writeptr[node]] = far
+        writeptr[node] += 1
+    end
+    return sorted
+end
+
+function fars!(
+    ttree,
+    stree,
+    tfctr,
+    sfctr,
+    fars::Vector{Tuple{Int,Int}},
+    tnode::Int,
+    snode::Int;
+    isnear=isnear(),
+)
+    if !isnear(ttree, stree, tnode, snode)
+        push!(fars, (tnode, snode))
+        tfctr[tnode] += 1
+        sfctr[snode] += 1
+    else
+        for tchild in children(ttree, tnode)
+            for schild in children(stree, snode)
+                fars!(ttree, stree, tfctr, sfctr, fars, tchild, schild; isnear=isnear)
+            end
+        end
+    end
 end
 
 function farinteractions(tree::BlockTree; isnear=isnear())
-    testfars = farinteractions(testtree(tree), trialtree(tree); isnear=isnear)
-    testtree(tree) == trialtree(tree) && (return testfars, testfars)
-    return testfars, farinteractions(trialtree(tree), testtree(tree); isnear=isnear)
+    testfarcounter = zeros(Int, H2Trees.numberofnodes(testtree(tree)))
+    trialfarcounter = zeros(Int, H2Trees.numberofnodes(trialtree(tree)))
+    if !isnear(testtree(tree), trialtree(tree), root(testtree(tree)), root(trialtree(tree)))
+        testfarcounter[root(testtree(tree))] += 1
+        trialfarcounter[root(trialtree(tree))] += 1
+        testfarptr = farptr(testfarcounter)
+        trialfarptr = farptr(trialfarcounter)
+        return FarData(testfarptr, [root(trialtree(tree))]),
+        FarData(trialfarptr, [root(testtree(tree))])
+    end
+    fars = Tuple{Int,Int}[]
+    fars!(
+        testtree(tree),
+        trialtree(tree),
+        testfarcounter,
+        trialfarcounter,
+        fars,
+        root(testtree(tree)),
+        root(trialtree(tree));
+        isnear=isnear,
+    )
+    testfarptr = farptr(testfarcounter)
+    trialfarptr = farptr(trialfarcounter)
+    testfars_sorted = reorder_fars(fars, testfarptr, 1)
+    trialfars_sorted = reorder_fars(fars, trialfarptr, 2)
+    testfars = [t[2] for t in testfars_sorted]
+    trialfars = [t[1] for t in trialfars_sorted]
+    return FarData(testfarptr, testfars), FarData(trialfarptr, trialfars)
+end
+
+function fardata(tree::BlockTree, isnear::IsNearFunctor)
+    return farinteractions(tree; isnear=isnear)
 end

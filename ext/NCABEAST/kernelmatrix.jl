@@ -3,10 +3,10 @@ function NestedCrossApproximation.AbstractKernelMatrix(
     operator::BEAST.IntegralOperator,
     testspace::BEAST.Space,
     trialspace::BEAST.Space;
-    quadstrat=BEAST.defaultquadstrat(operator, testspace, trialspace),
+    matrixdata=BEAST.defaultquadstrat(operator, testspace, trialspace),
 )
     return NestedCrossApproximation.BEASTKernelMatrix{scalartype(operator)}(
-        BEAST.blockassembler(operator, testspace, trialspace; quadstrat=quadstrat)
+        BEAST.blockassembler(operator, testspace, trialspace; quadstrat=matrixdata)
     )
 end
 

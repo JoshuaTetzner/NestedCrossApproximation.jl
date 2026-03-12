@@ -1,4 +1,20 @@
+function _build_basis_store(bases::Vector{Matrix{T}}) where {T}
+    blocks, nodes = collect_assigned(bases)
+    return BasisStore{T}(BasisTraversalPlan(nodes), blocks)
+end
 
+function nestedtestbasis(
+    tvalues::Vector{Int}, pivots::Vector{Int}, buffer::AbstractMatrix{K}
+) where {K}
+    return buffer[tvalues, 1:length(pivots)] / buffer[pivots, 1:length(pivots)]
+end
+
+function nestedtrialbasis(
+    svalues::Vector{Int}, pivots::Vector{Int}, buffer::AbstractMatrix{K}
+) where {K}
+    return buffer[1:length(pivots), pivots] \ buffer[1:length(pivots), svalues]
+end
+#=
 function nestedtestbasis!(
     localbases::Vector{Matrix{K}},
     buffer::Matrix{K},
@@ -10,6 +26,19 @@ function nestedtestbasis!(
         buffer[H2Trees.values(testtree(tree), t), 1:length(pivots[1])] /
         buffer[pivots[1], 1:length(pivots[1])]
     return push!(localbases, U)
+end
+
+function nestedtrialbasis!(
+    localbases::Vector{Matrix{K}},
+    buffer::Matrix{K},
+    tree,
+    s::Int,
+    pivots::Tuple{Vector{I},Vector{I}},
+) where {I,K}
+    @views V =
+        buffer[1:length(pivots[1]), pivots[2]] \
+        buffer[1:length(pivots[1]), H2Trees.values(trialtree(tree), s)]
+    return push!(localbases, V)
 end
 
 # directional topdowncompressor
@@ -551,3 +580,4 @@ function build_trialbases!(
         end
     end
 end
+=#

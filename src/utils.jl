@@ -1,5 +1,5 @@
-using BlockSparseMatrices
-#=
+#=using BlockSparseMatrices
+
 function storage(h2mat::GalerkinNCA)
     ref = size(h2mat, 1) * size(h2mat, 2)
     h2stor = 0.0
@@ -199,7 +199,7 @@ function lrbh2mat(h2mat::PetrovGalerkinNCA)
         h2mat.dim,
         h2mat.ismultithreaded,
     )
-end=#
+end
 
 function lrbh2mat(h2mat::NestedCrossApproximation.PetrovGalerkinWNCA)
     blocks = BlockSparseMatrices.DenseMatrixBlock{
@@ -265,4 +265,26 @@ function storage(h2::NestedCrossApproximation.PetrovGalerkinWNCA)
     end
 
     return h2stor * 8 * 10^-9, h2stor / ref
+end
+=#
+
+function collect_assigned(v::Vector{B}) where {B}
+    nassigned = 0
+    @inbounds for i in eachindex(v)
+        nassigned += isassigned(v, i)
+    end
+
+    compact = Vector{B}(undef, nassigned)
+    nodes = Vector{Int}(undef, nassigned)
+
+    k = 0
+    @inbounds for i in eachindex(v)
+        if isassigned(v, i)
+            k += 1
+            compact[k] = v[i]
+            nodes[k] = i
+        end
+    end
+
+    return compact, nodes
 end
