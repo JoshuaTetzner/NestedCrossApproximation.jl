@@ -10,24 +10,25 @@ Low-frequency classifier based on diameter and wavenumber.
 `islf(d)` returns true when `k * d <= 1`.
 """
 struct IsLowFrequencyFunctor{F}
+    γ::F
     k::F
 end
 
 wavenumber(f::IsLowFrequencyFunctor) = f.k
 
-function islf(k::Real)
+function islf(k::Real, γ::Real=1.0)
     F = float(typeof(k))
-    return IsLowFrequencyFunctor{F}(F(k))
+    return IsLowFrequencyFunctor{F}(F(γ), F(k))
 end
 
 @inline function (f::IsLowFrequencyFunctor)(diam::Real)
-    return f.k * diam <= one(promote_type(typeof(f.k), typeof(diam)))
+    return f.k * diam <= f.γ * one(promote_type(typeof(f.k), typeof(diam)))
 end
 
 @inline function (f::IsLowFrequencyFunctor)(tree::H2Trees.TwoNTree, level::Int)
     # Characteristic box diameter at this level in TwoN trees.
     diam = 2 * sqrt(3) * H2Trees.halfsize(tree) / (2.0^(level - 1))
-    return f.k * diam <= 1
+    return f.k * diam <= f.γ * one(promote_type(typeof(f.k), typeof(diam)))
 end
 
 # Generalized node radius for BoundingBallTree.
@@ -58,7 +59,11 @@ struct IsNearWidebandFunctor{F,LF}
 end
 
 function isnearwideband(
-    k::Real; ηlf::Real=1.0, ηhf::Real=5.0, islf::Any=NestedCrossApproximation.islf(k)
+    k::Real;
+    ηlf::Real=1.0,
+    ηhf::Real=1.0,
+    γ::Real=1.0,
+    islf::Any=NestedCrossApproximation.islf(k, γ),
 )
     F = promote_type(float(typeof(k)), float(typeof(ηlf)), float(typeof(ηhf)))
     return IsNearWidebandFunctor{F,typeof(islf)}(F(k), F(ηlf), F(ηhf), islf)
@@ -96,7 +101,7 @@ function (isnear::IsNearWidebandFunctor{F})(
     dist = norm(center(treea, nodea) - center(treeb, nodeb)) - (ths + shs)
     sep = max(dist, zero(dist))
 
-    if isnear.islf(min(ths, shs))
+    if isnear.islf(min(2 * ths, 2 * shs))
         return 2 * max(ths, shs) > isnear.ηlf * sep
     end
     return 4 * isnear.k * max(ths^2, shs^2) > isnear.ηhf * sep
@@ -109,7 +114,6 @@ function (isnear::IsNearWidebandFunctor{F})(
     shs = radius(treeb, nodeb)
     dist = norm(center(treea, nodea) - center(treeb, nodeb)) - (ths + shs)
     sep = max(dist, zero(dist))
-
     if isnear.islf(min(2 * ths, 2 * shs))
         return 2 * max(ths, shs) > isnear.ηlf * sep
     end
@@ -175,6 +179,11 @@ function assemblenears(
         operator, testspace, trialspace; matrixdata=matrixdata
     )
     values, nearvalues = nearinteractions(tree; isnear=isnear)
+    if isempty(values)
+        return BlockSparseMatrix(
+            Matrix{eltype(nearmatrix)}[], Vector{Int}[], Vector{Int}[], size(nearmatrix)
+        )
+    end
     blocks = zeros.(eltype(nearmatrix), length.(values), length.(nearvalues))
     @tasks for i in eachindex(blocks)
         @set scheduler = scheduler

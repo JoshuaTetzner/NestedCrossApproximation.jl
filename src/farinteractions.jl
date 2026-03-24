@@ -7,6 +7,12 @@ end
 
 @inline farptr(data::FarData) = data.farptr
 @inline fars(data::FarData) = data.fars
+function fars(data::FarData, node::Int)
+    ptr = farptr(data)
+    ff = fars(data)
+    return @view ff[Int(ptr[node]):(Int(ptr[node + 1]) - 1)]
+end
+
 function farfield(tree, fardata::FarData, node::Int)
     fp = farptr(fardata)
     fs = fars(fardata)

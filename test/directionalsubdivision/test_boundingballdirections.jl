@@ -38,15 +38,31 @@ for node in eachindex(ttree.nodes)
 
     @test length(dirs) == length(unique(dirs))
     for dir in dirs
-        append!(sfars, NestedCrossApproximation.dirfars(testdata, node, dir))
+        dirfars = NestedCrossApproximation.dirfars(testdata, node, dir)
+        dirfarfield = NestedCrossApproximation.dirfarfield(ttree, testdata, node, dir)
+        @test dirfarfield[1:length(dirfars)] == dirfars
+        append!(sfars, dirfars)
     end
 
     @test length(sfars) == length(unique(sfars))
 
     if node > 1
         pnode = H2Trees.parent(ttree, node)
-        dirmap = NestedCrossApproximation.dirmap(testdata, pnode, node)
+        dirmap = NestedCrossApproximation.dirmap(testdata, node)
         pdirs = NestedCrossApproximation.dirs(testdata, pnode)
         @test length(dirmap) == length(pdirs)
+        for dir in dirmap
+            @test dir in Vector(1:length(dirs))
+        end
+    end
+    t = node
+    for (localsidx, sidx) in enumerate(NestedCrossApproximation.farrange(testdata, node))
+        s = NestedCrossApproximation.fars(testdata)[sidx]
+        tdiridx = NestedCrossApproximation.diridxfromlocalfaridx(testdata, t, localsidx)
+        localtidx = findfirst(==(t), NestedCrossApproximation.fars(trialdata, s))
+        sdiridx = NestedCrossApproximation.diridxfromlocalfaridx(trialdata, s, localtidx)
+        println(tdiridx, sdiridx)
+        @test !isnothing(tdiridx)
+        @test !isnothing(sdiridx)
     end
 end

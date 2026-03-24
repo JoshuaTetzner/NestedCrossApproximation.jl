@@ -2,43 +2,74 @@ struct BasisTraversalPlan
     nodes::Vector{Int}
 end
 
-struct BasisStore{T}
-    plan::BasisTraversalPlan
+struct DirBasisTraversalPlan
+    nodes::Vector{Int}
+    diridxptr::Vector{Int}
+    diridx::Vector{Int}
+end
+
+struct BasisStore{T,P}
+    plan::P
     blocks::Vector{Matrix{T}}
+
+    function BasisStore{T}(plan, blocks) where {T}
+        return new{T,typeof(plan)}(plan, blocks)
+    end
 end
 
 struct TransferTraversalPlan
     level_ptr::Vector{Int}
     level_nodes::Vector{Int}
-    node_ptr::Vector{Int}
-    edge_child::Vector{Int}
+    child_ptr::Vector{Int}
+    child_nodes::Vector{Int}
 end
 
-struct TransferStore{T}
-    plan::TransferTraversalPlan
+struct DirTransferTraversalPlan
+    level_ptr::Vector{Int}
+    level_dirs::Vector{Int}
+    child_ptr::Vector{Int}
+    child_dirs::Vector{Int}
+end
+
+struct TransferStore{T,P}
+    plan::P
     blocks::Vector{Matrix{T}}
+
+    function TransferStore{T}(plan, blocks) where {T}
+        return new{T,typeof(plan)}(plan, blocks)
+    end
 end
 
 struct CouplingTraversalPlan
-    test_ptr::Vector{Int}
-    trial_node::Vector{Int}
+    ptr::Vector{Int} # length of test nodes + 1
+    idcs::Vector{Int} # length of blocks -> trial node idx
 end
 
-struct CouplingStore{T}
-    plan::CouplingTraversalPlan
+struct DirCouplingTraversalPlan
+    ptr::Vector{Int} # length of test nodes + 1
+    tidcs::Vector{Int} # length of blocks -> test node idx
+    sidcs::Vector{Int} # length of blocks -> trial node idx
+end
+
+struct CouplingStore{T,P}
+    plan::P
     blocks::Vector{Matrix{T}}
+
+    function CouplingStore{T}(plan, blocks) where {T}
+        return new{T,typeof(plan)}(plan, blocks)
+    end
 end
 
 struct CoefficientPlan
     ptr::Vector{Int}
 end
 
-function plan_from_pivots(pivots::AbstractVector, nnodes::Int=length(pivots))
-    ptr = Vector{Int}(undef, nnodes + 1)
+function plan_from_pivots(pivots::AbstractVector, nvals::Int=length(pivots))
+    ptr = Vector{Int}(undef, nvals + 1)
     ptr[1] = 1
-    @inbounds for node in 1:nnodes
-        rank = isassigned(pivots, node) ? length(pivots[node]) : 0
-        ptr[node + 1] = ptr[node] + rank
+    @inbounds for val in 1:nvals
+        rank = isassigned(pivots, val) ? length(pivots[val]) : 0
+        ptr[val + 1] = ptr[val] + rank
     end
     return CoefficientPlan(ptr)
 end
@@ -48,12 +79,12 @@ _idop(A) = A
 function _project_to_coefficients!(
     coeffs::AbstractVector,
     x::AbstractVector,
-    basis_store,
+    basis_store::BasisStore{T,<:BasisTraversalPlan},
     plan,
     valuesfun,
     basisop,
     scheduler,
-)
+) where {T}
     @tasks for i in eachindex(basis_store.plan.nodes)
         @set scheduler = scheduler
         node = basis_store.plan.nodes[i]
@@ -61,89 +92,52 @@ function _project_to_coefficients!(
         ptr1 = plan.ptr[node + 1] - 1
         coeff_node = @view coeffs[ptr0:ptr1]
         x_node = @view x[valuesfun(node)]
-        mul!(coeff_node, basisop(basis_store.blocks[i]), x_node)
+        mul!(coeff_node, basisop(basis_store.blocks[i]), x_node, true, false)
     end
 end
 
-function _aggregate_coefficients!(
-    coeffs::AbstractVector, transfer_store, plan, transferop, scheduler
-)
-    return _propagate_coefficients!(
-        coeffs,
-        transfer_store,
-        plan,
-        transferop,
-        scheduler;
-        reverse_levels=true,
-        reset_parent=true,
-    )
-end
-
-function _propagate_coefficients!(
+function _project_to_coefficients!(
     coeffs::AbstractVector,
-    transfer_store,
+    x::AbstractVector,
+    basis_store::BasisStore{T,<:DirBasisTraversalPlan},
     plan,
-    transferop,
-    scheduler;
-    reverse_levels::Bool,
-    reset_parent::Bool,
-)
-    if reverse_levels
-        level_range = (length(transfer_store.plan.level_ptr) - 1):-1:1
-    else
-        level_range = 1:(length(transfer_store.plan.level_ptr) - 1)
-    end
-
-    for level in level_range
-        level_first = transfer_store.plan.level_ptr[level]
-        level_last = transfer_store.plan.level_ptr[level + 1] - 1
-        @tasks for nodeidx in level_first:level_last
-            @set scheduler = scheduler
-            parent = transfer_store.plan.level_nodes[nodeidx]
-            pptr0 = plan.ptr[parent]
-            pptr1 = plan.ptr[parent + 1] - 1
-            coeff_parent = @view coeffs[pptr0:pptr1]
-            if reverse_levels && reset_parent
-                fill!(coeff_parent, zero(eltype(coeff_parent)))
-            end
-
-            edge_first = transfer_store.plan.node_ptr[nodeidx]
-            edge_last = transfer_store.plan.node_ptr[nodeidx + 1] - 1
-            if reverse_levels
-                first_edge = true
-                for transfer_idx in edge_first:edge_last
-                    child = transfer_store.plan.edge_child[transfer_idx]
-                    cptr0 = plan.ptr[child]
-                    cptr1 = plan.ptr[child + 1] - 1
-                    coeff_child = @view coeffs[cptr0:cptr1]
-                    mul!(
-                        coeff_parent,
-                        transferop(transfer_store.blocks[transfer_idx]),
-                        coeff_child,
-                        true,
-                        !first_edge,
-                    )
-                    first_edge = false
-                end
-            else
-                for transfer_idx in edge_first:edge_last
-                    child = transfer_store.plan.edge_child[transfer_idx]
-                    cptr0 = plan.ptr[child]
-                    cptr1 = plan.ptr[child + 1] - 1
-                    coeff_child = @view coeffs[cptr0:cptr1]
-                    mul!(
-                        coeff_child,
-                        transferop(transfer_store.blocks[transfer_idx]),
-                        coeff_parent,
-                        true,
-                        true,
-                    )
-                end
-            end
+    valuesfun,
+    basisop,
+    scheduler,
+) where {T}
+    @tasks for i in eachindex(basis_store.plan.nodes)
+        @set scheduler = scheduler
+        node = basis_store.plan.nodes[i]
+        x_node = @view x[valuesfun(node)]
+        for ldiridx in basis_store.plan.diridxptr[i]:(basis_store.plan.diridxptr[i + 1] - 1)
+            diridx = basis_store.plan.diridx[ldiridx]
+            coeff_node = @view coeffs[plan.ptr[diridx]:(plan.ptr[diridx + 1] - 1)]
+            mul!(coeff_node, basisop(basis_store.blocks[ldiridx]), x_node, true, false)
         end
     end
 end
 
+function _aggregate_coefficients!(
+    xhat::AbstractVector, transfer_store, plan, transferop, scheduler
+)
+    for level in (length(transfer_store.plan.level_ptr) - 1):-1:1
+        @tasks for idx in
+                   transfer_store.plan.level_ptr[level]:(transfer_store.plan.level_ptr[level + 1] - 1)
+            @set scheduler = scheduler
+
+            globalidx = transfer_store.plan.level_nodes[idx]
+            idxxhat = view(xhat, plan.ptr[globalidx]:(plan.ptr[globalidx + 1] - 1))
+
+            child_ptr = transfer_store.plan.child_ptr
+            child_idcs = transfer_store.plan.child_nodes
+            for cidx in child_ptr[idx]:(child_ptr[idx + 1] - 1)
+                childidx = child_idcs[cidx]
+                childxhat = view(xhat, plan.ptr[childidx]:(plan.ptr[childidx + 1] - 1))
+                @views idxxhat .+= transferop(transfer_store.blocks[cidx]) * childxhat
+            end
+        end
+    end
+end
 function _couple_forward!(
     yhat::AbstractVector,
     xhat::AbstractVector,
@@ -153,25 +147,38 @@ function _couple_forward!(
     couplingop,
     scheduler,
 )
-    @tasks for testnode in 1:(length(coupling_store.plan.test_ptr) - 1)
+    @tasks for tidx in 1:(length(coupling_store.plan.ptr) - 1)
         @set scheduler = scheduler
-        coupling_first = coupling_store.plan.test_ptr[testnode]
-        coupling_last = coupling_store.plan.test_ptr[testnode + 1] - 1
-        for coupling_idx in coupling_first:coupling_last
-            trialnode = coupling_store.plan.trial_node[coupling_idx]
-            trialptr0 = trialplan.ptr[trialnode]
-            trialptr1 = trialplan.ptr[trialnode + 1] - 1
-            testptr0 = testplan.ptr[testnode]
-            testptr1 = testplan.ptr[testnode + 1] - 1
-            yhat_test = @view yhat[testptr0:testptr1]
-            xhat_trial = @view xhat[trialptr0:trialptr1]
-            mul!(
-                yhat_test,
-                couplingop(coupling_store.blocks[coupling_idx]),
-                xhat_trial,
-                true,
-                true,
-            )
+        ptrstart = coupling_store.plan.ptr[tidx]
+        ptrend = coupling_store.plan.ptr[tidx + 1] - 1
+        for cidx in ptrstart:ptrend
+            sidx = coupling_store.plan.idcs[cidx]
+            yhat_test = @view yhat[testplan.ptr[tidx]:(testplan.ptr[tidx + 1] - 1)]
+            xhat_trial = @view xhat[trialplan.ptr[sidx]:(trialplan.ptr[sidx + 1] - 1)]
+            @views yhat_test .+= couplingop(coupling_store.blocks[cidx]) * xhat_trial
+        end
+    end
+end
+
+function _couple_forward!(
+    yhat::AbstractVector,
+    xhat::AbstractVector,
+    coupling_store::CouplingStore{T,<:DirCouplingTraversalPlan},
+    testplan,
+    trialplan,
+    couplingop,
+    scheduler,
+) where {T}
+    @tasks for t in 1:(length(coupling_store.plan.ptr) - 1)
+        @set scheduler = scheduler
+        ptrstart = coupling_store.plan.ptr[t]
+        ptrend = coupling_store.plan.ptr[t + 1] - 1
+        for idx in ptrstart:ptrend
+            tidx = coupling_store.plan.tidcs[idx]
+            sidx = coupling_store.plan.sidcs[idx]
+            yhat_test = @view yhat[testplan.ptr[tidx]:(testplan.ptr[tidx + 1] - 1)]
+            xhat_trial = @view xhat[trialplan.ptr[sidx]:(trialplan.ptr[sidx + 1] - 1)]
+            @views yhat_test .+= couplingop(coupling_store.blocks[idx]) * xhat_trial
         end
     end
 end
@@ -185,28 +192,45 @@ function _couple_reverse!(
     couplingop,
     scheduler,
 )
-    for testnode in 1:(length(coupling_store.plan.test_ptr) - 1)
-        coupling_first = coupling_store.plan.test_ptr[testnode]
-        coupling_last = coupling_store.plan.test_ptr[testnode + 1] - 1
+    for testnode in 1:(length(coupling_store.plan.ptr) - 1)
+        coupling_first = coupling_store.plan.ptr[testnode]
+        coupling_last = coupling_store.plan.ptr[testnode + 1] - 1
         testptr0 = testplan.ptr[testnode]
         testptr1 = testplan.ptr[testnode + 1] - 1
         xhat_test = @view xhat[testptr0:testptr1]
         for coupling_idx in coupling_first:coupling_last
-            trialnode = coupling_store.plan.trial_node[coupling_idx]
+            trialnode = coupling_store.plan.idx[coupling_idx]
             trialptr0 = trialplan.ptr[trialnode]
             trialptr1 = trialplan.ptr[trialnode + 1] - 1
             yhat_trial = @view yhat[trialptr0:trialptr1]
-            mul!(
-                yhat_trial,
-                couplingop(coupling_store.blocks[coupling_idx]),
-                xhat_test,
-                true,
-                true,
-            )
+            @views yhat_trial .+=
+                couplingop(coupling_store.blocks[coupling_idx]) * xhat_test
         end
     end
 end
 
+function _disaggregate_coefficients!(
+    yhat::AbstractVector, transfer_store, plan, transferop, scheduler
+)
+    for level in 1:(length(transfer_store.plan.level_ptr) - 1)
+        @tasks for idx in
+                   transfer_store.plan.level_ptr[level]:(transfer_store.plan.level_ptr[level + 1] - 1)
+            @set scheduler = scheduler
+
+            localidx = transfer_store.plan.level_nodes[idx]
+            idxyhat = view(yhat, plan.ptr[localidx]:(plan.ptr[localidx + 1] - 1))
+            child_ptr = transfer_store.plan.child_ptr
+            child_nodes = transfer_store.plan.child_nodes
+            for cidx in child_ptr[idx]:(child_ptr[idx + 1] - 1)
+                childidx = child_nodes[cidx]
+                childyhat = view(yhat, plan.ptr[childidx]:(plan.ptr[childidx + 1] - 1))
+                @views childyhat .+= transferop(transfer_store.blocks[cidx]) * idxyhat
+            end
+        end
+    end
+end
+
+#=
 function _disaggregate_coefficients!(
     yhat::AbstractVector, transfer_store, plan, transferop, scheduler
 )
@@ -219,7 +243,7 @@ function _disaggregate_coefficients!(
         reverse_levels=false,
         reset_parent=false,
     )
-end
+end=#
 
 function _project_to_output!(
     y::AbstractVector,
@@ -235,8 +259,30 @@ function _project_to_output!(
         node = basis_store.plan.nodes[i]
         ptr0 = plan.ptr[node]
         ptr1 = plan.ptr[node + 1] - 1
-        y_node = @view y[valuesfun(node)]
+        ynode = @view y[valuesfun(node)]
         yhat_node = @view yhat[ptr0:ptr1]
-        mul!(y_node, basisop(basis_store.blocks[i]), yhat_node)
+        @views ynode .+= basisop(basis_store.blocks[i]) * yhat_node
+        #mul!(y_node, basisop(basis_store.blocks[i]), yhat_node)
+    end
+end
+
+function _project_to_output!(
+    y::AbstractVector,
+    yhat::AbstractVector,
+    basis_store::BasisStore{T,<:DirBasisTraversalPlan},
+    plan,
+    valuesfun,
+    basisop,
+    scheduler,
+) where {T}
+    @tasks for i in eachindex(basis_store.plan.nodes)
+        node = basis_store.plan.nodes[i]
+        @set scheduler = scheduler
+        for ldiridx in basis_store.plan.diridxptr[i]:(basis_store.plan.diridxptr[i + 1] - 1)
+            diridx = basis_store.plan.diridx[ldiridx]
+            y_node = @view y[valuesfun(node)]
+            yhat_node = @view yhat[plan.ptr[diridx]:(plan.ptr[diridx + 1] - 1)]
+            @views y_node .+= basisop(basis_store.blocks[ldiridx]) * yhat_node
+        end
     end
 end

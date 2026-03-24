@@ -5,6 +5,7 @@ struct DirectionalData{I<:Integer}
     dirptr::Vector{I}      # length nnodes+1;      node     → range in dirs/parentdir/dircounter
     dirs::Vector{I}        # direction-tree node indices, grouped by cluster node
     dircounter::Vector{I}  # number of fars per direction slot (same indexing as dirs)
+    parentdirptr::Vector{I}  # length nnodes+1; parent node → range in parentdir
     parentdir::Vector{I}   # local parent-dir index per dir-slot (0 if none)
     isnear                 # near-interaction classifier functor
 
@@ -13,10 +14,11 @@ struct DirectionalData{I<:Integer}
         dirptr::Vector{I},
         dirs::Vector{I},
         dircounter::Vector{I},
+        parentdirptr::Vector{I},
         parentdir::Vector{I},
         isnear,
     ) where {I<:Integer}
-        return new{I}(fardata, dirptr, dirs, dircounter, parentdir, isnear)
+        return new{I}(fardata, dirptr, dirs, dircounter, parentdirptr, parentdir, isnear)
     end
 end
 
@@ -97,6 +99,20 @@ function dirfars(data::DirectionalData, node::Int, dir::Int)
     return @view ff[farstart:(farstart + count - 1)]
 end
 
+function diridxfromlocalfaridx(data::DirectionalData, node::Int, faridx::Int)
+    drange = dirrange(data, node)
+    dctr = data.dircounter[drange]
+    @assert sum(dctr) >= faridx "Local far index $faridx exceeds total fars $(sum(dctr)) for node $node."
+
+    for (diridx, count) in enumerate(dctr)
+        faridx -= count
+        if faridx <= 0
+            return drange[diridx]
+        end
+    end
+    return error("Local far index $faridx exceeds total fars $(sum(dctr)) for node $node.")
+end
+
 # Range of local dir indices of node whose parent direction is pdir.
 function childdirrange(data::DirectionalData, node::Int, pdir::Int)
     block = data.parentdir[Int(data.dirptr[node]):(Int(data.dirptr[node + 1]) - 1)]
@@ -105,18 +121,8 @@ function childdirrange(data::DirectionalData, node::Int, pdir::Int)
     return lo:hi
 end
 
-# Reconstruct the pdirmap for `cnode` relative to `pnode`: a vector of length
-# ndirections(data, pnode) where entry i is the local direction index of `cnode`
-# whose direction-tree parent is parent direction i of `pnode` (0 if none).
-function dirmap(data::DirectionalData, pnode::Int, cnode::Int)
-    np = ndirections(data, pnode)
-    result = zeros(Int, np)
-    for clocal in 1:ndirections(data, cnode)
-        pidx = parentdirref(data, cnode, clocal)
-        pidx == 0 && continue
-        result[pidx] = clocal
-    end
-    return result
+function dirmap(data::DirectionalData, node::Int)
+    return data.parentdir[data.parentdirptr[node]:(data.parentdirptr[node + 1] - 1)]
 end
 
 # Return all far interactions associated with `dir` at `node`, including direct
@@ -156,7 +162,7 @@ function dirfarfield(tree, data::DirectionalData, node::Int, dir::Int)
         pnode = H2Trees.parent(tree, current_node)
         pnode == 0 && break
 
-        map = dirmap(data, pnode, current_node)
+        map = dirmap(data, current_node)
         parent_local = Int[]
         for (plocal, clocal) in enumerate(map)
             clocal == 0 && continue
@@ -180,4 +186,11 @@ end
 # Compute the interaction vector from clnode in cltree to refnode in reftree.
 function interaction(clnode::Int, refnode::Int, cltree, reftree)
     return H2Trees.center(reftree, refnode) - H2Trees.center(cltree, clnode)
+end
+
+function isbasisnode(tree, data::DirectionalData, node::Int, dir::Int)
+    H2Trees.isleaf(tree, node) && return true
+    dir == 0 && return false
+    firstchild = H2Trees.firstchild(tree, node)
+    return data.dirs[data.dirptr[firstchild]] == 0
 end

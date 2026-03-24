@@ -17,9 +17,7 @@ end
 
 @inline _stateful_factorization(factorization, maxrank::Int) = factorization
 
-function factorization_channel(
-    compressor::TopDown; scheduler=DynamicScheduler(), maxrank::Int=40
-)
+function factorization_channel(compressor; scheduler=DynamicScheduler(), maxrank::Int=40)
     nworkers = _nworkers(scheduler)
     prototype = _stateful_factorization(compressor.factorization, maxrank)
     channel = Channel{typeof(prototype)}(nworkers)

@@ -234,6 +234,7 @@ function directionalfardata(fardata::FarData, cltree::TwoNTree, reftree::TwoNTre
 
     dircounter = [Int[] for _ in 1:nnodes]
     pdirmap = [Int[] for _ in 1:nnodes]
+    pdircounter = zeros(Int, nnodes)
     for level in reverse(H2Trees.levels(cltree))
         islf(cltree, level) && continue
         for node in H2Trees.LevelIterator(cltree, level)
@@ -241,26 +242,21 @@ function directionalfardata(fardata::FarData, cltree::TwoNTree, reftree::TwoNTre
 
             nfars = Int(farptr[node + 1] - farptr[node])
             uniquedirs = unique(dirs[node])
+            sort!(uniquedirs)
             localdircounter = zeros(Int, length(uniquedirs))
-            dirslot = Dict{Int,Int}()
-            for (idx, dir) in enumerate(uniquedirs)
-                dirslot[dir] = idx
+
+            farperm = zeros(Int, nfars)
+            i = 1
+            for (uidx, udir) in enumerate(uniquedirs)
+                for (ndir, dir) in enumerate(dirs[node])
+                    udir != dir && continue
+                    ndir > nfars && continue
+                    farperm[ndir] = i
+                    localdircounter[uidx] += 1
+                    i += 1
+                end
             end
-            for (ndir, dir) in enumerate(dirs[node])
-                ndir > nfars && break
-                localdircounter[dirslot[dir]] += 1
-            end
-            # prepare pointers for permuting fars to be grouped by direction
-            if nfars > 1
-                directdirs = @view dirs[node][1:nfars]
-                perm = sortperm(directdirs)
-                farview = @view fars[farptr[node]:(farptr[node + 1] - 1)]
-                permute!(farview, perm)
-                permute!(directdirs, perm)
-            end
-            permunique = sortperm(uniquedirs)
-            permute!(uniquedirs, permunique)
-            permute!(localdircounter, permunique)
+            permute!(fars[farptr[node]:(farptr[node + 1] - 1)], farperm)
             dirs[node] = uniquedirs
             dircounter[node] = localdircounter
             # parent dirs
@@ -268,27 +264,25 @@ function directionalfardata(fardata::FarData, cltree::TwoNTree, reftree::TwoNTre
                 continue
 
             for child in H2Trees.children(cltree, node)
-                childdirslot = Dict{Int,Int}()
-                for (cidx, cdir) in enumerate(dirs[child])
-                    childdirslot[cdir] = cidx
-                end
                 localpdirmap = zeros(Int, length(dirs[node]))
                 for (idx, dir) in enumerate(dirs[node])
-                    localpdirmap[idx] = get(childdirslot, parent(dirtree, dir), 0)
+                    localpdirmap[idx] = findfirst(==(parent(dirtree, dir)), dirs[child])
                 end
                 pdirmap[child] = localpdirmap
+                pdircounter[child] = count(!iszero, localpdirmap)
             end
         end
     end
 
+    #=
     # Convert parent->child map to child-local -> parent-local map aligned with dirs[node].
     parentdir = [zeros(Int, length(dirs[node])) for node in eachindex(dirs)]
-    for node in eachindex(dirs)
+    for node in eachindex(dirs)localpdirmap
         for (pidx, cidx) in enumerate(pdirmap[node])
             cidx == 0 && continue
             cidx <= length(parentdir[node]) && (parentdir[node][cidx] = pidx)
         end
-    end
+    end=#
 
     # Fill dircounter for LF sentinel nodes (dirs=[0], dircounter not set in second pass).
     for node in eachindex(dirs)
@@ -299,25 +293,32 @@ function directionalfardata(fardata::FarData, cltree::TwoNTree, reftree::TwoNTre
 
     # Build linear direction storage.
     dirptr = Vector{Int}(undef, length(dirs) + 1)
+    pdirptr = Vector{Int}(undef, length(pdirmap) + 1)
     dirptr[1] = 1
+    pdirptr[1] = 1
     for node in eachindex(dirs)
         dirptr[node + 1] = dirptr[node] + length(dirs[node])
+        pdirptr[node + 1] = pdirptr[node] + pdircounter[node]
     end
     linedirs = Vector{Int}(undef, dirptr[end] - 1)
     linedircounter = Vector{Int}(undef, dirptr[end] - 1)
-    lineparentdir = Vector{Int}(undef, dirptr[end] - 1)
+    lineparentdir = Vector{Int}(undef, pdirptr[end] - 1)
     for node in eachindex(dirs)
         first = dirptr[node]
         last = dirptr[node + 1] - 1
         first > last && continue
         linedirs[first:last] = dirs[node]
         linedircounter[first:last] = dircounter[node]
-        lineparentdir[first:last] = parentdir[node]
+
+        pfirst = pdirptr[node]
+        plast = pdirptr[node + 1] - 1
+        pfirst > plast && continue
+        lineparentdir[pfirst:plast] = pdirmap[node]
     end
 
     linefardata = fardata
 
     return DirectionalData(
-        linefardata, dirptr, linedirs, linedircounter, lineparentdir, isnear
+        linefardata, dirptr, linedirs, linedircounter, pdirptr, lineparentdir, isnear
     )
 end

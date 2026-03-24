@@ -22,13 +22,21 @@ testdata, trialdata = NestedCrossApproximation.fardata(tree, isnear)
 @test all((trialdata.dirs .== 0))
 ##
 
-λ = 0.1
+λ = 0.4
 k = 2π / λ
 
 isnear = NestedCrossApproximation.isnearwideband(k)
 testdata, trialdata = NestedCrossApproximation.fardata(tree, isnear)
+
 @test all((testdata.dirs .!== 0))
 @test all((trialdata.dirs .!== 0))
+##
+length(testdata.fdata.fars)
+length(testdata.fdata.farptr)
+length(testdata.dirptr)
+testdata.dirs
+
+##
 
 for node in eachindex(ttree.nodes)
     fars = NestedCrossApproximation.fars(testdata, node)
@@ -37,15 +45,21 @@ for node in eachindex(ttree.nodes)
 
     @test length(dirs) == length(unique(dirs))
     for dir in dirs
-        append!(sfars, NestedCrossApproximation.dirfars(testdata, node, dir))
+        dirfars = NestedCrossApproximation.dirfars(testdata, node, dir)
+        dirfarfield = NestedCrossApproximation.dirfarfield(ttree, testdata, node, dir)
+        @test dirfarfield[1:length(dirfars)] == dirfars
+        append!(sfars, dirfars)
     end
 
     @test length(sfars) == length(unique(sfars))
 
     if node > 1
         pnode = H2Trees.parent(ttree, node)
-        dirmap = NestedCrossApproximation.dirmap(testdata, pnode, node)
+        dirmap = NestedCrossApproximation.dirmap(testdata, node)
         pdirs = NestedCrossApproximation.dirs(testdata, pnode)
         @test length(dirmap) == length(pdirs)
+        for dir in dirmap
+            @test dir in Vector(1:length(dirs))
+        end
     end
 end

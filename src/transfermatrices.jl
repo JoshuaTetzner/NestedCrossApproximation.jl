@@ -1,3 +1,80 @@
+function _build_transfer_storage(
+    transfer::Vector{Vector{Matrix{T}}}, leveltransfernodes::Vector{Vector{Int}}, tree
+) where {T}
+    levelptr = Vector{Int}(undef, length(leveltransfernodes) + 1)
+    levelptr[1] = 1
+    for level in 1:length(leveltransfernodes)
+        levelptr[level + 1] = levelptr[level] + length(leveltransfernodes[level])
+    end
+    levelnodes = collect(Iterators.flatten(leveltransfernodes))
+
+    childptr = Vector{Int}(undef, length(levelnodes) + 1)
+    childptr[1] = 1
+    for nodeidx in eachindex(levelnodes)
+        childptr[nodeidx + 1] = childptr[nodeidx] + length(transfer[levelnodes[nodeidx]])
+    end
+
+    transferbocks = Vector{Matrix{T}}(undef, childptr[end] - 1)
+    childnodes = Vector{Int}(undef, childptr[end] - 1)
+    edgeidx = 1
+    for levelptridx in 1:(length(levelptr) - 1)
+        for nodeidx in levelptr[levelptridx]:(levelptr[levelptridx + 1] - 1)
+            node = levelnodes[nodeidx]
+            children = collect(H2Trees.ChildIterator(tree, node))
+            for childidx in eachindex(transfer[node])
+                transferbocks[edgeidx] = transfer[node][childidx]
+                childnodes[edgeidx] = children[childidx]
+                edgeidx += 1
+            end
+        end
+    end
+
+    return TransferStore{T}(
+        TransferTraversalPlan(levelptr, levelnodes, childptr, childnodes), transferbocks
+    )
+end
+
+function _build_dirtransfer_storage(
+    transfer::Vector{Vector{Matrix{T}}},
+    transferdirs::Vector{Vector{Int}},
+    leveltransferdirs::Vector{Vector{Int}},
+    tree,
+) where {T}
+    levelptr = Vector{Int}(undef, length(leveltransferdirs) + 1)
+    levelptr[1] = 1
+    for level in 1:length(leveltransferdirs)
+        levelptr[level + 1] = levelptr[level] + length(leveltransferdirs[level])
+    end
+    leveldirs = collect(Iterators.flatten(leveltransferdirs))
+
+    childdirptr = Vector{Int}(undef, length(leveldirs) + 1)
+    childdirptr[1] = 1
+    for diridx in eachindex(leveldirs)
+        childdirptr[diridx + 1] = childdirptr[diridx] + length(transfer[leveldirs[diridx]])
+    end
+
+    transferblocks = Vector{Matrix{T}}(undef, childdirptr[end] - 1)
+    transferblockdirs = Vector{Int}(undef, childdirptr[end] - 1)
+    #childdiridcs = Vector{Int}(undef, childdirptr[end] - 1)
+    edgeidx = 1
+    for levelptridx in 1:(length(levelptr) - 1)
+        for diridx in levelptr[levelptridx]:(levelptr[levelptridx + 1] - 1)
+            dir = leveldirs[diridx]
+            for childidx in eachindex(transfer[dir])
+                transferblocks[edgeidx] = transfer[dir][childidx]
+                transferblockdirs[edgeidx] = transferdirs[dir][childidx]
+                #childdiridcs[edgeidx] = children[childidx]
+                edgeidx += 1
+            end
+        end
+    end
+
+    return TransferStore{T}(
+        TransferTraversalPlan(levelptr, leveldirs, childdirptr, transferblockdirs),
+        transferblocks,
+    )
+end
+#=
 function _build_transfer_store(
     transfer::Vector{Vector{Matrix{T}}},
     level_transfer_nodes::Vector{Vector{Int}},
@@ -49,7 +126,7 @@ function _build_transfer_store(
 
     plan = TransferTraversalPlan(level_ptr, level_nodes, node_ptr, edge_child)
     return TransferStore{T}(plan, blocks)
-end
+end=#
 
 function testtransfermatrices!(
     tree, transfer, levelnodes, pivots, buf; scheduler=DynamicScheduler()

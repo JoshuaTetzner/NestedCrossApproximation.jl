@@ -84,10 +84,8 @@ function (compressor::TopDown)(
             )
         )
     end
-    basis_store = _build_basis_store(bases)
-    transfer_store = _build_transfer_store(
-        transfer, level_transfer_nodes, level_child_counts, testtree(tree)
-    )
+    basis_store = _build_basis_storage(bases)
+    transfer_store = _build_transfer_storage(transfer, level_transfer_nodes, testtree(tree))
     return basis_store, transfer_store, tpivots
 end
 
@@ -161,9 +159,9 @@ function (compressor::TopDown)(
             )
         )
     end
-    basis_store = _build_basis_store(bases)
-    transfer_store = _build_transfer_store(
-        transfer, level_transfer_nodes, level_child_counts, trialtree(tree)
+    basis_store = _build_basis_storage(bases)
+    transfer_store = _build_transfer_storage(
+        transfer, level_transfer_nodes, trialtree(tree)
     )
     return basis_store, transfer_store, spivots
 end

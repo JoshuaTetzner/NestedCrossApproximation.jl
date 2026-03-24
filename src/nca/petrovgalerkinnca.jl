@@ -71,6 +71,7 @@ function PetrovGalerkinNCA(
     isnear=isnear(),
     maxrank=40,
 )
+    println("nearinteractions")
     @time nears = assemblenears(
         operator,
         testspace,
@@ -83,64 +84,31 @@ function PetrovGalerkinNCA(
     farmatrix = AbstractKernelMatrix(
         operator, testspace, trialspace; matrixdata=farmatrixdata
     )
-    #testfarptr, trialfarptr, testfars, trialfars = farinteractions(tree; isnear=isnear)
-    testfardata, trialfardata = fardata(tree, isnear)
+    println("fardata")
+    @time testfardata, trialfardata = fardata(tree, isnear)
     testbuf = testbuffer(
         testcompressor, farmatrix; maxrank=maxrank, ntasks=Threads.nthreads()
     )
     trialbuf = trialbuffer(
         trialcompressor, farmatrix; maxrank=maxrank, ntasks=Threads.nthreads()
     )
-    #=
-    @time begin
-        nestedtestbases, testtransfermats, testpivots = testcompressor(
-            farmatrix,
-            tree,
-            testfarptr,
-            testfars,
-            reverse(testbuf);
-            scheduler=scheduler,
-            maxrank=maxrank,
-        )
 
-        nestedtrialbases, trialtransfermats, trialpivots = trialcompressor(
-            farmatrix,
-            trialfarptr,
-            trialfars,
-            tree,
-            trialbuf;
-            scheduler=scheduler,
-            maxrank=maxrank,
-        )
+    println("testcompressor")
+    @time nestedtestbases, testtransfermats, testpivots = testcompressor(
+        farmatrix, tree, testfardata, reverse(testbuf); scheduler=scheduler, maxrank=maxrank
+    )
+    println("trialcompressor")
+    @time nestedtrialbases, trialtransfermats, trialpivots = trialcompressor(
+        farmatrix, tree, trialfardata, trialbuf; scheduler=scheduler, maxrank=maxrank
+    )
 
-        couplingmatrices = assemble_couplingstore(
-            farmatrix, testpivots, trialpivots, testfars, testfarptr; scheduler=scheduler
-        )
-
-        aggregationplan = plan_from_pivots(trialpivots)
-        disaggregationplan = plan_from_pivots(testpivots)
-    end=#
-    @time begin
-        nestedtestbases, testtransfermats, testpivots = testcompressor(
-            farmatrix,
-            tree,
-            testfardata,
-            reverse(testbuf);
-            scheduler=scheduler,
-            maxrank=maxrank,
-        )
-
-        nestedtrialbases, trialtransfermats, trialpivots = trialcompressor(
-            farmatrix, tree, trialfardata, trialbuf; scheduler=scheduler, maxrank=maxrank
-        )
-
-        couplingmatrices = assemble_couplingstore(
-            farmatrix, testpivots, trialpivots, testfardata; scheduler=scheduler
-        )
-
-        aggregationplan = plan_from_pivots(trialpivots)
-        disaggregationplan = plan_from_pivots(testpivots)
-    end
+    println("couplingmatrices")
+    @time couplingmatrices = assemble_couplingstore(
+        farmatrix, testpivots, trialpivots, testfardata, trialfardata; scheduler=scheduler
+    )
+    println("plans")
+    @time aggregationplan = plan_from_pivots(trialpivots)
+    @time disaggregationplan = plan_from_pivots(testpivots)
 
     return PetrovGalerkinNCA{eltype(farmatrix)}(
         tree,
@@ -182,6 +150,7 @@ Base.eltype(::PetrovGalerkinNCA{T}) where {T} = T
     _aggregate_coefficients!(
         xhat, A.trialtransfermatrices, A.aggregationplan, _idop, A.scheduler
     )
+
     _couple_forward!(
         yhat,
         xhat,
@@ -191,9 +160,11 @@ Base.eltype(::PetrovGalerkinNCA{T}) where {T} = T
         _idop,
         A.scheduler,
     )
+
     _disaggregate_coefficients!(
         yhat, A.testtransfermatrices, A.disaggregationplan, _idop, A.scheduler
     )
+
     _project_to_output!(
         y,
         yhat,
@@ -205,6 +176,7 @@ Base.eltype(::PetrovGalerkinNCA{T}) where {T} = T
     )
 
     mul!(y, A.nearinteractions, x, true, true)
+
     return y
 end
 
