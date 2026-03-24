@@ -6,13 +6,13 @@ import H2Trees: numberofvalues
 @inline function _stateful_factorization(
     factorization::AdaptiveCrossApproximation.ACA, maxrank::Int
 )
-    return factorization([1], [1]; maxrank=maxrank)
+    return factorization([1], [1])
 end
 
 @inline function _stateful_factorization(
     factorization::AdaptiveCrossApproximation.iACA, maxrank::Int
 )
-    return factorization([1], [1]; maxrank=maxrank)
+    return factorization([1], [1], maxrank)
 end
 
 @inline _stateful_factorization(factorization, maxrank::Int) = factorization
@@ -184,21 +184,15 @@ function _compute_raw_pivots!(
     colidcs,
     colbuffer,
     rowbuffer,
-    rows,
-    cols,
+    rowpivs,
+    colpivs,
     ranklimit,
 )
+    AdaptiveCrossApproximation.reset!(factorization, rowidcs, colidcs)
     npivots = factorization(
-        farmatrix,
-        colbuffer,
-        rowbuffer,
-        ranklimit;
-        rows=rows,
-        cols=cols,
-        rowidcs=rowidcs,
-        colidcs=colidcs,
+        farmatrix, colbuffer, rowbuffer, rowpivs, colpivs, rowidcs, colidcs, ranklimit
     )
-    return npivots, rows, cols
+    return npivots, rowpivs, colpivs
 end
 
 function _compute_raw_pivots!(
@@ -208,21 +202,14 @@ function _compute_raw_pivots!(
     colidcs,
     colbuffer,
     rowbuffer,
-    rows,
-    cols,
+    rowpivs,
+    colpivs,
     ranklimit,
 )
-    npivots, rows, cols = factorization(
-        farmatrix,
-        colbuffer,
-        rowbuffer,
-        ranklimit;
-        rows=rows,
-        cols=cols,
-        rowidcs=rowidcs,
-        colidcs=colidcs,
+    npivots, rowpivs, colpivs = factorization(
+        farmatrix, colbuffer, rowbuffer, rowpivs, colpivs, rowidcs, colidcs, ranklimit
     )
-    return npivots, rows, cols
+    return npivots, rowpivs, colpivs
 end
 
 function _finalize_test_buffers!(

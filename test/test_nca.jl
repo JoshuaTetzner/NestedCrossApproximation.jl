@@ -125,4 +125,4 @@ y_bottomup_mimicry = hmat_bottomup_mimicry * x;
     ),
 );
 y_bottomup_treemimicry = hmat_bottomup_treemimicry * x;
-#println(norm(A * x - y_bottomup_treemimicry) / norm(A * x))
+println(norm(A * x - y_bottomup_treemimicry) / norm(A * x))

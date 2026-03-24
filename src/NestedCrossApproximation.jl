@@ -8,16 +8,9 @@ using LinearAlgebra
 using OhMyThreads
 using StaticArrays
 
-function defaultmatrixdata(operator, testspace, trialspace)
-    return error("No default matrix data available for type $(typeof(operator)).")
-end
-function defaultfarmatrixdata(operator, testspace, trialspace)
-    return error("No default far matrix data available for type $(typeof(operator)).")
-end
-
-include("kernelmatrix/abstractkernelmatrix.jl")
-include("kernelmatrix/beastkernelmatrix.jl")
-include("kernelmatrix/pointmatrix.jl")
+#include("kernelmatrix/abstractkernelmatrix.jl")
+#include("kernelmatrix/beastkernelmatrix.jl")
+#include("kernelmatrix/pointmatrix.jl")
 
 include("nearinteractions.jl")
 include("farinteractions.jl")

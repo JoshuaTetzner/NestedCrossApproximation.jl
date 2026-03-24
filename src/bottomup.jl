@@ -51,7 +51,7 @@ function (compressor::BottomUp)(
                 factorization = take!(factorizationpool)
                 try
                     tpivots[t], _ = compute_test_pivots!(
-                        compressor.factorization,
+                        factorization,
                         nothing,
                         farmatrix,
                         tree,
@@ -128,7 +128,7 @@ function (compressor::BottomUp)(
                 factorization = take!(factorizationpool)
                 try
                     _, spivots[s] = compute_trial_pivots!(
-                        compressor.factorization,
+                        factorization,
                         nothing,
                         farmatrix,
                         tree,
@@ -217,7 +217,7 @@ function (compressor::BottomUp)(
                     factorization = take!(factorizationpool)
                     try
                         tpivots[diridx], _ = compute_test_pivots!(
-                            compressor.factorization,
+                            factorization,
                             nothing,
                             farmatrix,
                             tree,
@@ -315,7 +315,7 @@ function (compressor::BottomUp)(
                     factorization = take!(factorizationpool)
                     try
                         _, spivots[diridx] = compute_trial_pivots!(
-                            compressor.factorization,
+                            factorization,
                             nothing,
                             farmatrix,
                             tree,

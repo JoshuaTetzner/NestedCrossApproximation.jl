@@ -63,8 +63,12 @@ function PetrovGalerkinNCA(
     testspace,
     trialspace,
     tree;
-    matrixdata=defaultmatrixdata(operator, testspace, trialspace),
-    farmatrixdata=defaultfarmatrixdata(operator, testspace, trialspace),
+    matrixdata=AdaptiveCrossApproximation.defaultmatrixdata(
+        operator, testspace, trialspace
+    ),
+    farmatrixdata=AdaptiveCrossApproximation.defaultfarmatrixdata(
+        operator, testspace, trialspace
+    ),
     testcompressor=TopDown(),
     trialcompressor=TopDown(),
     scheduler=DynamicScheduler(),
@@ -81,7 +85,7 @@ function PetrovGalerkinNCA(
         scheduler=scheduler,
         matrixdata=matrixdata,
     )
-    farmatrix = AbstractKernelMatrix(
+    farmatrix = AdaptiveCrossApproximation.AbstractKernelMatrix(
         operator, testspace, trialspace; matrixdata=farmatrixdata
     )
     println("fardata")

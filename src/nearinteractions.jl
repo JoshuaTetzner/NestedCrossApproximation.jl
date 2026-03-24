@@ -175,7 +175,7 @@ function assemblenears(
     scheduler=SerialScheduler(),
     matrixdata=defaultmatrixdata(operator, testspace, trialspace),
 )
-    nearmatrix = AbstractKernelMatrix(
+    nearmatrix = AdaptiveCrossApproximation.AbstractKernelMatrix(
         operator, testspace, trialspace; matrixdata=matrixdata
     )
     values, nearvalues = nearinteractions(tree; isnear=isnear)
