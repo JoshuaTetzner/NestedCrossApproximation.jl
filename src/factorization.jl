@@ -101,7 +101,7 @@ function compute_test_pivots!(
     tidcs::Vector{Int},
     Ftidcs::Vector{Int},
     colbuffer::AbstractMatrix{T},
-    rowchannel::Channel{<:AbstractMatrix{T}};
+    rowbuffer::AbstractMatrix{T};#rowchannel::Channel{<:AbstractMatrix{T}};
     maxrank::Int=40,
 ) where {T}
     Ftidcs = adapt_farfield_indices(factorization, representor, trialtree(tree), Ftidcs)
@@ -109,7 +109,7 @@ function compute_test_pivots!(
         maxrank, length(tidcs), _effective_far_count(factorization, trialtree(tree), Ftidcs)
     )
 
-    rowbuffer = take!(rowchannel)
+    #rowbuffer = take!(rowchannel)
     colbuffer[tidcs, 1:ranklimit] .= 0
     rawrowbuffer = _test_rowbuffer_for_rawpivots(
         factorization, rowbuffer, Ftidcs, ranklimit
@@ -130,7 +130,7 @@ function compute_test_pivots!(
     _finalize_test_buffers!(
         factorization, colbuffer, rowbuffer, tidcs, Ftidcs, rows, cols, npivots
     )
-    put!(rowchannel, rowbuffer)
+    #put!(rowchannel, rowbuffer)
 
     return rows[1:npivots], cols[1:npivots]
 end
@@ -142,7 +142,7 @@ function compute_trial_pivots!(
     tree::H2Trees.BlockTree,
     Fsidcs::Vector{Int},
     sidcs::Vector{Int},
-    colchannel::Channel{<:AbstractMatrix{T}},
+    colbuffer::AbstractMatrix{T},#colchannel::Channel{<:AbstractMatrix{T}},
     rowbuffer::AbstractMatrix{T};
     maxrank::Int=40,
 ) where {T}
@@ -151,7 +151,7 @@ function compute_trial_pivots!(
         maxrank, _effective_far_count(factorization, testtree(tree), Fsidcs), length(sidcs)
     )
 
-    colbuffer = take!(colchannel)
+    #colbuffer = take!(colchannel)
     rowbuffer[1:ranklimit, sidcs] .= 0
     rawcolbuffer = _trial_colbuffer_for_rawpivots(
         factorization, colbuffer, Fsidcs, ranklimit
@@ -172,7 +172,7 @@ function compute_trial_pivots!(
     _finalize_trial_buffers!(
         factorization, colbuffer, rowbuffer, Fsidcs, sidcs, rows, cols, npivots
     )
-    put!(colchannel, colbuffer)
+    #put!(colchannel, colbuffer)
 
     return rows[1:npivots], cols[1:npivots]
 end

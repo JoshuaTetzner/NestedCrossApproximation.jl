@@ -12,11 +12,11 @@ using StaticArrays
 Random.seed!(1)
 ##
 h = 0.05
-λ = 0.5
+λ = 10h
 k = 2 * pi / λ
 
 Γ1 = meshsphere(1.0, h)#meshrectangle(1.0, 2.0, 0.08)
-Γ2 = Γ1#translate(Γ1, SVector(0.0, 0.0, 3.85))
+Γ2 = meshsphere(1.0, 0.045)#translate(Γ1, SVector(0.0, 0.0, 3.85))
 tRT = raviartthomas(Γ1)
 sRT = raviartthomas(Γ2)
 println("Size RT ", length(tRT))
@@ -28,12 +28,7 @@ testtree = TwoNTree(tRT.pos, 2 / 2^10; minvalues=200)
 trialtree = TwoNTree(sRT.pos, 2 / 2^10; minvalues=200)
 
 tree = H2Trees.BlockTree(testtree, trialtree)
-isnear = NestedCrossApproximation.isnearwideband(k; ηhf=5, γ=2)
-##
-
-tfar, sfar = NestedCrossApproximation.fardata(tree, isnear)
-NestedCrossApproximation.fars(tfar)
-NestedCrossApproximation.farptr(tfar)
+isnear = NestedCrossApproximation.isnearwideband(k; ηhf=5, γ=1.0)
 
 for level in H2Trees.levels(tree.testcluster)
     println("Level ", level, ", islf = ", isnear.islf(tree.testcluster, level))
@@ -42,8 +37,7 @@ end
 ##
 x = rand(ComplexF64, length(sRT))
 A = assemble(op, tRT, sRT);
-
-## topdown + ACA
+##
 tol = 1e-3
 @time h2mat = NestedCrossApproximation.PetrovGalerkinNCA(
     op,
@@ -67,7 +61,12 @@ tol = 1e-3
     ),
     scheduler=DynamicScheduler(),
 );
+
 norm(h2mat * x - A * x) / norm(A * x)
+xt = rand(ComplexF64, length(tRT))
+norm(transpose(h2mat) * xt - transpose(A) * xt) / norm(transpose(A) * xt)
+norm(adjoint(h2mat) * xt - adjoint(A) * xt) / norm(adjoint(A) * xt)
+size(A)
 ##
 
 function testbases(h2mat, tree)

@@ -90,29 +90,22 @@ function PetrovGalerkinNCA(
     )
     println("fardata")
     @time testfardata, trialfardata = fardata(tree, isnear)
-    testbuf = testbuffer(
-        testcompressor, farmatrix; maxrank=maxrank, ntasks=Threads.nthreads()
-    )
-    trialbuf = trialbuffer(
-        trialcompressor, farmatrix; maxrank=maxrank, ntasks=Threads.nthreads()
-    )
 
     println("testcompressor")
-    @time nestedtestbases, testtransfermats, testpivots = testcompressor(
-        farmatrix, tree, testfardata, reverse(testbuf); scheduler=scheduler, maxrank=maxrank
+    @time nestedtestbases, testtransfermats, testpivots = testbases(
+        testcompressor, farmatrix, tree, testfardata; scheduler=scheduler, maxrank=maxrank
     )
     println("trialcompressor")
-    @time nestedtrialbases, trialtransfermats, trialpivots = trialcompressor(
-        farmatrix, tree, trialfardata, trialbuf; scheduler=scheduler, maxrank=maxrank
+    @time nestedtrialbases, trialtransfermats, trialpivots = trialbases(
+        trialcompressor, farmatrix, tree, trialfardata; scheduler=scheduler, maxrank=maxrank
     )
 
     println("couplingmatrices")
     @time couplingmatrices = assemble_couplingstore(
         farmatrix, testpivots, trialpivots, testfardata, trialfardata; scheduler=scheduler
     )
-    println("plans")
-    @time aggregationplan = plan_from_pivots(trialpivots)
-    @time disaggregationplan = plan_from_pivots(testpivots)
+    aggregationplan = plan_from_pivots(trialpivots)
+    disaggregationplan = plan_from_pivots(testpivots)
 
     return PetrovGalerkinNCA{eltype(farmatrix)}(
         tree,
@@ -132,6 +125,56 @@ end
 Base.size(A::PetrovGalerkinNCA) = A.dim
 Base.size(A::PetrovGalerkinNCA, dim::Int) = A.dim[dim]
 Base.eltype(::PetrovGalerkinNCA{T}) where {T} = T
+
+function farmatrix(h2mat::PetrovGalerkinNCA)
+    blocks = Matrix{eltype(h2mat)}[]
+    nears = BlockSparseMatrix(blocks, Vector{Int}[], Vector{Int}[], h2mat.dim)
+
+    return PetrovGalerkinNCA{eltype(h2mat)}(
+        h2mat.tree,
+        nears,
+        h2mat.nestedtestbases,
+        h2mat.nestedtrialbases,
+        h2mat.testtransfermatrices,
+        h2mat.trialtransfermatrices,
+        h2mat.couplingmatrices,
+        h2mat.aggregationplan,
+        h2mat.disaggregationplan,
+        h2mat.scheduler,
+        h2mat.dim,
+    )
+end
+
+function nearmatrix(h2mat::PetrovGalerkinNCA)
+    return h2mat.nearinteractions
+end
+
+function storage(h2mat::PetrovGalerkinNCA)
+    refsize = size(h2mat, 1) * size(h2mat, 2) * sizeof(eltype(h2mat))
+    matsize = 0
+    for blk in h2mat.nearinteractions.blocks
+        matsize += length(blk)
+    end
+    for blk in h2mat.couplingmatrices.blocks
+        matsize += length(blk)
+    end
+    for blk in h2mat.testtransfermatrices.blocks
+        matsize += length(blk)
+    end
+    for blk in h2mat.trialtransfermatrices.blocks
+        matsize += length(blk)
+    end
+    for blk in h2mat.nestedtestbases.blocks
+        matsize += length(blk)
+    end
+    for blk in h2mat.nestedtrialbases.blocks
+        matsize += length(blk)
+    end
+    println("storage: ", matsize * sizeof(eltype(h2mat)) * 10^-9, " GB")
+    println("summary size: ", Base.summarysize(h2mat) * 10^-9, " GB")
+    println("compression ratio: ", (matsize * sizeof(eltype(h2mat))) / refsize)
+    return matsize * sizeof(eltype(h2mat)) * 10^-9
+end
 
 @views function LinearAlgebra.mul!(
     y::AbstractVector, A::PetrovGalerkinNCA, x::AbstractVector
@@ -189,7 +232,7 @@ end
     A::LinearMaps.TransposeMap{<:Any,<:PetrovGalerkinNCA},
     x::AbstractVector,
 )
-    LinearMaps.check_dim_mul(y, A.lmap, x)
+    LinearMaps.check_dim_mul(y, A, x)
     fill!(y, zero(eltype(y)))
 
     xhat = zeros(eltype(y), A.lmap.disaggregationplan.ptr[end] - 1)
@@ -246,7 +289,7 @@ end
     A::LinearMaps.AdjointMap{<:Any,<:PetrovGalerkinNCA},
     x::AbstractVector,
 )
-    LinearMaps.check_dim_mul(y, A.lmap, x)
+    LinearMaps.check_dim_mul(y, A, x)
     fill!(y, zero(eltype(y)))
 
     xhat = zeros(eltype(y), A.lmap.disaggregationplan.ptr[end] - 1)

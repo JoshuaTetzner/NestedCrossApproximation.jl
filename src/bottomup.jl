@@ -15,17 +15,15 @@ function BottomUp(; factorization=AdaptiveCrossApproximation.ACA(), representor=
     return BottomUp(factorization, representor)
 end
 
-function (compressor::BottomUp)(
+function testbases(
+    compressor::BottomUp,
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
-    fardata::FarData,
-    buffer::Tuple{K,Channel{K}};
+    fardata::FarData;
     scheduler=DynamicScheduler(),
     maxrank=40,
-) where {T,K<:Matrix{T}}
-    factorizationpool = factorization_channel(
-        compressor; scheduler=scheduler, maxrank=maxrank
-    )
+) where {T}
+    buffer = testbuffer(compressor, farmatrix, maxrank)
 
     tpivots = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
     bases = Vector{Matrix{T}}(undef, numberofnodes(testtree(tree)))
@@ -36,6 +34,10 @@ function (compressor::BottomUp)(
         testclusters = collect(LevelIterator(testtree(tree), level))
         @tasks for t in testclusters
             @set scheduler = scheduler
+            @local begin
+                farbuffer = fartestbuffer(compressor.factorization, farmatrix, maxrank)
+                factorization = _stateful_factorization(compressor.factorization, maxrank)
+            end
             Ft = farfield(testtree(tree), fardata, t)
             if !isempty(Ft)
                 tvalues = Int[]
@@ -48,32 +50,27 @@ function (compressor::BottomUp)(
                 end
                 tvalues = H2Trees.values(testtree(tree), t)
                 adaptedFt = adapt_farfield_indices(compressor, trialtree(tree), Ft)
-                factorization = take!(factorizationpool)
-                try
-                    tpivots[t], _ = compute_test_pivots!(
-                        factorization,
-                        nothing,
-                        farmatrix,
-                        tree,
-                        tvalues,
-                        adaptedFt,
-                        buffer[1],
-                        buffer[2];
-                        maxrank=maxrank,
-                    )
-                finally
-                    put!(factorizationpool, factorization)
-                end
+
+                tpivots[t], _ = compute_test_pivots!(
+                    factorization,
+                    nothing,
+                    farmatrix,
+                    tree,
+                    tvalues,
+                    adaptedFt,
+                    buffer,
+                    farbuffer;
+                    maxrank=maxrank,
+                )
+
                 if isleaf(testtree(tree), t)
-                    bases[t] = nestedtestbasis(tvalues, tpivots[t], buffer[1])
+                    bases[t] = nestedtestbasis(tvalues, tpivots[t], buffer)
                 else
                     children = collect(H2Trees.ChildIterator(testtree(tree), t))
                     nodetransfers = Vector{Matrix{T}}(undef, length(children))
                     @inbounds for j in eachindex(children)
                         child = children[j]
-                        nodetransfers[j] = testtransfer(
-                            tpivots[t], tpivots[child], buffer[1]
-                        )
+                        nodetransfers[j] = testtransfer(tpivots[t], tpivots[child], buffer)
                     end
                     transfer[t] = nodetransfers
                 end
@@ -93,17 +90,15 @@ function (compressor::BottomUp)(
     return basis_store, transfer_store, tpivots
 end
 
-function (compressor::BottomUp)(
+function trialbases(
+    compressor::BottomUp,
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
-    fardata::FarData,
-    buffer::Tuple{Channel{K},K};
+    fardata::FarData;
     scheduler=DynamicScheduler(),
     maxrank=40,
-) where {T,K<:Matrix{T}}
-    factorizationpool = factorization_channel(
-        compressor; scheduler=scheduler, maxrank=maxrank
-    )
+) where {T}
+    buffer = trialbuffer(compressor, farmatrix, maxrank)
 
     spivots = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
     bases = Vector{Matrix{T}}(undef, numberofnodes(trialtree(tree)))
@@ -114,6 +109,10 @@ function (compressor::BottomUp)(
         trialclusters = collect(LevelIterator(trialtree(tree), level))
         @tasks for s in trialclusters
             @set scheduler = scheduler
+            @local begin
+                farbuffer = fartrialbuffer(compressor.factorization, farmatrix, maxrank)
+                factorization = _stateful_factorization(compressor.factorization, maxrank)
+            end
             Fs = farfield(trialtree(tree), fardata, s)
             if !isempty(Fs)
                 svalues = Int[]
@@ -125,33 +124,26 @@ function (compressor::BottomUp)(
                     end
                 end
                 adaptedFs = adapt_farfield_indices(compressor, testtree(tree), Fs)
-                factorization = take!(factorizationpool)
-                try
-                    _, spivots[s] = compute_trial_pivots!(
-                        factorization,
-                        nothing,
-                        farmatrix,
-                        tree,
-                        adaptedFs,
-                        svalues,
-                        buffer[1],
-                        buffer[2];
-                        maxrank=maxrank,
-                    )
-                finally
-                    put!(factorizationpool, factorization)
-                end
+                _, spivots[s] = compute_trial_pivots!(
+                    factorization,
+                    nothing,
+                    farmatrix,
+                    tree,
+                    adaptedFs,
+                    svalues,
+                    farbuffer,
+                    buffer;
+                    maxrank=maxrank,
+                )
 
                 if isleaf(trialtree(tree), s)
-                    bases[s] = nestedtrialbasis(svalues, spivots[s], buffer[2])
+                    bases[s] = nestedtrialbasis(svalues, spivots[s], buffer)
                 else
                     children = collect(H2Trees.ChildIterator(trialtree(tree), s))
                     nodetransfers = Vector{Matrix{T}}(undef, length(children))
                     @inbounds for j in eachindex(children)
                         child = children[j]
-                        nodetransfers[j] = trialtransfer(
-                            spivots[s], spivots[child], buffer[2]
-                        )
+                        nodetransfers[j] = trialtransfer(spivots[s], spivots[child], buffer)
                     end
                     transfer[s] = nodetransfers
                 end
@@ -176,17 +168,15 @@ end
 
 # wideband nca
 
-function (compressor::BottomUp)(
+function testbases(
+    compressor::BottomUp,
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
-    fardata::DirectionalData,
-    buffer::Tuple{K,Channel{K}};
+    fardata::DirectionalData;
     scheduler=DynamicScheduler(),
     maxrank=40,
-) where {T,K<:Matrix{T}}
-    factorizationpool = factorization_channel(
-        compressor; scheduler=scheduler, maxrank=maxrank
-    )
+) where {T}
+    buffer = testbuffer(compressor, farmatrix, maxrank)
 
     tpivots = Vector{Vector{Int}}(undef, length(fardata.dirs))
     bases = Vector{Matrix{T}}(undef, length(fardata.dirs))
@@ -200,6 +190,10 @@ function (compressor::BottomUp)(
         testclusters = collect(LevelIterator(testtree(tree), level))
         @tasks for t in testclusters
             @set scheduler = scheduler
+            @local begin
+                farbuffer = fartestbuffer(compressor.factorization, farmatrix, maxrank)
+                factorization = _stateful_factorization(compressor.factorization, maxrank)
+            end
             for (localdiridx, diridx) in enumerate(dirrange(fardata, t))
                 Ft = dirfarfield(testtree(tree), fardata, t, fardata.dirs[diridx])
                 if !isempty(Ft)
@@ -207,31 +201,26 @@ function (compressor::BottomUp)(
                     if isbasisnode(testtree(tree), fardata, t, fardata.dirs[diridx])
                         append!(tvalues, H2Trees.values(testtree(tree), t))
                     else
-                        for children in H2Trees.ChildIterator(testtree(tree), t)
+                        for child in H2Trees.ChildIterator(testtree(tree), t)
                             cdiridx = dirmap(fardata, child)[localdiridx]
                             cglobalidx = dirrange(fardata, child)[cdiridx]
                             append!(tvalues, tpivots[cglobalidx])
                         end
                     end
                     adaptedFt = adapt_farfield_indices(compressor, trialtree(tree), Ft)
-                    factorization = take!(factorizationpool)
-                    try
-                        tpivots[diridx], _ = compute_test_pivots!(
-                            factorization,
-                            nothing,
-                            farmatrix,
-                            tree,
-                            tvalues,
-                            adaptedFt,
-                            buffer[1],
-                            buffer[2];
-                            maxrank=maxrank,
-                        )
-                    finally
-                        put!(factorizationpool, factorization)
-                    end
+                    tpivots[diridx], _ = compute_test_pivots!(
+                        factorization,
+                        nothing,
+                        farmatrix,
+                        tree,
+                        tvalues,
+                        adaptedFt,
+                        buffer,
+                        farbuffer;
+                        maxrank=maxrank,
+                    )
                     if isbasisnode(testtree(tree), fardata, t, fardata.dirs[diridx])
-                        bases[diridx] = nestedtestbasis(tvalues, tpivots[diridx], buffer[1])
+                        bases[diridx] = nestedtestbasis(tvalues, tpivots[diridx], buffer)
                         basescounter[t] += 1
                     else
                         transfercounter[t] += 1
@@ -244,7 +233,7 @@ function (compressor::BottomUp)(
                             cdiridx = dirmap(fardata, child)[localdiridx]
                             cglobalidx = dirrange(fardata, child)[cdiridx]
                             nodetransfers[j] = testtransfer(
-                                tpivots[diridx], tpivots[cglobalidx], buffer[1]
+                                tpivots[diridx], tpivots[cglobalidx], buffer
                             )
                             nodechilddirs[j] = cglobalidx
                         end
@@ -273,17 +262,15 @@ function (compressor::BottomUp)(
     return basis_store, transfer_store, tpivots
 end
 
-function (compressor::BottomUp)(
+function trialbases(
+    compressor::BottomUp,
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
-    fardata::DirectionalData,
-    buffer::Tuple{Channel{K},K};
+    fardata::DirectionalData;
     scheduler=DynamicScheduler(),
     maxrank=40,
-) where {T,K<:Matrix{T}}
-    factorizationpool = factorization_channel(
-        compressor; scheduler=scheduler, maxrank=maxrank
-    )
+) where {T}
+    buffer = trialbuffer(compressor, farmatrix, maxrank)
 
     spivots = Vector{Vector{Int}}(undef, length(fardata.dirs))
     bases = Vector{Matrix{T}}(undef, length(fardata.dirs))
@@ -297,6 +284,10 @@ function (compressor::BottomUp)(
         trialclusters = collect(LevelIterator(trialtree(tree), level))
         @tasks for s in trialclusters
             @set scheduler = scheduler
+            @local begin
+                farbuffer = fartrialbuffer(compressor.factorization, farmatrix, maxrank)
+                factorization = _stateful_factorization(compressor.factorization, maxrank)
+            end
             for (localdiridx, diridx) in enumerate(dirrange(fardata, s))
                 Fs = dirfarfield(trialtree(tree), fardata, s, fardata.dirs[diridx])
                 if !isempty(Fs)
@@ -304,7 +295,7 @@ function (compressor::BottomUp)(
                     if isbasisnode(trialtree(tree), fardata, s, fardata.dirs[diridx])
                         append!(svalues, H2Trees.values(trialtree(tree), s))
                     else
-                        for children in H2Trees.ChildIterator(trialtree(tree), s)
+                        for child in H2Trees.ChildIterator(trialtree(tree), s)
                             cdiridx = dirmap(fardata, child)[localdiridx]
                             cglobalidx = dirrange(fardata, child)[cdiridx]
                             append!(svalues, spivots[cglobalidx])
@@ -312,27 +303,21 @@ function (compressor::BottomUp)(
                     end
 
                     adaptedFs = adapt_farfield_indices(compressor, testtree(tree), Fs)
-                    factorization = take!(factorizationpool)
-                    try
-                        _, spivots[diridx] = compute_trial_pivots!(
-                            factorization,
-                            nothing,
-                            farmatrix,
-                            tree,
-                            adaptedFs,
-                            svalues,
-                            buffer[1],
-                            buffer[2];
-                            maxrank=maxrank,
-                        )
-                    finally
-                        put!(factorizationpool, factorization)
-                    end
+
+                    _, spivots[diridx] = compute_trial_pivots!(
+                        factorization,
+                        nothing,
+                        farmatrix,
+                        tree,
+                        adaptedFs,
+                        svalues,
+                        farbuffer,
+                        buffer;
+                        maxrank=maxrank,
+                    )
 
                     if isbasisnode(trialtree(tree), fardata, s, fardata.dirs[diridx])
-                        bases[diridx] = nestedtrialbasis(
-                            svalues, spivots[diridx], buffer[2]
-                        )
+                        bases[diridx] = nestedtrialbasis(svalues, spivots[diridx], buffer)
                         basescounter[s] += 1
                     else
                         children = collect(H2Trees.ChildIterator(trialtree(tree), s))
@@ -344,7 +329,7 @@ function (compressor::BottomUp)(
                             cdiridx = dirmap(fardata, child)[localdiridx]
                             cglobalidx = dirrange(fardata, child)[cdiridx]
                             nodetransfers[j] = trialtransfer(
-                                spivots[diridx], spivots[cglobalidx], buffer[2]
+                                spivots[diridx], spivots[cglobalidx], buffer
                             )
                             nodechilddirs[j] = cglobalidx
                         end

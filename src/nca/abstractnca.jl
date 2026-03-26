@@ -138,6 +138,7 @@ function _aggregate_coefficients!(
         end
     end
 end
+
 function _couple_forward!(
     yhat::AbstractVector,
     xhat::AbstractVector,
@@ -192,19 +193,36 @@ function _couple_reverse!(
     couplingop,
     scheduler,
 )
-    for testnode in 1:(length(coupling_store.plan.ptr) - 1)
-        coupling_first = coupling_store.plan.ptr[testnode]
-        coupling_last = coupling_store.plan.ptr[testnode + 1] - 1
-        testptr0 = testplan.ptr[testnode]
-        testptr1 = testplan.ptr[testnode + 1] - 1
-        xhat_test = @view xhat[testptr0:testptr1]
-        for coupling_idx in coupling_first:coupling_last
-            trialnode = coupling_store.plan.idx[coupling_idx]
-            trialptr0 = trialplan.ptr[trialnode]
-            trialptr1 = trialplan.ptr[trialnode + 1] - 1
-            yhat_trial = @view yhat[trialptr0:trialptr1]
-            @views yhat_trial .+=
-                couplingop(coupling_store.blocks[coupling_idx]) * xhat_test
+    for tidx in 1:(length(coupling_store.plan.ptr) - 1)
+        ptrstart = coupling_store.plan.ptr[tidx]
+        ptrend = coupling_store.plan.ptr[tidx + 1] - 1
+        for cidx in ptrstart:ptrend
+            sidx = coupling_store.plan.idcs[cidx]
+            yhat_trial = @view yhat[trialplan.ptr[sidx]:(trialplan.ptr[sidx + 1] - 1)]
+            xhat_test = @view xhat[testplan.ptr[tidx]:(testplan.ptr[tidx + 1] - 1)]
+            @views yhat_trial .+= couplingop(coupling_store.blocks[cidx]) * xhat_test
+        end
+    end
+end
+
+function _couple_reverse!(
+    yhat::AbstractVector,
+    xhat::AbstractVector,
+    coupling_store::CouplingStore{T,<:DirCouplingTraversalPlan},
+    trialplan,
+    testplan,
+    couplingop,
+    scheduler,
+) where {T}
+    for t in 1:(length(coupling_store.plan.ptr) - 1)
+        ptrstart = coupling_store.plan.ptr[t]
+        ptrend = coupling_store.plan.ptr[t + 1] - 1
+        for idx in ptrstart:ptrend
+            tidx = coupling_store.plan.tidcs[idx]
+            sidx = coupling_store.plan.sidcs[idx]
+            yhat_trial = @view yhat[trialplan.ptr[sidx]:(trialplan.ptr[sidx + 1] - 1)]
+            xhat_test = @view xhat[testplan.ptr[tidx]:(testplan.ptr[tidx + 1] - 1)]
+            @views yhat_trial .+= couplingop(coupling_store.blocks[idx]) * xhat_test
         end
     end
 end

@@ -21,10 +21,10 @@ include("directionalsubdivision/boundingballdirections.jl")
 
 include("utils.jl")
 include("nestedbasis.jl")
-include("buffer.jl")
 include("transfermatrices.jl")
 include("topdown.jl")
 include("bottomup.jl")
+include("buffer.jl")
 include("factorization.jl")
 include("couplingmatrices.jl")
 

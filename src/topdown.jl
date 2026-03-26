@@ -15,17 +15,15 @@ end
 
 ## testtree
 
-function (compressor::TopDown)(
+function testbases(
+    compressor::TopDown,
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
-    fardata::FarData,
-    buffer::Tuple{Tuple{K,K},Channel{K}};
+    fardata::FarData;
     scheduler=DynamicScheduler(),
     maxrank=40,
-) where {T,K<:Matrix{T}}
-    factorizationpool = factorization_channel(
-        compressor; scheduler=scheduler, maxrank=maxrank
-    )
+) where {T}
+    buffer = testbuffer(compressor, farmatrix, maxrank)
 
     tpivots = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
     Ftpivots = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
@@ -39,30 +37,30 @@ function (compressor::TopDown)(
         testclusters = collect(LevelIterator(testtree(tree), level))
         @tasks for t in testclusters
             @set scheduler = scheduler
+            @local begin
+                farbuffer = fartestbuffer(compressor.factorization, farmatrix, maxrank)
+                factorization = _stateful_factorization(compressor.factorization, maxrank)
+            end
             Ft = collect(fs[fp[t]:(fp[t + 1] - 1)])
             Ftvalues = H2Trees.values(trialtree(tree), Ft)
             isassigned(Ftpivots, H2Trees.parent(testtree(tree), t)) &&
                 append!(Ftvalues, Ftpivots[H2Trees.parent(testtree(tree), t)])
             if !isempty(Ftvalues)
                 tvalues = H2Trees.values(testtree(tree), t)
-                factorization = take!(factorizationpool)
-                try
-                    tpivots[t], Ftpivots[t] = compute_test_pivots!(
-                        factorization,
-                        compressor.representor,
-                        farmatrix,
-                        tree,
-                        tvalues,
-                        Ftvalues,
-                        buffer[1][bufferidx(level)],
-                        buffer[2],
-                    )
-                finally
-                    put!(factorizationpool, factorization)
-                end
+
+                tpivots[t], Ftpivots[t] = compute_test_pivots!(
+                    factorization,
+                    compressor.representor,
+                    farmatrix,
+                    tree,
+                    tvalues,
+                    Ftvalues,
+                    buffer[bufferidx(level)],
+                    farbuffer,
+                )
                 if isleaf(H2Trees.testtree(tree), t)
                     bases[t] = nestedtestbasis(
-                        tvalues, tpivots[t], buffer[1][bufferidx(level)]
+                        tvalues, tpivots[t], buffer[bufferidx(level)]
                     )
                 end
             end
@@ -79,7 +77,7 @@ function (compressor::TopDown)(
                 transfer,
                 level_transfer_nodes[level - 1],
                 tpivots,
-                buffer[1][bufferidx(level - 1)];
+                buffer[bufferidx(level - 1)];
                 scheduler=scheduler,
             )
         )
@@ -89,17 +87,15 @@ function (compressor::TopDown)(
     return basis_store, transfer_store, tpivots
 end
 
-function (compressor::TopDown)(
+function trialbases(
+    compressor::TopDown,
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
-    fardata::FarData,
-    buffer::Tuple{Channel{K},Tuple{K,K}};
+    fardata::FarData;
     scheduler=DynamicScheduler(),
     maxrank=40,
-) where {T,K<:Matrix{T}}
-    factorizationpool = factorization_channel(
-        compressor; scheduler=scheduler, maxrank=maxrank
-    )
+) where {T}
+    buffer = trialbuffer(compressor, farmatrix, maxrank)
 
     Fspivots = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
     spivots = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
@@ -113,31 +109,30 @@ function (compressor::TopDown)(
         trialclusters = collect(LevelIterator(trialtree(tree), level))
         @tasks for s in trialclusters
             @set scheduler = scheduler
+            @local begin
+                farbuffer = fartrialbuffer(compressor.factorization, farmatrix, maxrank)
+                factorization = _stateful_factorization(compressor.factorization, maxrank)
+            end
             Fs = collect(fs[fp[s]:(fp[s + 1] - 1)])
             Fsvalues = H2Trees.values(testtree(tree), Fs)
             isassigned(Fspivots, H2Trees.parent(trialtree(tree), s)) &&
                 append!(Fsvalues, Fspivots[H2Trees.parent(trialtree(tree), s)])
             if !isempty(Fsvalues)
                 svalues = H2Trees.values(trialtree(tree), s)
-                factorization = take!(factorizationpool)
-                try
-                    Fspivots[s], spivots[s] = compute_trial_pivots!(
-                        factorization,
-                        compressor.representor,
-                        farmatrix,
-                        tree,
-                        Fsvalues,
-                        svalues,
-                        buffer[1],
-                        buffer[2][bufferidx(level)];
-                        maxrank=maxrank,
-                    )
-                finally
-                    put!(factorizationpool, factorization)
-                end
+                Fspivots[s], spivots[s] = compute_trial_pivots!(
+                    factorization,
+                    compressor.representor,
+                    farmatrix,
+                    tree,
+                    Fsvalues,
+                    svalues,
+                    farbuffer,
+                    buffer[bufferidx(level)];
+                    maxrank=maxrank,
+                )
                 if isleaf(H2Trees.trialtree(tree), s)
                     bases[s] = nestedtrialbasis(
-                        svalues, spivots[s], buffer[2][bufferidx(level)]
+                        svalues, spivots[s], buffer[bufferidx(level)]
                     )
                 end
             end
@@ -154,7 +149,7 @@ function (compressor::TopDown)(
                 transfer,
                 level_transfer_nodes[level - 1],
                 spivots,
-                buffer[2][bufferidx(level - 1)];
+                buffer[bufferidx(level - 1)];
                 scheduler=scheduler,
             )
         )
