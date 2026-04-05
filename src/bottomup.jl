@@ -5,8 +5,8 @@ mutable struct BottomUp{LowRankFactorizationType,RepresentorType}
     representor::RepresentorType
 
     function BottomUp(factorization, representor)
-        factorization isa AdaptiveCrossApproximation.ACA &&
-            error("BottomUp with ACA is not permitted.")
+        #factorization isa AdaptiveCrossApproximation.ACA &&
+        #    error("BottomUp with ACA is not permitted.")
         return new{typeof(factorization),typeof(representor)}(factorization, representor)
     end
 end
@@ -48,8 +48,8 @@ function testbases(
                         append!(tvalues, tpivots[child])
                     end
                 end
-                tvalues = H2Trees.values(testtree(tree), t)
-                adaptedFt = adapt_farfield_indices(compressor, trialtree(tree), Ft)
+                #tvalues = H2Trees.values(testtree(tree), t)
+                #adaptedFt = adapt_farfield_indices(compressor, trialtree(tree), Ft)
 
                 tpivots[t], _ = compute_test_pivots!(
                     factorization,
@@ -124,6 +124,7 @@ function trialbases(
                     end
                 end
                 adaptedFs = adapt_farfield_indices(compressor, testtree(tree), Fs)
+
                 _, spivots[s] = compute_trial_pivots!(
                     factorization,
                     nothing,
@@ -202,19 +203,22 @@ function testbases(
                         append!(tvalues, H2Trees.values(testtree(tree), t))
                     else
                         for child in H2Trees.ChildIterator(testtree(tree), t)
+                            #println("node: $t, child: $child, localdiridx: $localdiridx") #= --- IGNORE ===#
                             cdiridx = dirmap(fardata, child)[localdiridx]
                             cglobalidx = dirrange(fardata, child)[cdiridx]
                             append!(tvalues, tpivots[cglobalidx])
                         end
                     end
-                    adaptedFt = adapt_farfield_indices(compressor, trialtree(tree), Ft)
+                    #tvalues = H2Trees.values(testtree(tree), t)
+                    #adaptedFt = adapt_farfield_indices(compressor, trialtree(tree), Ft)
+
                     tpivots[diridx], _ = compute_test_pivots!(
                         factorization,
                         nothing,
                         farmatrix,
                         tree,
                         tvalues,
-                        adaptedFt,
+                        Ft,
                         buffer,
                         farbuffer;
                         maxrank=maxrank,
@@ -301,15 +305,15 @@ function trialbases(
                             append!(svalues, spivots[cglobalidx])
                         end
                     end
-
-                    adaptedFs = adapt_farfield_indices(compressor, testtree(tree), Fs)
+                    #svalues = H2Trees.values(trialtree(tree), s)
+                    #adaptedFs = adapt_farfield_indices(compressor, testtree(tree), Fs)
 
                     _, spivots[diridx] = compute_trial_pivots!(
                         factorization,
                         nothing,
                         farmatrix,
                         tree,
-                        adaptedFs,
+                        Fs,
                         svalues,
                         farbuffer,
                         buffer;

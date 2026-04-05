@@ -185,12 +185,16 @@ end
 
 # Compute the interaction vector from clnode in cltree to refnode in reftree.
 function interaction(clnode::Int, refnode::Int, cltree, reftree)
-    return H2Trees.center(reftree, refnode) - H2Trees.center(cltree, clnode)
+    return H2Trees.center(cltree, clnode) - H2Trees.center(reftree, refnode)
 end
 
 function isbasisnode(tree, data::DirectionalData, node::Int, dir::Int)
     H2Trees.isleaf(tree, node) && return true
     dir == 0 && return false
     firstchild = H2Trees.firstchild(tree, node)
-    return data.dirs[data.dirptr[firstchild]] == 0
+    return (dirs(data, firstchild) == [0] || dirs(data, firstchild) == [])
+end
+
+function angle(a::SVector{D,F}, b::SVector{D,F}) where {D,F}
+    return acos(min(dot(a, b) / (norm(a) * norm(b)), 1.0))
 end

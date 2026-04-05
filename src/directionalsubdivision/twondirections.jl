@@ -177,11 +177,11 @@ function _descend_direction(
         isempty(nextnodes) && break
 
         bestnode = first(nextnodes)
-        bestscore = typemin(T)
+        minangle = typemax(T)
         for candidate in nextnodes
-            score = dot(interaction, tree.nodes[candidate].dir)
-            if score > bestscore
-                bestscore = score
+            newangle = angle(interaction, tree.nodes[candidate].dir)
+            if newangle < minangle
+                minangle = newangle
                 bestnode = candidate
             end
         end
@@ -191,13 +191,14 @@ function _descend_direction(
 end
 
 function directionalfardata(fardata::FarData, cltree::TwoNTree, reftree::TwoNTree, isnear)
-    islf = isnear.islf
     farptr = NestedCrossApproximation.farptr(fardata)
     fars = NestedCrossApproximation.fars(fardata)
-    dirtree = DirectionTree(cltree, farptr, islf)
+    dirtree = DirectionTree(cltree, farptr, isnear.islf)
     nnodes = length(farptr) - 1
     dirs = Vector{Vector{Int}}(undef, nnodes)
-
+    dircounter = [Int[] for _ in 1:nnodes]
+    pdirmap = [Int[] for _ in 1:nnodes]
+    pdircounter = zeros(Int, nnodes)
     for level in H2Trees.levels(cltree)
         for node in H2Trees.LevelIterator(cltree, level)
             pnode = H2Trees.parent(cltree, node)
@@ -206,83 +207,51 @@ function directionalfardata(fardata::FarData, cltree::TwoNTree, reftree::TwoNTre
 
             # LF nodes do not use directional subdivision.
             # Store [0] for direct LF fars, or when inheriting from an LF parent with dirs.
-            if islf(cltree, level)
-                inheritlf = hasparentdirs && level > 1 && islf(cltree, level - 1)
+            if isnear.islf(cltree, level)
+                inheritlf = hasparentdirs && level > 1 && isnear.islf(cltree, level - 1)
                 dirs[node] = (hasfars || inheritlf) ? Int[0] : Int[]
+                pdrimap[node] = inheritlf ? [1] : Int[]
                 continue
             end
 
-            nodedirs = Int[]
-            sizehint!(nodedirs, farptr[node + 1] - farptr[node])
-            for faridx in farptr[node]:(farptr[node + 1] - 1)
+            (!hasfars && hasparentdirs) && (dirs[node] = Int[]; continue)
+
+            nfars_node = Int(farptr[node + 1] - farptr[node])
+            nodedirs = Vector{Int}(undef, nfars_node)
+            for (i, faridx) in enumerate(farptr[node]:(farptr[node + 1] - 1))
                 vec = interaction(node, fars[faridx], cltree, reftree)
-                push!(nodedirs, direction(vec, dirtree, level))
+                nodedirs[i] = direction(vec, dirtree, level)
             end
+
+            perm = sortperm(nodedirs)
+            permute!(view(fars, farptr[node]:(farptr[node + 1] - 1)), perm)
+            uniquenodedirs = sort!(unique(nodedirs))
+
             # Inherit child-directions from parent.
+            dirmap = iszero(pnode) ? Int[] : zeros(Int, length(dirs[pnode]))
             if hasparentdirs
-                for parentdir in dirs[pnode]
-                    parentdir == 0 && continue
-                    pdirchild = parent(dirtree, parentdir)
-                    if !(pdirchild in nodedirs)
-                        push!(nodedirs, pdirchild)
-                    end
+                for (i, parentdir) in enumerate(dirs[pnode])
+                    dirmap[i] = parent(dirtree, parentdir)
+                end
+
+                for (idx, dir) in enumerate(dirmap)
+                    !(dir in uniquenodedirs) && push!(uniquenodedirs, dir)
+                    dirmap[idx] = findfirst(==(dir), uniquenodedirs)
                 end
             end
-            dirs[node] = nodedirs
-        end
-    end
-
-    dircounter = [Int[] for _ in 1:nnodes]
-    pdirmap = [Int[] for _ in 1:nnodes]
-    pdircounter = zeros(Int, nnodes)
-    for level in reverse(H2Trees.levels(cltree))
-        islf(cltree, level) && continue
-        for node in H2Trees.LevelIterator(cltree, level)
-            isempty(dirs[node]) && continue
-
-            nfars = Int(farptr[node + 1] - farptr[node])
-            uniquedirs = unique(dirs[node])
-            sort!(uniquedirs)
-            localdircounter = zeros(Int, length(uniquedirs))
-
-            farperm = zeros(Int, nfars)
-            i = 1
-            for (uidx, udir) in enumerate(uniquedirs)
-                for (ndir, dir) in enumerate(dirs[node])
-                    udir != dir && continue
-                    ndir > nfars && continue
-                    farperm[ndir] = i
-                    localdircounter[uidx] += 1
-                    i += 1
+            localdircounter = zeros(Int, length(uniquenodedirs))
+            for (uidx, udir) in enumerate(uniquenodedirs)
+                for dir in nodedirs
+                    udir == dir && (localdircounter[uidx] += 1)
                 end
             end
-            permute!(fars[farptr[node]:(farptr[node + 1] - 1)], farperm)
-            dirs[node] = uniquedirs
+
+            pdirmap[node] = dirmap
+            pdircounter[node] = count(!iszero, dirmap)
+            dirs[node] = uniquenodedirs
             dircounter[node] = localdircounter
-            # parent dirs
-            (iszero(H2Trees.firstchild(cltree, node)) || islf(cltree, level + 1)) &&
-                continue
-
-            for child in H2Trees.children(cltree, node)
-                localpdirmap = zeros(Int, length(dirs[node]))
-                for (idx, dir) in enumerate(dirs[node])
-                    localpdirmap[idx] = findfirst(==(parent(dirtree, dir)), dirs[child])
-                end
-                pdirmap[child] = localpdirmap
-                pdircounter[child] = count(!iszero, localpdirmap)
-            end
         end
     end
-
-    #=
-    # Convert parent->child map to child-local -> parent-local map aligned with dirs[node].
-    parentdir = [zeros(Int, length(dirs[node])) for node in eachindex(dirs)]
-    for node in eachindex(dirs)localpdirmap
-        for (pidx, cidx) in enumerate(pdirmap[node])
-            cidx == 0 && continue
-            cidx <= length(parentdir[node]) && (parentdir[node][cidx] = pidx)
-        end
-    end=#
 
     # Fill dircounter for LF sentinel nodes (dirs=[0], dircounter not set in second pass).
     for node in eachindex(dirs)

@@ -16,7 +16,7 @@ end
 
 wavenumber(f::IsLowFrequencyFunctor) = f.k
 
-function islf(k::Real, γ::Real=1.0)
+function islf(γ::Real, k::Real)
     F = float(typeof(k))
     return IsLowFrequencyFunctor{F}(F(γ), F(k))
 end
@@ -59,11 +59,7 @@ struct IsNearWidebandFunctor{F,LF}
 end
 
 function isnearwideband(
-    k::Real;
-    ηlf::Real=1.0,
-    ηhf::Real=1.0,
-    γ::Real=1.0,
-    islf::Any=NestedCrossApproximation.islf(k, γ),
+    k::Real; ηlf::Real=1.0, ηhf::Real=5.0, γ::Real=1.0, islf::Any=islf(γ, k)
 )
     F = promote_type(float(typeof(k)), float(typeof(ηlf)), float(typeof(ηhf)))
     return IsNearWidebandFunctor{F,typeof(islf)}(F(k), F(ηlf), F(ηhf), islf)

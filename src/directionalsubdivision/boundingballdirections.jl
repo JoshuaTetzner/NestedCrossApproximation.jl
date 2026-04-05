@@ -30,14 +30,13 @@ function sphericalfibonaccipoints(n::Int)
 end
 
 # Find the index in `evecs` (unit direction vectors) whose direction best matches `vec`.
-# Uses dot product instead of angle (equivalent for unit vectors, avoids acos).
 @inline function _nearest_direction(evecs::AbstractVector, vec)
     best = 1
-    bestscore = dot(evecs[1], vec)
+    minangle = angle(evecs[1], vec)
     @inbounds for i in 2:length(evecs)
-        score = dot(evecs[i], vec)
-        if score > bestscore
-            bestscore = score
+        newangle = angle(evecs[i], vec)
+        if newangle < minangle
+            minangle = copy(newangle)
             best = i
         end
     end
@@ -59,9 +58,9 @@ function directionalfardata(
     # pdirmap[node] = for each parent direction (1..ndirs_parent), child's local dir index
     # Evec[node]  = actual direction vectors for the used directions (temp, for child mapping)
     dirs = Vector{Vector{Int}}(undef, nnodes)
+    dircounter = [Int[] for _ in 1:nnodes]
     pdirmap = [Int[] for _ in 1:nnodes]
     pdircounter = zeros(Int, nnodes)
-    dircounter = [Int[] for _ in 1:nnodes]
 
     dirsvec = Vector{Vector{SVector{N,F}}}(undef, nnodes)
 
@@ -75,12 +74,13 @@ function directionalfardata(
 
             # LF nodes do not use directional subdivision.
             # Store [0] for direct LF fars, or when inheriting from an LF parent with dirs.
-            if isnear.islf(cltree, level)
+            if isnear.islf(cltree, node)
                 inheritlf =
                     hasparentdirs &&
                     level > 1 &&
                     isnear.islf(cltree, H2Trees.parent(cltree, node))
                 dirs[node] = (hasfars || inheritlf) ? Int[0] : Int[]
+                pdirmap[node] = inheritlf ? [1] : Int[]
                 continue
             end
 
@@ -91,15 +91,15 @@ function directionalfardata(
             )
             # Assign each far to the closest direction (index into totalEvec).
             nfars_node = Int(farptr[node + 1] - farptr[node])
-            localdirs = Vector{Int}(undef, nfars_node)
+            nodedirs = Vector{Int}(undef, nfars_node)
             for (i, faridx) in enumerate(farptr[node]:(farptr[node + 1] - 1))
                 vec = interaction(node, fars[faridx], cltree, reftree)
-                localdirs[i] = _nearest_direction(totaldirsvec, vec)
+                nodedirs[i] = _nearest_direction(totaldirsvec, vec)
             end
 
-            perm = sortperm(localdirs)
-            permute!(fars[farptr[node]:(farptr[node + 1] - 1)], perm)
-            uniquelocaldirs = unique(localdirs)
+            perm = sortperm(nodedirs)
+            permute!(view(fars, farptr[node]:(farptr[node + 1] - 1)), perm)
+            uniquenodedirs = sort!(unique(nodedirs))
 
             # Map each parent direction vector to the closest direction in totalEvec.
             dirmap = iszero(pnode) ? Int[] : zeros(Int, length(dirs[pnode]))
@@ -109,21 +109,21 @@ function directionalfardata(
                 end
 
                 for (idx, dir) in enumerate(dirmap)
-                    !(dir in uniquelocaldirs) && push!(uniquelocaldirs, dir)
-                    dirmap[idx] = findfirst(==(dir), uniquelocaldirs)
+                    !(dir in uniquenodedirs) && push!(uniquenodedirs, dir)
+                    dirmap[idx] = findfirst(==(dir), uniquenodedirs)
                 end
             end
-            localdircounter = zeros(Int, length(uniquelocaldirs))
-            for (uidx, udir) in enumerate(uniquelocaldirs)
-                for dir in localdirs
+            localdircounter = zeros(Int, length(uniquenodedirs))
+            for (uidx, udir) in enumerate(uniquenodedirs)
+                for dir in nodedirs
                     udir == dir && (localdircounter[uidx] += 1)
                 end
             end
-            dirsvec[node] = totaldirsvec[uniquelocaldirs]
+            dirsvec[node] = totaldirsvec[uniquenodedirs]
 
             pdirmap[node] = dirmap
             pdircounter[node] = count(!iszero, dirmap)
-            dirs[node] = uniquelocaldirs
+            dirs[node] = uniquenodedirs
             dircounter[node] = localdircounter
         end
     end
@@ -132,6 +132,7 @@ function directionalfardata(
     for node in eachindex(dirs)
         if !isempty(dirs[node]) && isempty(dircounter[node])
             dircounter[node] = [max(0, Int(farptr[node + 1] - farptr[node]))]
+            pdircounter[node] = length(pdirmap[node])
         end
     end
 

@@ -304,3 +304,66 @@ function _project_to_output!(
         end
     end
 end
+
+function admissiblelevel(tree::TwoNTree, fardata::DirectionalData, isnear)
+    hffarlev = 0
+    lffarlev = 0
+    for level in H2Trees.levels(tree)
+        if isnear.islf(tree, level)
+            for node in LevelIterator(tree, level)
+                !isempty(fars(fardata, node)) && (hffarlev += 1; break)
+            end
+        else
+            for node in LevelIterator(tree, level)
+                !isempty(fars(fardata, node)) && (lffarlev += 1; break)
+            end
+        end
+    end
+    return max(1, max(hffarlev, lffarlev))
+end
+
+function admissiblelevel(tree, fardata, isnear)
+    farlev = 0
+    for level in H2Trees.levels(tree)
+        for node in LevelIterator(tree, level)
+            !isempty(fars(fardata, node)) && (farlev += 1; break)
+        end
+    end
+    return max(1, farlev)
+end
+
+function admissiblelevel(tree::H2Trees.BoundingBallTree, fardata::DirectionalData, isnear)
+    hffarlev = 0
+    lffarlev = 0
+    for level in H2Trees.levels(tree)
+        ishffarlev = false
+        islffarlev = false
+        for node in LevelIterator(tree, level)
+            if !isempty(fars(fardata, node))
+                if isnear.islf(tree, node)
+                    !ishffarlev && (hffarlev += 1)
+                    ishffarlev = true
+                else
+                    !islffarlev && (lffarlev += 1)
+                    islffarlev = true
+                end
+            end
+            ishffarlev && islffarlev && break
+        end
+    end
+    return max(1, max(hffarlev, lffarlev))
+end
+
+function tolerance!(
+    lrf::AdaptiveCrossApproximation.ACA{RP,CP,CC}, denominator::F
+) where {RP,CP,CC<:FNormEstimator,F}
+    println("New tol: ", lrf.convergence.tol / denominator)
+    return lrf.convergence.tol = lrf.convergence.tol / denominator
+end
+
+function tolerance!(
+    lrf::AdaptiveCrossApproximation.iACA{RP,CP,CC}, denominator::F
+) where {RP,CP,CC<:FNormExtrapolator,F}
+    println("New tol: ", lrf.convergence.estimator.tol / denominator)
+    return lrf.convergence.estimator.tol = lrf.convergence.estimator.tol / denominator
+end

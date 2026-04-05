@@ -13,7 +13,6 @@ numfcts = length(points)
 isnear = NestedCrossApproximation.isnear()
 
 # KMeansTree
-
 ttree = KMeansTree(points, 2; minvalues=10)
 stree = KMeansTree(points, 2; minvalues=10)
 
