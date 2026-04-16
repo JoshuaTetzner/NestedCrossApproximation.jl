@@ -124,7 +124,8 @@ function PetrovGalerkinNCA(
         couplingmatrices,
         aggregationplan,
         disaggregationplan,
-        scheduler,
+        SerialScheduler(),
+        #scheduler,
         (length(testspace), length(trialspace)),
     )
 end

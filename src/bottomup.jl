@@ -38,6 +38,7 @@ function testbases(
                 farbuffer = fartestbuffer(compressor.factorization, farmatrix, maxrank)
                 factorization = _stateful_factorization(compressor.factorization, maxrank)
             end
+
             Ft = farfield(testtree(tree), fardata, t)
             if !isempty(Ft)
                 tvalues = Int[]
@@ -195,6 +196,7 @@ function testbases(
                 farbuffer = fartestbuffer(compressor.factorization, farmatrix, maxrank)
                 factorization = _stateful_factorization(compressor.factorization, maxrank)
             end
+            #println(t)
             for (localdiridx, diridx) in enumerate(dirrange(fardata, t))
                 Ft = dirfarfield(testtree(tree), fardata, t, fardata.dirs[diridx])
                 if !isempty(Ft)

@@ -61,7 +61,7 @@ function adapt_farfield_indices(
     compressor::AdaptiveCrossApproximation.iACA, tree, Fidcs::Vector{Int}
 )
     @assert allunique(Fidcs) "Expected unique far-field cluster ids (Fidcs)."
-    if _use_tree_mimicry(compressor.factorization)
+    if _use_tree_mimicry(compressor)
         return Fidcs
     end
     Fvalues = H2Trees.values(tree, Fidcs)
@@ -126,6 +126,9 @@ function compute_test_pivots!(
     )
     rows = Vector{Int}(undef, ranklimit)
     cols = Vector{Int}(undef, ranklimit)
+    #=if Ftidcs == [214] && length(tidcs) == 41
+        println(tidcs, ", ", Ftidcs)
+    end=#
     npivots, rows, cols = _compute_raw_pivots!(
         factorization,
         farmatrix,
@@ -138,12 +141,13 @@ function compute_test_pivots!(
         ranklimit,
     )
 
-    #=sidcs = H2Trees.values(H2Trees.trialtree(tree), Ftidcs)
+    #=if Ftidcs == [214] && length(tidcs) == 41
+    sidcs = H2Trees.values(H2Trees.trialtree(tree), Ftidcs)
     blk = zeros(eltype(farmatrix), length(tidcs), length(sidcs))
     farmatrix(blk, tidcs, sidcs)
     r = [findfirst(==(r), tidcs) for r in rows[1:npivots]]
     c = [findfirst(==(c), sidcs) for c in cols[1:npivots]]
-    if norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk) > 2e-1
+    if norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk) > 3.5e-2
         println(
             size(blk),
             "; ",
@@ -151,13 +155,14 @@ function compute_test_pivots!(
             npivots,
             ", relerr: ",
             norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk),
-            ", \n",
-            factorization.convergence.lastnorms[1:npivots],
+            ", ",
+            factorization.columnpivoting.refcentroid,
+            "; ",
+            Ftidcs,
         )
-        println("r = ", tidcs)
-        println("c = ", Ftidcs)
+        println("r = ", rows)
+        println("c = ", cols)
     end=#
-
     npivots == maxrank && @warn "Maximum rank block"
     _finalize_test_buffers!(
         factorization, colbuffer, rowbuffer, tidcs, Ftidcs, rows, cols, npivots
