@@ -1,4 +1,4 @@
-using ChebyshevApprox
+#using ChebyshevApprox
 
 abstract type Representor end
 
@@ -14,7 +14,7 @@ struct ChebyshevRep{I,D,F} <: Representor
     nodes::Vector{SVector{D,F}}
     N::I
 end
-
+#=
 function ChebyshevRep(
     ε::F,
     η::F,
@@ -83,7 +83,7 @@ function (cr::ChebyshevRep{I})(rc::Vector{Int}) where {I}
 
     return rc[idcs]
 end
-
+=#
 struct RandomRep{I} <: Representor
     N::I
 end
@@ -94,4 +94,25 @@ end
 
 function (cr::RandomRep{I})(M::Vector{SVector{D,F}}) where {D,I,F}
     return rand(M, cr.N)
+end
+
+struct MimicryRep <: Representor
+    pivoting::AdaptiveCrossApproximation.TreeMimicryPivoting
+end
+
+struct MimicryRepFunctor <: Representor
+    pivoting::AdaptiveCrossApproximation.TreeMimicryPivotingFunctor
+end
+
+function (pr::MimicryRepFunctor)(
+    refidcs::AbstractVector{Int}, idcs::AbstractVector{Int}, npivots::Int
+)
+    npivots = min(npivots, length(pr.pivoting.usedidcs))
+    pivots = zeros(Int, npivots)
+    reset!(pr.pivoting, refidcs, idcs)
+    pivots[1] = pr.pivoting()
+    for i in 2:npivots
+        pivots[i] = pr.pivoting(i)
+    end
+    return pivots
 end

@@ -75,7 +75,7 @@ end
 
 # Local index of the parent's direction that contains localdir of node.
 @inline function parentdirref(data::DirectionalData, node::Int, localdir::Int)
-    return Int(data.parentdir[Int(data.dirptr[node]) + localdir - 1])
+    return Int(data.parentdir[Int(data.parentdirptr[node]) + localdir - 1])
 end
 
 # View of the far nodes belonging to direction value `dir` of `node`.
@@ -115,7 +115,7 @@ end
 
 # Range of local dir indices of node whose parent direction is pdir.
 function childdirrange(data::DirectionalData, node::Int, pdir::Int)
-    block = data.parentdir[Int(data.dirptr[node]):(Int(data.dirptr[node + 1]) - 1)]
+    block = data.parentdir[Int(data.parentdirptr[node]):(Int(data.parentdirptr[node + 1]) - 1)]
     lo = searchsortedfirst(block, pdir)
     hi = searchsortedlast(block, pdir)
     return lo:hi
@@ -155,8 +155,24 @@ function dirfarfield(tree, data::DirectionalData, node::Int, dir::Int)
     end
 
     append!(ff, dirfars(data, node, dir))
-
-    current_node = node
+    #println("levelfars: ", length(ff))
+    ##
+    current = node
+    diridcs = [localdir]
+    while H2Trees.parent(tree, current) != 0
+        dirmap = NestedCrossApproximation.dirmap(data, current)
+        diridcs = findall(x -> x in diridcs, dirmap)
+        dirs = NestedCrossApproximation.dirs(data, H2Trees.parent(tree, current))
+        for dir in dirs[diridcs]
+            append!(
+                ff,
+                NestedCrossApproximation.dirfars(data, H2Trees.parent(tree, current), dir),
+            )
+        end
+        current = H2Trees.parent(tree, current)
+    end
+    ##
+    #=current_node = node
     current_local = [Int(localdir)]
     while true
         pnode = H2Trees.parent(tree, current_node)
@@ -178,7 +194,7 @@ function dirfarfield(tree, data::DirectionalData, node::Int, dir::Int)
 
         current_node = pnode
         current_local = parent_local
-    end
+    end=#
 
     return ff
 end

@@ -1,9 +1,5 @@
 import H2Trees: numberofvalues
 
-#=
-@inline _nworkers(::SerialScheduler) = 1
-@inline _nworkers(scheduler::Any) = Threads.nthreads()
-=#
 @inline function _stateful_factorization(
     factorization::AdaptiveCrossApproximation.ACA, maxrank::Int
 )
@@ -11,35 +7,34 @@ import H2Trees: numberofvalues
 end
 
 @inline function _stateful_factorization(
+    factorization::AdaptiveCrossApproximation.ACA, A::AbstractKernelMatrix, maxrank::Int
+)
+    return factorization(A, [1], [1], maxrank)
+end
+
+@inline function _stateful_factorization(
     factorization::AdaptiveCrossApproximation.iACA, maxrank::Int
 )
     return factorization([1], [1], maxrank)
 end
-#=
-@inline _stateful_factorization(factorization, maxrank::Int) = factorization
 
-function factorization_channel(compressor; scheduler=DynamicScheduler(), maxrank::Int=40)
-    nworkers = _nworkers(scheduler)
-    prototype = _stateful_factorization(compressor.factorization, maxrank)
-    channel = Channel{typeof(prototype)}(nworkers)
-    for _ in 1:nworkers
-        put!(channel, deepcopy(prototype))
-    end
-    return channel
-end=#
+@inline function _stateful_representor(representor::MimicryRep, maxrank::Int)
+    return MimicryRepFunctor(representor.pivoting([1], [1], maxrank))
+end
 
-#adapt_farfield_indices(factorization, representor, tree, Fidcs::Vector{Int}) =
-#    isnothing(representor) ? Fidcs : representor(Fidcs)
+@inline function _stateful_representor(::Nothing, maxrank::Int)
+    return nothing
+end
 
 function _ranklimit(maxrank::Int, nrows::Int, ncols::Int)
     return min(maxrank, min(nrows, ncols))
 end
 
 _use_tree_mimicry(f::AdaptiveCrossApproximation.iACA) =
-    (f.rowpivoting isa AdaptiveCrossApproximation.TreeMimicryPivoting) ||
     (f.rowpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor) ||
-    (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivoting) ||
-    (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor)
+    (f.rowpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor2) ||
+    (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor) ||
+    (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor2)
 
 _effective_far_count(::AdaptiveCrossApproximation.ACA, tree, Fidcs::Vector{Int}) =
     length(Fidcs)
@@ -54,27 +49,30 @@ function _effective_far_count(
     end
 end
 
-#adapt_farfield_indices(compressor, tree, Fidcs::Vector{Int}) =
-#    isnothing(compressor.representor) ? Fidcs : compressor.representor(Fidcs)
+function adapt_farfield_indices(
+    factorization::CP, representor::RP, tree, t::Vector{Int}, Ft::Vector{Int}
+) where {RP<:MimicryRepFunctor,CP}
+    npivots = min(length(t), sum(numberofvalues(tree, node) for node in Ft))
+    return representor(t, Ft, npivots)
+end
+
+adapt_farfield_indices(
+    factorization::CP, ::Nothing, tree, t::Vector{Int}, Ft::Vector{Int}
+) where {CP} = adapt_farfield_indices(factorization, tree, Ft)
 
 function adapt_farfield_indices(
-    compressor::AdaptiveCrossApproximation.iACA, tree, Fidcs::Vector{Int}
+    factorization::AdaptiveCrossApproximation.iACA, tree, Ft::Vector{Int}
 )
-    @assert allunique(Fidcs) "Expected unique far-field cluster ids (Fidcs)."
-    if _use_tree_mimicry(compressor)
-        return Fidcs
+    @assert allunique(Ft) "Expected unique far-field cluster ids (Ft)."
+    if _use_tree_mimicry(factorization)
+        return Ft
     end
-    Fvalues = H2Trees.values(tree, Fidcs)
-    return Fvalues#isnothing(compressor.representor) ? Fvalues : compressor.representor(Fvalues)
+    Fvalues = H2Trees.values(tree, Ft)
+    return Fvalues
 end
 
-function adapt_farfield_indices(
-    compressor::AdaptiveCrossApproximation.ACA, tree, Fidcs::Vector{Int}
-)
-    Fvalues = H2Trees.values(tree, Fidcs)
-    #println("In $(length(Fidcs)) -> $(length(Fvalues))")
-    return Fvalues#isnothing(compressor.representor) ? Fvalues : compressor.representor(Fvalues)
-end
+adapt_farfield_indices(::AdaptiveCrossApproximation.ACA, tree, Ft::Vector{Int}) =
+    H2Trees.values(tree, Ft)
 
 _test_rowbuffer_for_rawpivots(
     ::AdaptiveCrossApproximation.ACA,
@@ -115,7 +113,9 @@ function compute_test_pivots!(
     rowbuffer::AbstractMatrix{T};
     maxrank::Int=40,
 ) where {T}
-    Ftidcs = adapt_farfield_indices(factorization, trialtree(tree), Ftidcs)
+    Ftidcs = adapt_farfield_indices(
+        factorization, representor, trialtree(tree), tidcs, Ftidcs
+    )
     ranklimit = _ranklimit(
         maxrank, length(tidcs), _effective_far_count(factorization, trialtree(tree), Ftidcs)
     )
@@ -126,9 +126,6 @@ function compute_test_pivots!(
     )
     rows = Vector{Int}(undef, ranklimit)
     cols = Vector{Int}(undef, ranklimit)
-    #=if Ftidcs == [214] && length(tidcs) == 41
-        println(tidcs, ", ", Ftidcs)
-    end=#
     npivots, rows, cols = _compute_raw_pivots!(
         factorization,
         farmatrix,
@@ -141,13 +138,13 @@ function compute_test_pivots!(
         ranklimit,
     )
 
-    #=if Ftidcs == [214] && length(tidcs) == 41
+    #if Ftidcs == [214] && length(tidcs) == 41
     sidcs = H2Trees.values(H2Trees.trialtree(tree), Ftidcs)
     blk = zeros(eltype(farmatrix), length(tidcs), length(sidcs))
     farmatrix(blk, tidcs, sidcs)
     r = [findfirst(==(r), tidcs) for r in rows[1:npivots]]
     c = [findfirst(==(c), sidcs) for c in cols[1:npivots]]
-    if norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk) > 3.5e-2
+    if norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk) > 5e-3
         println(
             size(blk),
             "; ",
@@ -155,15 +152,20 @@ function compute_test_pivots!(
             npivots,
             ", relerr: ",
             norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk),
-            ", ",
-            factorization.columnpivoting.refcentroid,
+            "; ",
+            tidcs,
             "; ",
             Ftidcs,
         )
-        println("r = ", rows)
-        println("c = ", cols)
-    end=#
+        error()
+    end
     npivots == maxrank && @warn "Maximum rank block"
+    ##
+    if npivots == maxrank
+        println(npivots, ", ", maxrank)
+        error()
+    end
+    ##
     _finalize_test_buffers!(
         factorization, colbuffer, rowbuffer, tidcs, Ftidcs, rows, cols, npivots
     )
@@ -176,14 +178,13 @@ function compute_trial_pivots!(
     representor,
     farmatrix::AbstractKernelMatrix{T},
     tree::H2Trees.BlockTree,
-    Fsidcs::Vector{Int},
+    Fs::Vector{Int},
     sidcs::Vector{Int},
     colbuffer::AbstractMatrix{T},
     rowbuffer::AbstractMatrix{T};
     maxrank::Int=40,
 ) where {T}
-    Fsidcs = adapt_farfield_indices(factorization, testtree(tree), Fsidcs)
-
+    Fsidcs = adapt_farfield_indices(factorization, representor, testtree(tree), sidcs, Fs)
     ranklimit = _ranklimit(
         maxrank, _effective_far_count(factorization, testtree(tree), Fsidcs), length(sidcs)
     )

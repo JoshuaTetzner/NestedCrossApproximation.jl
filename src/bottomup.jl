@@ -191,12 +191,16 @@ function testbases(
     for level in reverse(levels(testtree(tree)))
         testclusters = collect(LevelIterator(testtree(tree), level))
         @tasks for t in testclusters
+            println("t: $t")
             @set scheduler = scheduler
             @local begin
                 farbuffer = fartestbuffer(compressor.factorization, farmatrix, maxrank)
                 factorization = _stateful_factorization(compressor.factorization, maxrank)
+                #factorization = _stateful_factorization(
+                #    compressor.factorization, farmatrix, maxrank
+                #)
+                representor = _stateful_representor(compressor.representor, maxrank)
             end
-            #println(t)
             for (localdiridx, diridx) in enumerate(dirrange(fardata, t))
                 Ft = dirfarfield(testtree(tree), fardata, t, fardata.dirs[diridx])
                 if !isempty(Ft)
@@ -211,16 +215,19 @@ function testbases(
                             append!(tvalues, tpivots[cglobalidx])
                         end
                     end
-                    #tvalues = H2Trees.values(testtree(tree), t)
                     #adaptedFt = adapt_farfield_indices(compressor, trialtree(tree), Ft)
+                    adaptedFt = Int[]
+                    for ft in Ft
+                        append!(adaptedFt, H2Trees.leaves(trialtree(tree), ft))
+                    end
 
                     tpivots[diridx], _ = compute_test_pivots!(
                         factorization,
-                        nothing,
+                        representor,
                         farmatrix,
                         tree,
                         tvalues,
-                        Ft,
+                        adaptedFt,
                         buffer,
                         farbuffer;
                         maxrank=maxrank,
@@ -293,6 +300,10 @@ function trialbases(
             @local begin
                 farbuffer = fartrialbuffer(compressor.factorization, farmatrix, maxrank)
                 factorization = _stateful_factorization(compressor.factorization, maxrank)
+                #factorization = _stateful_factorization(
+                #    compressor.factorization, farmatrix, maxrank
+                #)
+                representor = _stateful_representor(compressor.representor, maxrank)
             end
             for (localdiridx, diridx) in enumerate(dirrange(fardata, s))
                 Fs = dirfarfield(trialtree(tree), fardata, s, fardata.dirs[diridx])
@@ -312,7 +323,7 @@ function trialbases(
 
                     _, spivots[diridx] = compute_trial_pivots!(
                         factorization,
-                        nothing,
+                        representor,
                         farmatrix,
                         tree,
                         Fs,

@@ -71,7 +71,9 @@ function directionalfardata(
             hasfars = farptr[node + 1] > farptr[node]
             hasparentvecs = pnode != 0 && isassigned(dirsvec, pnode)
             hasparentdirs = pnode != 0 && !isempty(dirs[pnode])
-
+            if !isnear.islf(cltree, node)
+                @assert hasparentvecs == hasparentdirs "Parent dirs without parent vecs should not happen"
+            end
             # LF nodes do not use directional subdivision.
             # Store [0] for direct LF fars, or when inheriting from an LF parent with dirs.
             if isnear.islf(cltree, node)
@@ -101,16 +103,42 @@ function directionalfardata(
             permute!(view(fars, farptr[node]:(farptr[node + 1] - 1)), perm)
             uniquenodedirs = sort!(unique(nodedirs))
 
-            # Map each parent direction vector to the closest direction in totalEvec.
+            # Map each parent direction to the closest direction in totalEvec,
+            # using child-centered far vectors when the parent direction has fars.
             dirmap = iszero(pnode) ? Int[] : zeros(Int, length(dirs[pnode]))
+            ctopc = H2Trees.center(reftree, pnode) - H2Trees.center(reftree, node)
+            pdirmultiplicator =
+                isnear.k * (2 * H2Trees.radius(reftree, pnode)) / isnear.ηhf +
+                2 * H2Trees.radius(reftree, pnode)
             if !iszero(pnode)
                 for didx in eachindex(dirs[pnode])
-                    dirmap[didx] = _nearest_direction(totaldirsvec, dirsvec[pnode][didx])
+                    # This if clause might be completely wrong!!!
+                    #if !isempty(dircounter[pnode]) && dircounter[pnode][didx] > 0
+                    #    pstart = Int(farptr[pnode])
+                    #    @inbounds for i in 1:(didx - 1)
+                    #        pstart += Int(dircounter[pnode][i])
+                    #    end
+                    #    count = Int(dircounter[pnode][didx])
+                    #    acc = zero(dirsvec[pnode][didx])
+                    #    @inbounds for faridx in pstart:(pstart + count - 1)
+                    #        acc += interaction(node, fars[faridx], cltree, reftree)
+                    #    end
+                    #    dirmap[didx] = _nearest_direction(totaldirsvec, acc)
+                    #else
+
+                    dirmap[didx] = _nearest_direction(
+                        totaldirsvec, ctopc + pdirmultiplicator .* dirsvec[pnode][didx]
+                    )
+                    #end
                 end
 
                 for (idx, dir) in enumerate(dirmap)
-                    !(dir in uniquenodedirs) && push!(uniquenodedirs, dir)
-                    dirmap[idx] = findfirst(==(dir), uniquenodedirs)
+                    if dir in uniquenodedirs
+                        dirmap[idx] = findfirst(==(dir), uniquenodedirs)
+                    else
+                        push!(uniquenodedirs, dir)
+                        dirmap[idx] = length(uniquenodedirs)
+                    end
                 end
             end
             localdircounter = zeros(Int, length(uniquenodedirs))

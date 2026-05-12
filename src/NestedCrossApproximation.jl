@@ -16,6 +16,7 @@ include("directionalsubdivision/twondirections.jl")
 include("directionalsubdivision/boundingballdirections.jl")
 
 include("utils.jl")
+include("representor.jl")
 include("nestedbasis.jl")
 include("transfermatrices.jl")
 include("topdown.jl")

@@ -76,7 +76,7 @@ function PetrovGalerkinNCA(
     maxrank=40,
 )
     println("nearinteractions")
-    @time nears = assemblenears(
+    #=@time nears = assemblenears(
         operator,
         testspace,
         trialspace,
@@ -84,20 +84,20 @@ function PetrovGalerkinNCA(
         isnear=isnear,
         scheduler=scheduler,
         matrixdata=matrixdata,
-    )
+    )=#
     farmatrix = AdaptiveCrossApproximation.AbstractKernelMatrix(
         operator, testspace, trialspace; matrixdata=farmatrixdata
     )
     println("fardata")
     @time testfardata, trialfardata = fardata(tree, isnear)
 
-    tolerance!(
-        testcompressor.factorization, admissiblelevel(testtree(tree), testfardata, isnear)
-    )
-    tolerance!(
-        trialcompressor.factorization,
-        admissiblelevel(trialtree(tree), trialfardata, isnear),
-    )
+    #tolerance!(
+    #    testcompressor.factorization, admissiblelevel(testtree(tree), testfardata, isnear)
+    #)
+    #tolerance!(
+    #    trialcompressor.factorization,
+    #    admissiblelevel(trialtree(tree), trialfardata, isnear),
+    #)
     println("testcompressor")
     @time nestedtestbases, testtransfermats, testpivots = testbases(
         testcompressor, farmatrix, tree, testfardata; scheduler=scheduler, maxrank=maxrank
