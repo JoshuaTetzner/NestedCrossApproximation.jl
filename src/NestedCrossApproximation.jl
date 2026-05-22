@@ -27,4 +27,5 @@ include("couplingmatrices.jl")
 
 include("nca/abstractnca.jl")
 include("nca/petrovgalerkinnca.jl")
+include("orientation_utils.jl")
 end

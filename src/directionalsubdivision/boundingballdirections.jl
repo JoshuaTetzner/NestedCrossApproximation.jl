@@ -44,13 +44,13 @@ end
 end
 
 function directionalfardata(
-    fardata::FarData, cltree::BoundingBallTree, reftree::BoundingBallTree, isnear
+    fardata::FarData, tree::BoundingBallTree, fartree::BoundingBallTree, isnear
 )
     farptr = NestedCrossApproximation.farptr(fardata)
     fars = NestedCrossApproximation.fars(fardata)
     nnodes = length(farptr) - 1
-    N = size(eltype(cltree), 1)   # spatial dimension
-    F = eltype(eltype(cltree))    # float type
+    N = size(eltype(tree), 1)   # spatial dimension
+    F = eltype(eltype(tree))    # float type
     k = isnear.k
     γ = isnear.islf.γ
     # dirs[node]  = indices into that node's totalEvec that are actually used (unique)
@@ -65,22 +65,22 @@ function directionalfardata(
     dirsvec = Vector{Vector{SVector{N,F}}}(undef, nnodes)
 
     # --- Top-down pass ---
-    for level in H2Trees.levels(cltree)
-        for node in H2Trees.LevelIterator(cltree, level)
-            pnode = H2Trees.parent(cltree, node)
+    for level in H2Trees.levels(tree)
+        for node in H2Trees.LevelIterator(tree, level)
+            pnode = H2Trees.parent(tree, node)
             hasfars = farptr[node + 1] > farptr[node]
             hasparentvecs = pnode != 0 && isassigned(dirsvec, pnode)
             hasparentdirs = pnode != 0 && !isempty(dirs[pnode])
-            if !isnear.islf(cltree, node)
+            if !isnear.islf(tree, node)
                 @assert hasparentvecs == hasparentdirs "Parent dirs without parent vecs should not happen"
             end
             # LF nodes do not use directional subdivision.
             # Store [0] for direct LF fars, or when inheriting from an LF parent with dirs.
-            if isnear.islf(cltree, node)
+            if isnear.islf(tree, node)
                 inheritlf =
                     hasparentdirs &&
                     level > 1 &&
-                    isnear.islf(cltree, H2Trees.parent(cltree, node))
+                    isnear.islf(tree, H2Trees.parent(tree, node))
                 dirs[node] = (hasfars || inheritlf) ? Int[0] : Int[]
                 pdirmap[node] = inheritlf ? [1] : Int[]
                 continue
@@ -89,13 +89,13 @@ function directionalfardata(
             (!hasfars && !hasparentvecs) && (dirs[node] = Int[]; continue)
 
             totaldirsvec = directions(
-                Val(N), F(2) * H2Trees.radius(cltree, node), F(k), F(γ)
+                Val(N), F(2) * H2Trees.radius(tree, node), F(k), F(γ)
             )
             # Assign each far to the closest direction (index into totalEvec).
             nfars_node = Int(farptr[node + 1] - farptr[node])
             nodedirs = Vector{Int}(undef, nfars_node)
             for (i, faridx) in enumerate(farptr[node]:(farptr[node + 1] - 1))
-                vec = interaction(node, fars[faridx], cltree, reftree)
+                vec = interaction(node, fars[faridx], tree, fartree)
                 nodedirs[i] = _nearest_direction(totaldirsvec, vec)
             end
 
@@ -106,10 +106,10 @@ function directionalfardata(
             # Map each parent direction to the closest direction in totalEvec,
             # using child-centered far vectors when the parent direction has fars.
             dirmap = iszero(pnode) ? Int[] : zeros(Int, length(dirs[pnode]))
-            ctopc = H2Trees.center(reftree, pnode) - H2Trees.center(reftree, node)
+            ctopc = H2Trees.center(tree, node) - H2Trees.center(tree, pnode)
             pdirmultiplicator =
-                isnear.k * (2 * H2Trees.radius(reftree, pnode)) / isnear.ηhf +
-                2 * H2Trees.radius(reftree, pnode)
+                isnear.k * (2 * H2Trees.radius(tree, pnode)) / isnear.ηhf +
+                2 * H2Trees.radius(tree, pnode)
             if !iszero(pnode)
                 for didx in eachindex(dirs[pnode])
                     # This if clause might be completely wrong!!!
@@ -121,7 +121,7 @@ function directionalfardata(
                     #    count = Int(dircounter[pnode][didx])
                     #    acc = zero(dirsvec[pnode][didx])
                     #    @inbounds for faridx in pstart:(pstart + count - 1)
-                    #        acc += interaction(node, fars[faridx], cltree, reftree)
+                    #        acc += interaction(node, fars[faridx], tree, fartree)
                     #    end
                     #    dirmap[didx] = _nearest_direction(totaldirsvec, acc)
                     #else

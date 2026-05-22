@@ -191,7 +191,7 @@ function testbases(
     for level in reverse(levels(testtree(tree)))
         testclusters = collect(LevelIterator(testtree(tree), level))
         @tasks for t in testclusters
-            println("t: $t")
+            #println("t: $t")
             @set scheduler = scheduler
             @local begin
                 farbuffer = fartestbuffer(compressor.factorization, farmatrix, maxrank)
@@ -215,11 +215,6 @@ function testbases(
                             append!(tvalues, tpivots[cglobalidx])
                         end
                     end
-                    #adaptedFt = adapt_farfield_indices(compressor, trialtree(tree), Ft)
-                    adaptedFt = Int[]
-                    for ft in Ft
-                        append!(adaptedFt, H2Trees.leaves(trialtree(tree), ft))
-                    end
 
                     tpivots[diridx], _ = compute_test_pivots!(
                         factorization,
@@ -227,7 +222,7 @@ function testbases(
                         farmatrix,
                         tree,
                         tvalues,
-                        adaptedFt,
+                        Ft,
                         buffer,
                         farbuffer;
                         maxrank=maxrank,

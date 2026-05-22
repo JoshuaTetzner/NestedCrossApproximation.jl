@@ -91,13 +91,6 @@ function PetrovGalerkinNCA(
     println("fardata")
     @time testfardata, trialfardata = fardata(tree, isnear)
 
-    #tolerance!(
-    #    testcompressor.factorization, admissiblelevel(testtree(tree), testfardata, isnear)
-    #)
-    #tolerance!(
-    #    trialcompressor.factorization,
-    #    admissiblelevel(trialtree(tree), trialfardata, isnear),
-    #)
     println("testcompressor")
     @time nestedtestbases, testtransfermats, testpivots = testbases(
         testcompressor, farmatrix, tree, testfardata; scheduler=scheduler, maxrank=maxrank

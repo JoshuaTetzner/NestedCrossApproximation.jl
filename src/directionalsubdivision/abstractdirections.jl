@@ -116,9 +116,7 @@ end
 # Range of local dir indices of node whose parent direction is pdir.
 function childdirrange(data::DirectionalData, node::Int, pdir::Int)
     block = data.parentdir[Int(data.parentdirptr[node]):(Int(data.parentdirptr[node + 1]) - 1)]
-    lo = searchsortedfirst(block, pdir)
-    hi = searchsortedlast(block, pdir)
-    return lo:hi
+    return findall(==(pdir), block)
 end
 
 function dirmap(data::DirectionalData, node::Int)
@@ -199,9 +197,9 @@ function dirfarfield(tree, data::DirectionalData, node::Int, dir::Int)
     return ff
 end
 
-# Compute the interaction vector from clnode in cltree to refnode in reftree.
-function interaction(clnode::Int, refnode::Int, cltree, reftree)
-    return H2Trees.center(cltree, clnode) - H2Trees.center(reftree, refnode)
+# Compute the interaction vector from node in tree to farnode in fartree.
+function interaction(node::Int, farnode::Int, tree, fartree)
+    return H2Trees.center(tree, node) - H2Trees.center(fartree, farnode)
 end
 
 function isbasisnode(tree, data::DirectionalData, node::Int, dir::Int)
@@ -212,5 +210,5 @@ function isbasisnode(tree, data::DirectionalData, node::Int, dir::Int)
 end
 
 function angle(a::SVector{D,F}, b::SVector{D,F}) where {D,F}
-    return acos(min(dot(a, b) / (norm(a) * norm(b)), 1.0))
+    return acos(clamp(dot(a, b) / (norm(a) * norm(b)), -1.0, 1.0))
 end

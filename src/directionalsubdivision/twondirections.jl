@@ -190,27 +190,27 @@ function _descend_direction(
     return current
 end
 
-function directionalfardata(fardata::FarData, cltree::TwoNTree, reftree::TwoNTree, isnear)
+function directionalfardata(fardata::FarData, tree::TwoNTree, fartree::TwoNTree, isnear)
     farptr = NestedCrossApproximation.farptr(fardata)
     fars = NestedCrossApproximation.fars(fardata)
-    dirtree = DirectionTree(cltree, farptr, isnear.islf)
+    dirtree = DirectionTree(tree, farptr, isnear.islf)
     nnodes = length(farptr) - 1
     dirs = Vector{Vector{Int}}(undef, nnodes)
     dircounter = [Int[] for _ in 1:nnodes]
     pdirmap = [Int[] for _ in 1:nnodes]
     pdircounter = zeros(Int, nnodes)
-    for level in H2Trees.levels(cltree)
-        for node in H2Trees.LevelIterator(cltree, level)
-            pnode = H2Trees.parent(cltree, node)
+    for level in H2Trees.levels(tree)
+        for node in H2Trees.LevelIterator(tree, level)
+            pnode = H2Trees.parent(tree, node)
             hasfars = farptr[node + 1] > farptr[node]
             hasparentdirs = pnode != 0 && !isempty(dirs[pnode])
 
             # LF nodes do not use directional subdivision.
             # Store [0] for direct LF fars, or when inheriting from an LF parent with dirs.
-            if isnear.islf(cltree, level)
-                inheritlf = hasparentdirs && level > 1 && isnear.islf(cltree, level - 1)
+            if isnear.islf(tree, level)
+                inheritlf = hasparentdirs && level > 1 && isnear.islf(tree, level - 1)
                 dirs[node] = (hasfars || inheritlf) ? Int[0] : Int[]
-                pdrimap[node] = inheritlf ? [1] : Int[]
+                pdirmap[node] = inheritlf ? [1] : Int[]
                 continue
             end
 
@@ -219,7 +219,7 @@ function directionalfardata(fardata::FarData, cltree::TwoNTree, reftree::TwoNTre
             nfars_node = Int(farptr[node + 1] - farptr[node])
             nodedirs = Vector{Int}(undef, nfars_node)
             for (i, faridx) in enumerate(farptr[node]:(farptr[node + 1] - 1))
-                vec = interaction(node, fars[faridx], cltree, reftree)
+                vec = interaction(node, fars[faridx], tree, fartree)
                 nodedirs[i] = direction(vec, dirtree, level)
             end
 
