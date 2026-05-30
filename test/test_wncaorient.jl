@@ -12,7 +12,7 @@ using Random
 @inline unit(v) = v / norm(v)
 @inline cz(x) = iszero(x) ? zero(x) : x
 @inline clean(v) = typeof(v)(cz(v[1]), cz(v[2]), cz(v[3]))
-@inline roundvec(v; digits=2) = clean(
+@inline roundvec(v; digits=1) = clean(
     typeof(v)(
         round(v[1]; digits=digits),
         round(v[2]; digits=digits),
@@ -48,6 +48,10 @@ end
     return cell[1], cell[2]
 end
 
+@inline function cellnormal(verts, cell)
+    return cross(verts[cell[2]] - verts[cell[1]], verts[cell[3]] - verts[cell[1]])
+end
+
 function rwg_orientations(rwg)
     mesh  = rwg.geo
     verts = vertices(mesh)
@@ -59,10 +63,8 @@ function rwg_orientations(rwg)
     cn = similar(rwg.pos, nc)
 
     @inbounds for c in 1:nc
-        cn[c] = clean(unit(normal(chart(mesh, cells[c]))))
+        cn[c] = clean(unit(cellnormal(verts, cells[c])))
     end
-
-    println(unique(cn))
 
     @inbounds for i in eachindex(rwg.fns)
         fn = rwg.fns[i]
@@ -110,7 +112,7 @@ function orientation_keys(ℓ, n; dell=1, dn=1)
     return q
 end
 ##
-Γ = meshcuboid(1.0, 1.0, 1.0, 0.0135)
+Γ = meshicosphere(60, 1.0)#meshcuboid(1.0, 1.0, 1.0, 0.01)
 RT = raviartthomas(Γ)
 println("Size RT ", length(RT))
 h = edgeinfo(Γ)[3]
@@ -130,8 +132,9 @@ trialtree = KMeansTree(
     RT.pos, 2; minvalues=100, updateradii=H2Trees.unsafemaxradiusboundingsphere
 )
 tree = H2Trees.BlockTree(testtree, trialtree)
+
 isnear = NestedCrossApproximation.isnearwideband(k; ηhf=5.0, γ=1.0);
-##
+
 edges, normals = rwg_orientations(RT)
 unique(normals)
 edgeids, normalids, nedgeids, nnormalids = NestedCrossApproximation.basisfunction_orientation_ids(
@@ -142,8 +145,7 @@ trial_node_normal_sets, trialnormalids, ntrialnormalids = NestedCrossApproximati
 )
 test_node_normal_sets, testnormalids, ntestnormalids = NestedCrossApproximation.node_normal_orientation_sets(
     normals, testtree
-)
-edges
+);
 ##
 
 x = rand(ComplexF64, length(RT))
@@ -177,7 +179,7 @@ tol = 1e-3
             OversampIFNormEst(tol),
         ),
     ),
-    #scheduler=SerialScheduler(),
+    scheduler=SerialScheduler(),
 );
 ##
 hmat = AdaptiveCrossApproximation.HMatrix(
@@ -207,46 +209,60 @@ estimate_reldifference(farh2mat, farhmat; tol=1e-4)
 #t = 566
 #tidcs = H2Trees.values(H2Trees.testtree(tree), t)
 tidcs = [
-    75390,
-    23502,
-    75352,
-    75206,
-    75303,
-    75292,
-    23479,
-    75392,
-    75258,
-    75300,
-    75254,
-    75221,
-    75405,
-    75242,
-    75208,
-    75209,
-    75233,
-    75399,
-    23484,
-    75290,
-    75307,
-    82015,
-    75310,
-    16674,
-    23408,
-    81964,
-    75275,
-    23424,
-    75328,
-    75281,
-    75295,
-    82021,
-    75320,
-    81962,
-    75280,
-    75289,
-    75313,
-    82024,
+    22422,
+    22423,
+    22424,
+    22425,
+    22426,
+    22427,
+    22428,
+    22429,
+    31409,
+    31410,
+    31411,
+    31416,
+    31417,
+    31418,
+    31419,
+    31420,
+    31421,
+    31422,
+    31423,
+    31424,
+    31425,
+    31426,
+    31428,
+    31429,
+    31430,
+    31722,
+    31723,
+    31724,
+    31726,
+    31727,
+    31728,
+    31729,
+    31730,
+    31731,
+    31733,
+    31746,
+    31747,
+    31757,
+    31759,
+    31760,
+    31761,
+    31762,
+    31763,
+    31764,
+    31765,
+    31767,
+    31768,
+    31769,
+    31770,
+    31772,
+    31952,
+    31954,
 ]
-Ft = [656, 1511]
+Ft = [2049, 2052, 1457, 1464, 1535, 2035, 1479, 1343]
 
 sidcs = H2Trees.values(H2Trees.trialtree(tree), Ft);
 
@@ -262,15 +278,15 @@ p = scatter(
     getindex.(spos, 2),
     getindex.(spos, 3);
     aspect_ratio=:equal,
-    xlims=(-0.24, 1.25),
-    ylims=(-0.25, 1.25),
-    zlims=(-0.250, 1.25),
+    xlims=(-1, 1),
+    ylims=(-1, 1),
+    zlims=(-1, 1),
 );
 scatter!(getindex.(tpos, 1), getindex.(tpos, 2), getindex.(tpos, 3));
 
 display(p)
 ##
-tol = 1e-3
+tol = 1e-4
 cpiv = AdaptiveCrossApproximation.TreeMimicryPivoting2(
     RT.pos, RT.pos, edgeids, trialnormalids, trial_node_normal_sets, trialtree
 )
@@ -287,46 +303,20 @@ cols = zeros(Int, 40)
 blk = A[tidcs, sidcs]
 n, r, c = iacafctr(A, colbuffer, rowbuffer, row, cols, tidcs, Ft, 40;)
 norm(blk - A[tidcs, c] * inv(A[r, c]) * A[r, sidcs]) / norm(blk)
+##
 for i in 1:n
-    println(norm(blk - A[tidcs, c[1:i]] * inv(A[r[1:i], c[1:i]]) * A[r[1:i], sidcs]))
+    println(
+        norm(blk - A[tidcs, c[1:i]] * inv(A[r[1:i], c[1:i]]) * A[r[1:i], sidcs]) / norm(blk)
+    )
 end
 
 ##
-U, V = AdaptiveCrossApproximation.aca(
-    blk;
-    convergence=AdaptiveCrossApproximation.CombinedConvCrit([
-        FNormEstimator(tol * 1e-2),
-        AdaptiveCrossApproximation.RandomSampling(; tol=tol * 1e-2, factor=1.0),
-    ]),
-);
+U, V = AdaptiveCrossApproximation.aca(blk; tol=1e-3);
 norm(blk - U * V) / norm(blk)
 ##
 size(U)
-r = tidcs[[1, 31, 4, 65, 84, 6, 3, 72, 74, 80, 11, 21, 10, 89, 90, 40, 70, 58, 8, 35, 9, 7]]
-c = sidcs[[
-    447,
-    504,
-    525,
-    404,
-    704,
-    221,
-    6835,
-    401,
-    693,
-    3983,
-    473,
-    382,
-    519,
-    1727,
-    6483,
-    2740,
-    111,
-    449,
-    979,
-    662,
-    474,
-    593,
-]]
+r = tidcs[[1, 28, 10, 47, 52, 50, 3, 5, 36, 37, 26]]
+c = sidcs[[120, 901, 52, 1702, 1581, 119, 54, 1748, 896, 1068, 50]]
 ##
 
 spos = RT.pos[sidcs]
@@ -338,9 +328,9 @@ p = scatter(
     getindex.(spos, 2),
     getindex.(spos, 3);
     aspect_ratio=:equal,
-    xlims=(-0.24, 1.25),
-    ylims=(-0.25, 1.25),
-    zlims=(-0.250, 1.25),
+    xlims=(-1, 1),
+    ylims=(-1, 1),
+    zlims=(-1, 1),
 );
 scatter!(getindex.(tpos, 1), getindex.(tpos, 2), getindex.(tpos, 3));
 scatter!([getindex.(spivs, 1)], [getindex.(spivs, 2)], [getindex.(spivs, 3)])

@@ -58,7 +58,7 @@ function testbases(
                     farmatrix,
                     tree,
                     tvalues,
-                    adaptedFt,
+                    Ft,
                     buffer,
                     farbuffer;
                     maxrank=maxrank,
@@ -124,14 +124,14 @@ function trialbases(
                         append!(svalues, spivots[child])
                     end
                 end
-                adaptedFs = adapt_farfield_indices(compressor, testtree(tree), Fs)
+                #adaptedFs = adapt_farfield_indices(compressor, testtree(tree), Fs)
 
                 _, spivots[s] = compute_trial_pivots!(
                     factorization,
                     nothing,
                     farmatrix,
                     tree,
-                    adaptedFs,
+                    Fs,
                     svalues,
                     farbuffer,
                     buffer;
@@ -191,14 +191,17 @@ function testbases(
     for level in reverse(levels(testtree(tree)))
         testclusters = collect(LevelIterator(testtree(tree), level))
         @tasks for t in testclusters
-            #println("t: $t")
             @set scheduler = scheduler
             @local begin
                 farbuffer = fartestbuffer(compressor.factorization, farmatrix, maxrank)
-                factorization = _stateful_factorization(compressor.factorization, maxrank)
-                #factorization = _stateful_factorization(
-                #    compressor.factorization, farmatrix, maxrank
-                #)
+                factorization =
+                    if compressor.factorization isa AdaptiveCrossApproximation.ACA
+                        _stateful_factorization(
+                            compressor.factorization, farmatrix, maxrank
+                        )
+                    else
+                        _stateful_factorization(compressor.factorization, maxrank)
+                    end
                 representor = _stateful_representor(compressor.representor, maxrank)
             end
             for (localdiridx, diridx) in enumerate(dirrange(fardata, t))
@@ -209,7 +212,6 @@ function testbases(
                         append!(tvalues, H2Trees.values(testtree(tree), t))
                     else
                         for child in H2Trees.ChildIterator(testtree(tree), t)
-                            #println("node: $t, child: $child, localdiridx: $localdiridx") #= --- IGNORE ===#
                             cdiridx = dirmap(fardata, child)[localdiridx]
                             cglobalidx = dirrange(fardata, child)[cdiridx]
                             append!(tvalues, tpivots[cglobalidx])
@@ -294,10 +296,15 @@ function trialbases(
             @set scheduler = scheduler
             @local begin
                 farbuffer = fartrialbuffer(compressor.factorization, farmatrix, maxrank)
-                factorization = _stateful_factorization(compressor.factorization, maxrank)
-                #factorization = _stateful_factorization(
-                #    compressor.factorization, farmatrix, maxrank
-                #)
+                factorization =
+                    if compressor.factorization isa AdaptiveCrossApproximation.ACA
+                        _stateful_factorization(
+                            compressor.factorization, farmatrix, maxrank
+                        )
+                    else
+                        _stateful_factorization(compressor.factorization, maxrank)
+                    end
+
                 representor = _stateful_representor(compressor.representor, maxrank)
             end
             for (localdiridx, diridx) in enumerate(dirrange(fardata, s))
@@ -313,8 +320,6 @@ function trialbases(
                             append!(svalues, spivots[cglobalidx])
                         end
                     end
-                    #svalues = H2Trees.values(trialtree(tree), s)
-                    #adaptedFs = adapt_farfield_indices(compressor, testtree(tree), Fs)
 
                     _, spivots[diridx] = compute_trial_pivots!(
                         factorization,
@@ -332,6 +337,7 @@ function trialbases(
                         bases[diridx] = nestedtrialbasis(svalues, spivots[diridx], buffer)
                         basescounter[s] += 1
                     else
+                        transfercounter[s] += 1
                         children = collect(H2Trees.ChildIterator(trialtree(tree), s))
 
                         nodetransfers = Vector{Matrix{T}}(undef, length(children))
@@ -347,7 +353,6 @@ function trialbases(
                         end
                         transferdirs[diridx] = nodechilddirs
                         transfer[diridx] = nodetransfers
-                        transfercounter[s] += 1
                     end
                 end
             end
@@ -356,8 +361,7 @@ function trialbases(
         sizehint!(level_transfer_diridcs[level], sum(transfercounter[trialclusters]))
         @inbounds for s in trialclusters
             for diridx in dirrange(fardata, s)
-                if !isbasisnode(trialtree(tree), fardata, s, fardata.dirs[diridx]) &&
-                    isassigned(transfer, diridx)
+                if isassigned(transfer, diridx)
                     push!(level_transfer_diridcs[level], diridx)
                 end
             end

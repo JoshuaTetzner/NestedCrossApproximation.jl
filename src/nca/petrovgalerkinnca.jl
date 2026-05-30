@@ -73,10 +73,10 @@ function PetrovGalerkinNCA(
     trialcompressor=TopDown(),
     scheduler=DynamicScheduler(),
     isnear=isnear(),
-    maxrank=40,
+    maxrank=50,
 )
     println("nearinteractions")
-    #=@time nears = assemblenears(
+    @time nears = assemblenears(
         operator,
         testspace,
         trialspace,
@@ -84,7 +84,7 @@ function PetrovGalerkinNCA(
         isnear=isnear,
         scheduler=scheduler,
         matrixdata=matrixdata,
-    )=#
+    )
     farmatrix = AdaptiveCrossApproximation.AbstractKernelMatrix(
         operator, testspace, trialspace; matrixdata=farmatrixdata
     )

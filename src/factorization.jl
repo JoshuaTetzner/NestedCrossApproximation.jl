@@ -108,14 +108,12 @@ function compute_test_pivots!(
     farmatrix::AbstractKernelMatrix{T},
     tree::H2Trees.BlockTree,
     tidcs::Vector{Int},
-    Ftidcs::Vector{Int},
+    Ft::Vector{Int},
     colbuffer::AbstractMatrix{T},
     rowbuffer::AbstractMatrix{T};
     maxrank::Int=40,
 ) where {T}
-    Ftidcs = adapt_farfield_indices(
-        factorization, representor, trialtree(tree), tidcs, Ftidcs
-    )
+    Ftidcs = adapt_farfield_indices(factorization, representor, trialtree(tree), tidcs, Ft)
     ranklimit = _ranklimit(
         maxrank, length(tidcs), _effective_far_count(factorization, trialtree(tree), Ftidcs)
     )
@@ -137,35 +135,7 @@ function compute_test_pivots!(
         cols,
         ranklimit,
     )
-
-    #if Ftidcs == [214] && length(tidcs) == 41
-    sidcs = H2Trees.values(H2Trees.trialtree(tree), Ftidcs)
-    blk = zeros(eltype(farmatrix), length(tidcs), length(sidcs))
-    farmatrix(blk, tidcs, sidcs)
-    r = [findfirst(==(r), tidcs) for r in rows[1:npivots]]
-    c = [findfirst(==(c), sidcs) for c in cols[1:npivots]]
-    if norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk) > 8e-3
-        println(
-            size(blk),
-            "; ",
-            "npivots: ",
-            npivots,
-            ", relerr: ",
-            norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk),
-            "; ",
-            tidcs,
-            "; ",
-            Ftidcs,
-        )
-        #error()
-    end
     npivots == maxrank && @warn "Maximum rank block"
-    ##
-    if npivots == maxrank
-        println("maxrank for: ", tidcs, Ftidcs)
-        #error()
-    end
-    ##
     _finalize_test_buffers!(
         factorization, colbuffer, rowbuffer, tidcs, Ftidcs, rows, cols, npivots
     )

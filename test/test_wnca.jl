@@ -119,6 +119,39 @@ x = rand(ComplexF64, length(sRT))
 A = assemble(op, tRT, sRT; threading=:cellcoloring);
 
 ##
+tol = 1e-3
+testconvergence = AdaptiveCrossApproximation.CombinedConvCrit([
+    AdaptiveCrossApproximation.FNormEstimator(tol),
+    AdaptiveCrossApproximation.RandomSampling(; tol=tol),
+])
+colpivoting = AdaptiveCrossApproximation.CombinedPivStrat([
+    MaximumValue(), AdaptiveCrossApproximation.RandomSamplingPivoting(2)
+])
+
+trialconvergence = AdaptiveCrossApproximation.CombinedConvCrit([
+    AdaptiveCrossApproximation.FNormEstimator(tol),
+    AdaptiveCrossApproximation.RandomSampling(; tol=tol),
+])
+rowpivoting = AdaptiveCrossApproximation.CombinedPivStrat([
+    MaximumValue(), AdaptiveCrossApproximation.RandomSamplingPivoting(1)
+])
+
+h2matacacor = NestedCrossApproximation.PetrovGalerkinNCA(
+    op,
+    tRT,
+    sRT,
+    tree;
+    testcompressor=NestedCrossApproximation.BottomUp(;
+        factorization=ACA(; columnpivoting=colpivoting, convergence=testconvergence)
+    ),
+    trialcompressor=NestedCrossApproximation.BottomUp(;
+        factorization=ACA(; rowpivoting=rowpivoting, convergence=trialconvergence)
+    ),
+    maxrank=50,
+    isnear=isnear,
+    scheduler=DynamicScheduler(),
+)
+##
 
 tol = 1e-3
 @time h2mat = NestedCrossApproximation.PetrovGalerkinNCA(
