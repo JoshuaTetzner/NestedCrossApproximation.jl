@@ -92,6 +92,96 @@ function (compressor::Union{TopDownCompressor{CompressorType,Nothing}})(
     return (testidcs[rpivots], trialidcs[cpivots])
 end
 
+function (compressor::BottomUpCompressor{CompressorType,TreeMimicryRepresentor})(
+    tree::NminTree{D},
+    cbuffer::Matrix{K},
+    rbuffer::Channel{Matrix{K}},
+    assembler::Function,
+    node::Int,
+    fars::Vector{Int},
+    pivots::Vector{Tuple{Vector{Int},Vector{Int}}};
+    tol=1e-4,
+    maxrank=40,
+) where {D,K,CompressorType<:LRF.ACA}
+    localrbuffer = take!(rbuffer)
+    if ClusterTrees.haschildren(tree, node)
+        rowidcs = Int[]
+        for child in ClusterTrees.children(tree, node)
+            append!(rowidcs, pivots[child][1])
+        end
+    else
+        rowidcs = value(tree, node)
+    end
+    cbuffer[rowidcs, 1:maxrank] .= 0.0
+
+    colidcs = compressor.representor(node, fars, length(rowidcs))
+
+    lm = FastBEAST.LRF.LazyMatrix(assembler, rowidcs, colidcs, K)
+    lrf = LRF.init(compressor.lrf, lm)
+
+    if maxrank > min(length(rowidcs), length(colidcs))
+        maxrank = min(length(rowidcs), length(colidcs))
+    end
+    rpivots, cpivots, npivots = lrf(
+        lm, localrbuffer, view(cbuffer, rowidcs, 1:maxrank), maxrank, tol
+    )
+
+    rpivots = rpivots[1:npivots]
+    cpivots = cpivots[1:npivots]
+
+    cbuffer[rowidcs, 1:npivots] =
+        cbuffer[rowidcs, 1:npivots] * localrbuffer[1:npivots, cpivots]
+
+    localrbuffer[1:npivots, 1:length(colidcs)] .= 0
+    put!(rbuffer, localrbuffer)
+    return (rowidcs[rpivots], colidcs[cpivots])
+end
+
+function (compressor::Union{BottomUpCompressor{CompressorType,TreeMimicryRepresentor}})(
+    tree::NminTree{D},
+    cbuffer::Channel{Matrix{K}},
+    rbuffer::Matrix{K},
+    assembler::Function,
+    fars::Vector{Int},
+    node::Int,
+    pivots::Vector{Tuple{Vector{Int},Vector{Int}}};
+    tol=1e-4,
+    maxrank=40,
+) where {D,K,CompressorType<:LRF.ACA}
+    localcbuffer = take!(cbuffer)
+    if ClusterTrees.haschildren(tree, node)
+        colidcs = Int[]
+        for child in ClusterTrees.children(tree, node)
+            append!(colidcs, pivots[child][2])
+        end
+    else
+        colidcs = value(tree, node)
+    end
+    rbuffer[1:maxrank, colidcs] .= 0.0
+
+    rowidcs = compressor.representor(node, fars, length(colidcs))
+
+    lm = FastBEAST.LRF.LazyMatrix(assembler, rowidcs, colidcs, K)
+    lrf = LRF.init(compressor.lrf, lm)
+
+    if maxrank > min(length(rowidcs), length(colidcs))
+        maxrank = min(length(rowidcs), length(colidcs))
+    end
+    rpivots, cpivots, npivots = lrf(
+        lm, view(rbuffer, 1:maxrank, colidcs), localcbuffer, maxrank, tol
+    )
+
+    rpivots = rpivots[1:npivots]
+    cpivots = cpivots[1:npivots]
+
+    rbuffer[1:npivots, colidcs] =
+        localcbuffer[rpivots, 1:npivots] * rbuffer[1:npivots, colidcs]
+
+    localcbuffer[1:length(rowidcs), 1:npivots] .= 0
+    put!(cbuffer, localcbuffer)
+    return (rowidcs[rpivots], colidcs[cpivots])
+end
+
 #IACA
 function (compressor::TopDownCompressor{CompressorType,Nothing})(
     cbuffer::Matrix{K},

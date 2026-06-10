@@ -71,7 +71,7 @@ function PetrovGalerkinNCA(
     blktree = ClusterTrees.BlockTrees.BlockTree(testtree, trialtree)
     nears, fars = computeinteractions(blktree; η=η)
     println("Nearinteractions")
-    nearinteractions = FastBEAST.assemble(
+    @time nearinteractions = FastBEAST.assemble(
         operator,
         testspace,
         trialspace,
@@ -81,7 +81,6 @@ function PetrovGalerkinNCA(
         quadstrat=nearinteractionquadstrat,
         multithreading=multithreading,
     )
-
     @views farblkassembler = BEAST.blockassembler(
         operator, testspace, trialspace; quadstrat=momentquadstrat
     )
@@ -90,7 +89,7 @@ function PetrovGalerkinNCA(
         return farblkassembler(tdata, sdata, store)
     end
     println("Farinteractions")
-    fartime = @elapsed begin
+    @time begin
         nestedtestbases, testtransfermatrices, testpivots = compress_testtree(
             testtree,
             trialtree,

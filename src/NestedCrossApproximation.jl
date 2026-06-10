@@ -22,6 +22,7 @@ export TreeMimicryPivoting
 export IncompleteNormEstimator
 
 include("NCA/AbstractNCA.jl")
+include("representor.jl")
 include("lowrankfactorization.jl")
 include("buffer.jl")
 include("x2x.jl")
@@ -36,6 +37,7 @@ include("MV/PetrovGalerkinNCA.jl")
 include("utils.jl")
 include("matrixblocks.jl")
 
+export TreeMimicryRepresentor
 export PetrovGalerkinNCA
 export GalerkinNCA
 export TopDownCompressor

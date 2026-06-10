@@ -12,6 +12,19 @@ function buffer(
     return (maxrc, maxrank)
 end
 
+# ACA TreeMimicryRepresentor
+function channel(
+    ::BottomUpCompressor{CT,TreeMimicryRepresentor}, maxrc::Int; maxrank=40
+) where {CT<:LRF.ACA}
+    return (100, 100)
+end
+
+function buffer(
+    ::BottomUpCompressor{CT,TreeMimicryRepresentor}, maxrc::Int; maxrank=40
+) where {CT<:LRF.ACA}
+    return (maxrc, maxrank)
+end
+
 # IACA
 function channel(
     ::Union{TopDownCompressor{CT,Nothing},BottomUpCompressor{CT,Nothing}},
