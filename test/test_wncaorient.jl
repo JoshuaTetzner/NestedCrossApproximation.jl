@@ -73,14 +73,18 @@ function rwg_orientations(rwg)
         cell = cells[sh.cellid]
         a, b = edgeverts(cell, sh.refid)
 
-        ℓ[i] = roundvec(canon(unit(verts[b] - verts[a])))
+        ℓ[i] = canon(unit(verts[b] - verts[a]))
 
         ni = cn[fn[1].cellid]
         if length(fn) > 1
             nj = cn[fn[2].cellid]
+            if abs(dot(ni, nj)) < 0.9
+                n[i] = zero(ni)
+                continue
+            end
             ni += dot(ni, nj) < 0 ? -nj : nj
         end
-        n[i] = roundvec(unit(ni))
+        n[i] = clean(unit(ni))
     end
 
     return ℓ, n
@@ -112,25 +116,25 @@ function orientation_keys(ℓ, n; dell=1, dn=1)
     return q
 end
 ##
-Γ = meshicosphere(60, 1.0)#meshcuboid(1.0, 1.0, 1.0, 0.01)
+Γ = meshsphere(1.0, 0.05)#meshcuboid(1.0, 1.0, 1.0, 0.0275)
+
 RT = raviartthomas(Γ)
 println("Size RT ", length(RT))
 h = edgeinfo(Γ)[3]
 λ = 10h
 k = 2 * pi / λ
-gamma = im * k
-alpha = -gamma
-beta = -1 / gamma
 
 op = Maxwell3D.singlelayer(; wavenumber=k)#
 Random.seed!(1)
 testtree = KMeansTree(
     RT.pos, 2; minvalues=100, updateradii=H2Trees.unsafemaxradiusboundingsphere
 )
+#testtree = TwoNTree(RT, 0.0; minvalues=200)
 Random.seed!(1)
 trialtree = KMeansTree(
     RT.pos, 2; minvalues=100, updateradii=H2Trees.unsafemaxradiusboundingsphere
 )
+#trialtree = TwoNTree(RT, 0.0; minvalues=200)
 tree = H2Trees.BlockTree(testtree, trialtree)
 
 isnear = NestedCrossApproximation.isnearwideband(k; ηhf=5.0, γ=1.0);
@@ -147,7 +151,6 @@ test_node_normal_sets, testnormalids, ntestnormalids = NestedCrossApproximation.
     normals, testtree
 );
 ##
-
 x = rand(ComplexF64, length(RT))
 
 A = assemble(op, RT, RT; threading=:cellcoloring);
@@ -179,8 +182,18 @@ tol = 1e-3
             OversampIFNormEst(tol),
         ),
     ),
-    scheduler=SerialScheduler(),
+    #scheduler=SerialScheduler(),
 );
+##
+function fullfarmat(A, h2mat)
+    nears = h2mat.nearinteractions
+    for i in eachindex(nears.blocks)
+        A[nears.rowindices[i], nears.colindices[i]] .= 0.0
+    end
+    return A
+end
+
+A = fullfarmat(A, h2mat)
 ##
 hmat = AdaptiveCrossApproximation.HMatrix(
     op,
@@ -209,61 +222,69 @@ estimate_reldifference(farh2mat, farhmat; tol=1e-4)
 #t = 566
 #tidcs = H2Trees.values(H2Trees.testtree(tree), t)
 tidcs = [
-    22422,
-    22423,
-    22424,
-    22425,
-    22426,
-    22427,
-    22428,
-    22429,
-    31409,
-    31410,
-    31411,
-    31416,
-    31417,
-    31418,
-    31419,
-    31420,
-    31421,
-    31422,
-    31423,
-    31424,
-    31425,
-    31426,
-    31428,
-    31429,
-    31430,
-    31722,
-    31723,
-    31724,
-    31726,
-    31727,
-    31728,
-    31729,
-    31730,
-    31731,
-    31733,
-    31746,
-    31747,
-    31757,
-    31759,
-    31760,
-    31761,
-    31762,
-    31763,
-    31764,
-    31765,
-    31767,
-    31768,
-    31769,
-    31770,
-    31772,
-    31952,
-    31954,
+    3331,
+    3332,
+    3333,
+    3334,
+    3335,
+    3336,
+    3337,
+    3338,
+    3339,
+    3340,
+    3341,
+    3342,
+    3343,
+    3344,
+    3345,
+    3346,
+    3347,
+    3348,
+    3349,
+    3350,
+    3351,
+    3352,
+    3353,
+    3354,
+    3355,
+    3356,
+    3357,
+    3358,
+    3359,
+    3360,
+    3361,
+    3362,
+    3363,
+    3364,
+    3365,
+    3366,
+    3367,
+    3368,
+    3369,
+    3370,
+    3371,
+    3372,
+    3373,
+    3374,
+    3375,
+    3376,
+    3377,
+    3378,
+    3379,
+    3380,
+    3381,
+    3382,
+    3383,
+    3384,
+    3385,
+    3386,
+    3387,
+    3388,
+    3389,
+    3390,
+    3391,
 ]
-Ft = [2049, 2052, 1457, 1464, 1535, 2035, 1479, 1343]
-
+Ft = [77]
 sidcs = H2Trees.values(H2Trees.trialtree(tree), Ft);
 
 ##
@@ -286,10 +307,11 @@ scatter!(getindex.(tpos, 1), getindex.(tpos, 2), getindex.(tpos, 3));
 
 display(p)
 ##
-tol = 1e-4
+tol = 1e-3
 cpiv = AdaptiveCrossApproximation.TreeMimicryPivoting2(
     RT.pos, RT.pos, edgeids, trialnormalids, trial_node_normal_sets, trialtree
 )
+trial_node_normal_sets[77]
 factorization = iACA(MaximumValue(), cpiv, OversampIFNormEst(tol))
 
 bdirs = cpiv.basisdirections

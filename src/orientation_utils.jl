@@ -21,6 +21,29 @@ function orientation_ids(q)
     return ids, Int(nextid)
 end
 
+@inline function _iszero_direction_key(key)
+    return iszero(key[1]) && iszero(key[2]) && iszero(key[3])
+end
+
+function normal_orientation_ids(q)
+    key_to_id = Dict{eltype(q),Int32}()
+    ids = zeros(Int32, length(q))
+    nextid = Int32(0)
+
+    @inbounds for i in eachindex(q)
+        _iszero_direction_key(q[i]) && continue
+        id = get(key_to_id, q[i], Int32(0))
+        if id == 0
+            nextid += 1
+            id = nextid
+            key_to_id[q[i]] = id
+        end
+        ids[i] = id
+    end
+
+    return ids, Int(nextid)
+end
+
 @inline function _canonical_direction_key(v; digits=1)
     scale = 10.0^digits
     x = round(Int16, abs(v[1]) * scale)
@@ -89,10 +112,7 @@ function basisfunction_orientation_ids(
     edges,
     normals;
     edge_digits=1,
-    normal_digits=2,
-    max_normal_phases=3,
-    min_normal_probability=0.1,
-    normal_orth_tol=0.25,
+    normal_digits=1,
 )
     edge_keys = [
         _canonical_direction_key(edge; digits=edge_digits) for edge in edges
@@ -102,18 +122,13 @@ function basisfunction_orientation_ids(
     ]
 
     edgeids, nedgeids = orientation_ids(edge_keys)
-    normalids, nnormalids = phase_orientation_ids(
-        normal_keys;
-        max_phases=max_normal_phases,
-        min_probability=min_normal_probability,
-        orth_tol=normal_orth_tol,
-    )
+    normalids, nnormalids = normal_orientation_ids(normal_keys)
 
     return edgeids, normalids, nedgeids, nnormalids
 end
 
 function node_orientation_sets(
-    oriid::AbstractVector{Int32}, tree, nori::Integer; max_orientations::Int=6
+    oriid::AbstractVector{Int32}, tree, nori::Integer; max_orientations::Int=3
 )
     out = Vector{Vector{Int32}}(undef, length(tree.nodes))
 
@@ -134,11 +149,10 @@ function node_orientation_sets(
         end
 
         if length(touched) > max_orientations
-            fill!(out, Int32[])
-            return out
+            out[node] = Int32[]
+        else
+            out[node] = copy(touched)
         end
-
-        out[node] = copy(touched)
 
         @inbounds for id in touched
             seen[id] = false
@@ -148,55 +162,143 @@ function node_orientation_sets(
     return out
 end
 
-function _has_dominant_node_orientation(oriid, tree; min_probability::Float64=0.8)
-    counts = Dict{Int32,Int}()
+function _key_representatives(keys, ids, nids::Integer)
+    representatives = Vector{eltype(keys)}(undef, nids)
+    @inbounds for i in eachindex(keys)
+        id = ids[i]
+        iszero(id) && continue
+        representatives[id] = keys[i]
+    end
+    return representatives
+end
 
-    for node in eachindex(tree.nodes)
-        empty!(counts)
+function _orthogonal_direction_set(
+    ids::AbstractVector{Int32}, representatives; orth_tol::Float64=0.25
+)
+    @inbounds for i in 1:length(ids)
+        vi = _keyvector(representatives[ids[i]])
+        for j in (i + 1):length(ids)
+            vj = _keyvector(representatives[ids[j]])
+            _absdot(vi, vj) <= orth_tol || return false
+        end
+    end
+    return true
+end
+
+function node_normal_orientation_sets(
+    normalids::AbstractVector{Int32},
+    tree,
+    nnormalids::Integer,
+    representatives;
+    max_orientations::Int=3,
+    primary_probability::Float64=0.2,
+    secondary_probability::Float64=0.1,
+    active_probability::Float64=0.7,
+    orth_tol::Float64=0.25,
+)
+    out = Vector{Vector{Int32}}(undef, length(tree.nodes))
+
+    counts = zeros(Int, nnormalids)
+    touched = Int32[]
+    selected = Int32[]
+    inherited = Int32[]
+
+    function visit!(node::Int, parentclasses::AbstractVector{Int32})
+        empty!(touched)
+        empty!(selected)
+        empty!(inherited)
         idcs = H2Trees.values(tree, node)
+        ntotal = length(idcs)
 
         @inbounds for i in idcs
-            id = oriid[i]
+            id = normalids[i]
             iszero(id) && continue
-            counts[id] = get(counts, id, 0) + 1
+            if iszero(counts[id])
+                push!(touched, id)
+            end
+            counts[id] += 1
         end
 
-        for count in values(counts)
-            count / length(idcs) >= min_probability && return true
+        sort!(touched; by=id -> counts[id], rev=true)
+        selectedcount = 0
+        if !isempty(touched) && counts[first(touched)] / ntotal >= primary_probability
+            firstid = first(touched)
+            push!(selected, firstid)
+            selectedcount += counts[firstid]
+
+            @inbounds for k in 2:length(touched)
+                id = touched[k]
+                counts[id] / ntotal < secondary_probability && break
+                v = _keyvector(representatives[id])
+                orthogonal = true
+                for sid in selected
+                    u = _keyvector(representatives[sid])
+                    if _absdot(v, u) > orth_tol
+                        orthogonal = false
+                        break
+                    end
+                end
+                if orthogonal
+                    push!(selected, id)
+                    selectedcount += counts[id]
+                    length(selected) == max_orientations && break
+                end
+            end
+        end
+
+        if length(selected) >= 2 && selectedcount / ntotal >= active_probability
+            out[node] = copy(selected)
+        elseif !isempty(parentclasses)
+            @inbounds for id in parentclasses
+                id <= nnormalids && counts[id] > 0 && push!(inherited, id)
+            end
+            out[node] = copy(inherited)
+        else
+            out[node] = Int32[]
+        end
+
+        @inbounds for id in touched
+            counts[id] = 0
+        end
+
+        for child in H2Trees.children(tree, node)
+            visit!(Int(child), out[node])
         end
     end
 
-    return false
+    for node in eachindex(tree.nodes)
+        H2Trees.parent(tree, node) == 0 && visit!(Int(node), Int32[])
+    end
+
+    return out
 end
 
 function node_normal_orientation_sets(
     normals,
     tree;
-    normal_digits=2,
-    max_orientations=6,
-    max_normal_phases=3,
-    min_normal_probability=0.1,
-    normal_orth_tol=0.25,
-    min_node_probability=0.8,
+    normal_digits=1,
+    max_orientations=3,
+    primary_probability=0.2,
+    secondary_probability=0.1,
+    active_probability=0.7,
+    orth_tol=0.25,
 )
     normal_keys = [
         _canonical_direction_key(normal; digits=normal_digits) for normal in normals
     ]
-    normalids, nnormalids = phase_orientation_ids(
-        normal_keys;
-        max_phases=max_normal_phases,
-        min_probability=min_normal_probability,
-        orth_tol=normal_orth_tol,
-    )
+    normalids, nnormalids = normal_orientation_ids(normal_keys)
+    representatives = _key_representatives(normal_keys, normalids, nnormalids)
 
-    if nnormalids > 0 &&
-       !_has_dominant_node_orientation(normalids, tree; min_probability=min_node_probability)
-        fill!(normalids, Int32(0))
-        return [Int32[] for _ in eachindex(tree.nodes)], normalids, 0
-    end
-
-    nodesets = node_orientation_sets(
-        normalids, tree, nnormalids; max_orientations=max_orientations
+    nodesets = node_normal_orientation_sets(
+        normalids,
+        tree,
+        nnormalids,
+        representatives;
+        max_orientations=max_orientations,
+        primary_probability=primary_probability,
+        secondary_probability=secondary_probability,
+        active_probability=active_probability,
+        orth_tol=orth_tol,
     )
 
     return nodesets, normalids, nnormalids

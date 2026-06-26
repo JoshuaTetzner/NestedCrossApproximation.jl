@@ -101,16 +101,20 @@ end
 
 function diridxfromlocalfaridx(data::DirectionalData, node::Int, faridx::Int)
     drange = dirrange(data, node)
-    dctr = data.dircounter[drange]
-    @assert sum(dctr) >= faridx "Local far index $faridx exceeds total fars $(sum(dctr)) for node $node."
+    total = 0
+    @inbounds for diridx in drange
+        total += data.dircounter[diridx]
+    end
+    @assert total >= faridx "Local far index $faridx exceeds total fars $total for node $node."
 
-    for (diridx, count) in enumerate(dctr)
-        faridx -= count
-        if faridx <= 0
-            return drange[diridx]
+    remaining = faridx
+    @inbounds for diridx in drange
+        remaining -= data.dircounter[diridx]
+        if remaining <= 0
+            return diridx
         end
     end
-    return error("Local far index $faridx exceeds total fars $(sum(dctr)) for node $node.")
+    return error("Local far index $faridx exceeds total fars $total for node $node.")
 end
 
 # Range of local dir indices of node whose parent direction is pdir.

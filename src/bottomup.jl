@@ -45,7 +45,7 @@ function testbases(
                 if isleaf(testtree(tree), t)
                     append!(tvalues, H2Trees.values(testtree(tree), t))
                 else
-                    for child in H2Trees.ChildIterator(testtree(tree), t)
+                    @inbounds for child in H2Trees.ChildIterator(testtree(tree), t)
                         append!(tvalues, tpivots[child])
                     end
                 end
@@ -120,7 +120,7 @@ function trialbases(
                 if isleaf(trialtree(tree), s)
                     append!(svalues, H2Trees.values(trialtree(tree), s))
                 else
-                    for child in H2Trees.ChildIterator(trialtree(tree), s)
+                    @inbounds for child in H2Trees.ChildIterator(trialtree(tree), s)
                         append!(svalues, spivots[child])
                     end
                 end
@@ -204,14 +204,16 @@ function testbases(
                     end
                 representor = _stateful_representor(compressor.representor, maxrank)
             end
+            #println("t: ", t)
             for (localdiridx, diridx) in enumerate(dirrange(fardata, t))
                 Ft = dirfarfield(testtree(tree), fardata, t, fardata.dirs[diridx])
+                #println("dir: ", fardata.dirs[diridx])
                 if !isempty(Ft)
                     tvalues = Int[]
                     if isbasisnode(testtree(tree), fardata, t, fardata.dirs[diridx])
                         append!(tvalues, H2Trees.values(testtree(tree), t))
                     else
-                        for child in H2Trees.ChildIterator(testtree(tree), t)
+                        @inbounds for child in H2Trees.ChildIterator(testtree(tree), t)
                             cdiridx = dirmap(fardata, child)[localdiridx]
                             cglobalidx = dirrange(fardata, child)[cdiridx]
                             append!(tvalues, tpivots[cglobalidx])
@@ -314,7 +316,7 @@ function trialbases(
                     if isbasisnode(trialtree(tree), fardata, s, fardata.dirs[diridx])
                         append!(svalues, H2Trees.values(trialtree(tree), s))
                     else
-                        for child in H2Trees.ChildIterator(trialtree(tree), s)
+                        @inbounds for child in H2Trees.ChildIterator(trialtree(tree), s)
                             cdiridx = dirmap(fardata, child)[localdiridx]
                             cglobalidx = dirrange(fardata, child)[cdiridx]
                             append!(svalues, spivots[cglobalidx])

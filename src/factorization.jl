@@ -136,6 +136,18 @@ function compute_test_pivots!(
         ranklimit,
     )
     npivots == maxrank && @warn "Maximum rank block"
+
+    #=sidcs = H2Trees.values(trialtree(tree), Ft)
+    blk = zeros(ComplexF64, length(tidcs), length(sidcs))
+    farmatrix(blk, tidcs, sidcs)
+    r = [findfirst(x -> x == rr, tidcs) for rr in rows[1:npivots]]
+    c = [findfirst(x -> x == cc, sidcs) for cc in cols[1:npivots]]
+    if norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk) > 5e-3
+        println(norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk))
+        println(tidcs, Ft)
+        error()
+    end=#
+
     _finalize_test_buffers!(
         factorization, colbuffer, rowbuffer, tidcs, Ftidcs, rows, cols, npivots
     )
@@ -219,6 +231,90 @@ function _compute_raw_pivots!(
     return npivots, rowpivs, colpivs
 end
 
+function _right_multiply_rows!(
+    A::AbstractMatrix{T},
+    rowidcs::AbstractVector{Int},
+    right::AbstractMatrix,
+    rightcols::AbstractVector{Int},
+    n::Int,
+) where {T}
+    scratch = Vector{T}(undef, n)
+    @inbounds for row in rowidcs
+        for j in 1:n
+            acc = zero(T)
+            for k in 1:n
+                acc += A[row, k] * right[k, rightcols[j]]
+            end
+            scratch[j] = acc
+        end
+        for j in 1:n
+            A[row, j] = scratch[j]
+        end
+    end
+    return A
+end
+
+function _right_multiply_rows!(
+    A::AbstractMatrix{T}, rowidcs::AbstractVector{Int}, right::AbstractMatrix, n::Int
+) where {T}
+    scratch = Vector{T}(undef, n)
+    @inbounds for row in rowidcs
+        for j in 1:n
+            acc = zero(T)
+            for k in 1:n
+                acc += A[row, k] * right[k, j]
+            end
+            scratch[j] = acc
+        end
+        for j in 1:n
+            A[row, j] = scratch[j]
+        end
+    end
+    return A
+end
+
+function _left_multiply_cols!(
+    left::AbstractMatrix,
+    leftrows::AbstractVector{Int},
+    A::AbstractMatrix{T},
+    colidcs::AbstractVector{Int},
+    n::Int,
+) where {T}
+    scratch = Vector{T}(undef, n)
+    @inbounds for col in colidcs
+        for i in 1:n
+            acc = zero(T)
+            for k in 1:n
+                acc += left[leftrows[i], k] * A[k, col]
+            end
+            scratch[i] = acc
+        end
+        for i in 1:n
+            A[i, col] = scratch[i]
+        end
+    end
+    return A
+end
+
+function _left_multiply_cols!(
+    left::AbstractMatrix, A::AbstractMatrix{T}, colidcs::AbstractVector{Int}, n::Int
+) where {T}
+    scratch = Vector{T}(undef, n)
+    @inbounds for col in colidcs
+        for i in 1:n
+            acc = zero(T)
+            for k in 1:n
+                acc += left[i, k] * A[k, col]
+            end
+            scratch[i] = acc
+        end
+        for i in 1:n
+            A[i, col] = scratch[i]
+        end
+    end
+    return A
+end
+
 function _finalize_test_buffers!(
     ::AdaptiveCrossApproximation.ACA,
     colbuffer,
@@ -229,8 +325,7 @@ function _finalize_test_buffers!(
     cols,
     npivots,
 )
-    colbuffer[tidcs, 1:npivots] =
-        colbuffer[tidcs, 1:npivots] * rowbuffer[1:npivots, cols[1:npivots]]
+    _right_multiply_rows!(colbuffer, tidcs, rowbuffer, cols, npivots)
     rowbuffer[1:npivots, Ftidcs] .= 0
     return nothing
 end
@@ -245,8 +340,7 @@ function _finalize_test_buffers!(
     cols,
     npivots,
 )
-    colbuffer[tidcs, 1:npivots] =
-        colbuffer[tidcs, 1:npivots] * rowbuffer[1:npivots, 1:npivots]
+    _right_multiply_rows!(colbuffer, tidcs, rowbuffer, npivots)
     rowbuffer[1:npivots, 1:npivots] .= 0
     return nothing
 end
@@ -261,8 +355,7 @@ function _finalize_trial_buffers!(
     cols,
     npivots,
 )
-    rowbuffer[1:npivots, sidcs] =
-        colbuffer[rows[1:npivots], 1:npivots] * rowbuffer[1:npivots, sidcs]
+    _left_multiply_cols!(colbuffer, rows, rowbuffer, sidcs, npivots)
     colbuffer[Fsidcs, 1:npivots] .= 0
     return nothing
 end
@@ -277,8 +370,7 @@ function _finalize_trial_buffers!(
     cols,
     npivots,
 )
-    rowbuffer[1:npivots, sidcs] =
-        colbuffer[1:npivots, 1:npivots] * rowbuffer[1:npivots, sidcs]
+    _left_multiply_cols!(colbuffer, rowbuffer, sidcs, npivots)
     colbuffer[1:npivots, 1:npivots] .= 0
     return nothing
 end

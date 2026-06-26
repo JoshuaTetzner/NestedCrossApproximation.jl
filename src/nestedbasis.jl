@@ -27,11 +27,15 @@ end
 function nestedtestbasis(
     tvalues::Vector{Int}, pivots::Vector{Int}, buffer::AbstractMatrix{K}
 ) where {K}
-    return buffer[tvalues, 1:length(pivots)] / buffer[pivots, 1:length(pivots)]
+    n = length(pivots)
+    basis = buffer[tvalues, 1:n]
+    return rdiv!(basis, lu!(buffer[pivots, 1:n]))
 end
 
 function nestedtrialbasis(
     svalues::Vector{Int}, pivots::Vector{Int}, buffer::AbstractMatrix{K}
 ) where {K}
-    return buffer[1:length(pivots), pivots] \ buffer[1:length(pivots), svalues]
+    n = length(pivots)
+    basis = buffer[1:n, svalues]
+    return ldiv!(lu!(buffer[1:n, pivots]), basis)
 end

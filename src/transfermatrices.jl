@@ -148,7 +148,9 @@ function testtransfermatrices!(
 end
 
 function testtransfer(rows, childrows, buf)
-    return buf[childrows, 1:length(rows)] / buf[rows, 1:length(rows)]
+    n = length(rows)
+    transfer = buf[childrows, 1:n]
+    return rdiv!(transfer, lu!(buf[rows, 1:n]))
 end
 
 function trialtransfermatrices!(
@@ -171,7 +173,9 @@ function trialtransfermatrices!(
 end
 
 function trialtransfer(cols, childcols, buf)
-    return buf[1:length(cols), cols] \ buf[1:length(cols), childcols]
+    n = length(cols)
+    transfer = buf[1:n, childcols]
+    return ldiv!(lu!(buf[1:n, cols]), transfer)
 end
 
 #=

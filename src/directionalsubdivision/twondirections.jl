@@ -112,7 +112,7 @@ function _dirroot_and_maxlevel(tree::TwoNTree, farptr::AbstractVector{<:Integer}
         error("Invalid farptr length: expected $(nnodes + 1), got $(length(farptr)).")
 
     # Find the first LF level (going coarse→fine, level numbers increase)
-    lflevel = 1
+    lflevel = H2Trees.minimumlevel(tree)
     while !islf(tree, lflevel)
         lflevel += 1
     end
@@ -214,7 +214,7 @@ function directionalfardata(fardata::FarData, tree::TwoNTree, fartree::TwoNTree,
                 continue
             end
 
-            (!hasfars && hasparentdirs) && (dirs[node] = Int[]; continue)
+            (!hasfars && !hasparentdirs) && (dirs[node] = Int[]; continue)
 
             nfars_node = Int(farptr[node + 1] - farptr[node])
             nodedirs = Vector{Int}(undef, nfars_node)
@@ -257,6 +257,7 @@ function directionalfardata(fardata::FarData, tree::TwoNTree, fartree::TwoNTree,
     for node in eachindex(dirs)
         if !isempty(dirs[node]) && isempty(dircounter[node])
             dircounter[node] = [max(0, Int(farptr[node + 1] - farptr[node]))]
+            pdircounter[node] = length(pdirmap[node])
         end
     end
 

@@ -27,7 +27,9 @@ end
 
 @inline function (f::IsLowFrequencyFunctor)(tree::H2Trees.TwoNTree, level::Int)
     # Characteristic box diameter at this level in TwoN trees.
-    diam = 2 * sqrt(3) * H2Trees.halfsize(tree) / (2.0^(level - 1))
+    rootlevel = H2Trees.minimumlevel(tree)
+    N = size(eltype(tree), 1)
+    diam = 2 * sqrt(N) * H2Trees.halfsize(tree) / (2.0^(level - rootlevel))
     return f.k * diam <= f.γ * one(promote_type(typeof(f.k), typeof(diam)))
 end
 
