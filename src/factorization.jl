@@ -1,4 +1,22 @@
-import H2Trees: numberofvalues
+# Per-node point count without materializing the full point-id array (H2Trees.values
+# recursively concatenates leaf data; counting only needs leaf sizes).
+function _clustersize(tree, node::Int)
+    isleaf(tree, node) && return length(H2Trees.values(H2Trees.data(tree, node)))
+    n = 0
+    for leaf in H2Trees.leaves(tree, node)
+        n += length(H2Trees.values(H2Trees.data(tree, Int(leaf))))
+    end
+    return n
+end
+
+# Marks far-field indices that are already point-level. TopDown must merge its own
+# far-field node's points with inherited point-level parent pivots before calling
+# compute_test_pivots!/compute_trial_pivots! (BottomUp never needs this — it always
+# passes raw node ids). Wrapping that merged list tells adapt_farfield_indices to
+# skip the node->point conversion it would otherwise apply.
+struct PreResolvedIndices
+    idcs::Vector{Int}
+end
 
 @inline function _stateful_factorization(
     factorization::AdaptiveCrossApproximation.ACA, maxrank::Int
@@ -18,9 +36,27 @@ end
     return factorization([1], [1], maxrank)
 end
 
+# ACA's 2-arg form only resolves for the literal default MaximumValue/MaximumValue/
+# FNormEstimator combo, and even then builds the convergence criterion without
+# seeing the matrix or maxrank. The 3-arg form is the generically-correct one, so
+# always route ACA through it; iACA only has the maxrank-aware 2-arg form.
+@inline function _build_stateful_factorization(
+    factorization::AdaptiveCrossApproximation.ACA, farmatrix, maxrank::Int
+)
+    return _stateful_factorization(factorization, farmatrix, maxrank)
+end
+
+@inline function _build_stateful_factorization(factorization, farmatrix, maxrank::Int)
+    return _stateful_factorization(factorization, maxrank)
+end
+
 @inline function _stateful_representor(representor::MimicryRep, maxrank::Int)
     return MimicryRepFunctor(representor.pivoting([1], [1], maxrank))
 end
+
+# RandomRep/ChebyshevRep are stateless and already implement the (refidcs, idcs, npivots)
+# call protocol directly, so they need no per-task conversion.
+@inline _stateful_representor(representor::Representor, maxrank::Int) = representor
 
 @inline function _stateful_representor(::Nothing, maxrank::Int)
     return nothing
@@ -36,29 +72,82 @@ _use_tree_mimicry(f::AdaptiveCrossApproximation.iACA) =
     (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor) ||
     (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor2)
 
-_effective_far_count(::AdaptiveCrossApproximation.ACA, tree, Fidcs::Vector{Int}) =
-    length(Fidcs)
+# A representor has already reduced/capped Fidcs to the achievable representative count,
+# so its resolved length is authoritative regardless of factorization type or Ft's shape.
+_effective_far_count(
+    factorization, tree, Ft, representor::Representor, Fidcs::Vector{Int}
+) = length(Fidcs)
+
+# Pre-resolved Ft is always point-level by construction, regardless of factorization
+# type, so its effective count is always just its length (bypasses the tree-mimicry
+# per-cluster counting below, which only makes sense for genuinely node-level Ft).
+_effective_far_count(
+    factorization, tree, ::PreResolvedIndices, ::Nothing, Fidcs::Vector{Int}
+) = length(Fidcs)
+
+_effective_far_count(
+    ::AdaptiveCrossApproximation.ACA, tree, ::Vector{Int}, ::Nothing, Fidcs::Vector{Int}
+) = length(Fidcs)
 
 function _effective_far_count(
-    factorization::AdaptiveCrossApproximation.iACA, tree, Fidcs::Vector{Int}
+    factorization::AdaptiveCrossApproximation.iACA,
+    tree,
+    ::Vector{Int},
+    ::Nothing,
+    Fidcs::Vector{Int},
 )
     return if _use_tree_mimicry(factorization)
-        sum(numberofvalues(tree, node) for node in Fidcs)
+        sum(_clustersize(tree, node) for node in Fidcs)
     else
         length(Fidcs)
     end
 end
 
+adapt_farfield_indices(
+    factorization, ::Nothing, tree, t::Vector{Int}, Ft::PreResolvedIndices
+) = Ft.idcs
+
+# MimicryRep needs node-level Ft so it can walk the tree top-down from a coherent cluster.
+# PreResolvedIndices is already a flattened, multi-origin point set (TopDown's own
+# far-field node merged with inherited parent pivots) with no single node to walk from,
+# so it isn't supported there - only with BottomUp, which always passes raw node ids.
 function adapt_farfield_indices(
-    factorization::CP, representor::RP, tree, t::Vector{Int}, Ft::Vector{Int}
-) where {RP<:MimicryRepFunctor,CP}
-    npivots = min(length(t), sum(numberofvalues(tree, node) for node in Ft))
+    factorization, ::MimicryRepFunctor, tree, t::Vector{Int}, Ft::PreResolvedIndices
+)
+    return throw(
+        ArgumentError(
+            "MimicryRep requires node-level far-field indices and is only supported " *
+            "with BottomUp; got pre-resolved point-level indices (TopDown).",
+        ),
+    )
+end
+
+function adapt_farfield_indices(
+    factorization, representor::MimicryRepFunctor, tree, t::Vector{Int}, Ft::Vector{Int}
+)
+    npivots = min(length(t), sum(_clustersize(tree, node) for node in Ft))
     return representor(t, Ft, npivots)
 end
 
-adapt_farfield_indices(
-    factorization::CP, ::Nothing, tree, t::Vector{Int}, Ft::Vector{Int}
-) where {CP} = adapt_farfield_indices(factorization, tree, Ft)
+# RandomRep/ChebyshevRep operate on flat point indices regardless of origin, so they work
+# uniformly for raw node-level Ft (BottomUp) and pre-resolved point-level Ft (TopDown).
+function adapt_farfield_indices(
+    factorization, representor::Representor, tree, t::Vector{Int}, Ft::PreResolvedIndices
+)
+    npivots = min(length(t), length(Ft.idcs))
+    return representor(t, Ft.idcs, npivots)
+end
+
+function adapt_farfield_indices(
+    factorization, representor::Representor, tree, t::Vector{Int}, Ft::Vector{Int}
+)
+    Fvalues = H2Trees.values(tree, Ft)
+    npivots = min(length(t), length(Fvalues))
+    return representor(t, Fvalues, npivots)
+end
+
+adapt_farfield_indices(factorization, ::Nothing, tree, t::Vector{Int}, Ft::Vector{Int}) =
+    adapt_farfield_indices(factorization, tree, Ft)
 
 function adapt_farfield_indices(
     factorization::AdaptiveCrossApproximation.iACA, tree, Ft::Vector{Int}
@@ -108,14 +197,16 @@ function compute_test_pivots!(
     farmatrix::AbstractKernelMatrix{T},
     tree::H2Trees.BlockTree,
     tidcs::Vector{Int},
-    Ft::Vector{Int},
+    Ft::Union{Vector{Int},PreResolvedIndices},
     colbuffer::AbstractMatrix{T},
     rowbuffer::AbstractMatrix{T};
     maxrank::Int=40,
 ) where {T}
     Ftidcs = adapt_farfield_indices(factorization, representor, trialtree(tree), tidcs, Ft)
     ranklimit = _ranklimit(
-        maxrank, length(tidcs), _effective_far_count(factorization, trialtree(tree), Ftidcs)
+        maxrank,
+        length(tidcs),
+        _effective_far_count(factorization, trialtree(tree), Ft, representor, Ftidcs),
     )
 
     colbuffer[tidcs, 1:ranklimit] .= 0
@@ -137,17 +228,6 @@ function compute_test_pivots!(
     )
     npivots == maxrank && @warn "Maximum rank block"
 
-    #=sidcs = H2Trees.values(trialtree(tree), Ft)
-    blk = zeros(ComplexF64, length(tidcs), length(sidcs))
-    farmatrix(blk, tidcs, sidcs)
-    r = [findfirst(x -> x == rr, tidcs) for rr in rows[1:npivots]]
-    c = [findfirst(x -> x == cc, sidcs) for cc in cols[1:npivots]]
-    if norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk) > 5e-3
-        println(norm(blk - blk[:, c] * inv(blk[r, c]) * blk[r, :]) / norm(blk))
-        println(tidcs, Ft)
-        error()
-    end=#
-
     _finalize_test_buffers!(
         factorization, colbuffer, rowbuffer, tidcs, Ftidcs, rows, cols, npivots
     )
@@ -160,7 +240,7 @@ function compute_trial_pivots!(
     representor,
     farmatrix::AbstractKernelMatrix{T},
     tree::H2Trees.BlockTree,
-    Fs::Vector{Int},
+    Fs::Union{Vector{Int},PreResolvedIndices},
     sidcs::Vector{Int},
     colbuffer::AbstractMatrix{T},
     rowbuffer::AbstractMatrix{T};
@@ -168,7 +248,9 @@ function compute_trial_pivots!(
 ) where {T}
     Fsidcs = adapt_farfield_indices(factorization, representor, testtree(tree), sidcs, Fs)
     ranklimit = _ranklimit(
-        maxrank, _effective_far_count(factorization, testtree(tree), Fsidcs), length(sidcs)
+        maxrank,
+        _effective_far_count(factorization, testtree(tree), Fs, representor, Fsidcs),
+        length(sidcs),
     )
 
     rowbuffer[1:ranklimit, sidcs] .= 0

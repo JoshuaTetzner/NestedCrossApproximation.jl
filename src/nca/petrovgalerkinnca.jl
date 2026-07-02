@@ -74,51 +74,47 @@ function PetrovGalerkinNCA(
     scheduler=DynamicScheduler(),
     isnear=isnear(),
     maxrank=50,
+    verbose::Bool=false,
 )
-    println("nearinteractions")
-    @time nears = assemblenears(
+    nears = assemblenears(
         operator,
         testspace,
         trialspace,
-        tree;
+        tree,
+        PreserveSpaceOrder();
         isnear=isnear,
         scheduler=scheduler,
         matrixdata=matrixdata,
+        verbose=verbose,
     )
+
     farmatrix = AdaptiveCrossApproximation.AbstractKernelMatrix(
         operator, testspace, trialspace; matrixdata=farmatrixdata
     )
-    println("fardata")
-    @time testfardata, trialfardata = fardata(tree, isnear)
-
-    println("testcompressor")
-    @time nestedtestbases, testtransfermats, testpivots = testbases(
-        testcompressor, farmatrix, tree, testfardata; scheduler=scheduler, maxrank=maxrank
+    fars = assemblefars(
+        tree,
+        isnear,
+        testcompressor,
+        trialcompressor,
+        farmatrix;
+        scheduler=scheduler,
+        maxrank=maxrank,
+        verbose=verbose,
     )
-    println("trialcompressor")
-    @time nestedtrialbases, trialtransfermats, trialpivots = trialbases(
-        trialcompressor, farmatrix, tree, trialfardata; scheduler=scheduler, maxrank=maxrank
-    )
-
-    println("couplingmatrices")
-    @time couplingmatrices = assemble_couplingstore(
-        farmatrix, testpivots, trialpivots, testfardata, trialfardata; scheduler=scheduler
-    )
-    aggregationplan = plan_from_pivots(trialpivots)
-    disaggregationplan = plan_from_pivots(testpivots)
+    aggregationplan = plan_from_pivots(fars.trialpivots)
+    disaggregationplan = plan_from_pivots(fars.testpivots)
 
     return PetrovGalerkinNCA{eltype(farmatrix)}(
         tree,
         nears,
-        nestedtestbases,
-        nestedtrialbases,
-        testtransfermats,
-        trialtransfermats,
-        couplingmatrices,
+        fars.nestedtestbases,
+        fars.nestedtrialbases,
+        fars.testtransfermats,
+        fars.trialtransfermats,
+        fars.couplingmatrices,
         aggregationplan,
         disaggregationplan,
-        SerialScheduler(),
-        #scheduler,
+        scheduler,
         (length(testspace), length(trialspace)),
     )
 end
@@ -183,8 +179,8 @@ end
     LinearMaps.check_dim_mul(y, A, x)
     fill!(y, zero(eltype(y)))
 
-    xhat = zeros(eltype(y), A.aggregationplan.ptr[end] - 1)
-    yhat = zeros(eltype(y), A.disaggregationplan.ptr[end] - 1)
+    xhat = zeros(eltype(y), A.aggregationplan.globalidxtocoeffptr[end] - 1)
+    yhat = zeros(eltype(y), A.disaggregationplan.globalidxtocoeffptr[end] - 1)
 
     _project_to_coefficients!(
         xhat,
@@ -236,8 +232,8 @@ end
     LinearMaps.check_dim_mul(y, A, x)
     fill!(y, zero(eltype(y)))
 
-    xhat = zeros(eltype(y), A.lmap.disaggregationplan.ptr[end] - 1)
-    yhat = zeros(eltype(y), A.lmap.aggregationplan.ptr[end] - 1)
+    xhat = zeros(eltype(y), A.lmap.disaggregationplan.globalidxtocoeffptr[end] - 1)
+    yhat = zeros(eltype(y), A.lmap.aggregationplan.globalidxtocoeffptr[end] - 1)
 
     _project_to_coefficients!(
         xhat,
@@ -293,8 +289,8 @@ end
     LinearMaps.check_dim_mul(y, A, x)
     fill!(y, zero(eltype(y)))
 
-    xhat = zeros(eltype(y), A.lmap.disaggregationplan.ptr[end] - 1)
-    yhat = zeros(eltype(y), A.lmap.aggregationplan.ptr[end] - 1)
+    xhat = zeros(eltype(y), A.lmap.disaggregationplan.globalidxtocoeffptr[end] - 1)
+    yhat = zeros(eltype(y), A.lmap.aggregationplan.globalidxtocoeffptr[end] - 1)
 
     _project_to_coefficients!(
         xhat,

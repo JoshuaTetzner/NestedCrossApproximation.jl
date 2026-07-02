@@ -5,18 +5,19 @@ function assemble_couplingstore(
     testfardata::FarData,
     trialfardata::FarData;
     scheduler=DynamicScheduler(),
+    pbar=Progress(0; enabled=false),
 ) where {T}
-    fp = farptr(testfardata)
-    fs = fars(testfardata)
-    nfars = length(fs)
-    isempty(fs) &&
-        return CouplingStore{T}(CouplingTraversalPlan(Int.(fp), Int.(fs)), Matrix{T}[])
+    ptr = farptr(testfardata)
+    nodes = farnodes(testfardata)
+    nfars = length(nodes)
+    isempty(nodes) &&
+        return CouplingStore{T}(CouplingTraversalPlan(Int.(ptr), Int.(nodes)), Matrix{T}[])
 
-    nnodes = length(fp) - 1
+    nnodes = length(ptr) - 1
     couplingmatrices = Vector{Matrix{T}}(undef, nfars)
     @inbounds for tnode in 1:nnodes
-        for i in fp[tnode]:(fp[tnode + 1] - 1)
-            snode = fs[i]
+        for i in ptr[tnode]:(ptr[tnode + 1] - 1)
+            snode = nodes[i]
             couplingmatrices[i] = zeros(
                 T, length(testpivots[tnode]), length(trialpivots[snode])
             )
@@ -25,15 +26,16 @@ function assemble_couplingstore(
 
     @tasks for tnode in 1:nnodes
         @set scheduler = scheduler
-        for i in fp[tnode]:(fp[tnode + 1] - 1)
-            snode = fs[i]
+        for i in ptr[tnode]:(ptr[tnode + 1] - 1)
+            snode = nodes[i]
             if !isempty(testpivots[tnode]) && !isempty(trialpivots[snode])
                 farmatrix(couplingmatrices[i], testpivots[tnode], trialpivots[snode])
             end
+            next!(pbar)
         end
     end
 
-    return CouplingStore{T}(CouplingTraversalPlan(Int.(fp), Int.(fs)), couplingmatrices)
+    return CouplingStore{T}(CouplingTraversalPlan(Int.(ptr), Int.(nodes)), couplingmatrices)
 end
 
 function assemble_couplingstore(
@@ -43,23 +45,26 @@ function assemble_couplingstore(
     testfardata::DirectionalData,
     trialfardata::DirectionalData;
     scheduler=DynamicScheduler(),
+    pbar=Progress(0; enabled=false),
 ) where {T}
-    testfp = farptr(testfardata)
-    trialfp = farptr(trialfardata)
-    testfs = fars(testfardata)
-    trialfs = fars(trialfardata)
-    nfars = length(testfs)
-    nnodes = length(testfp) - 1
+    testptr = farptr(testfardata)
+    trialptr = farptr(trialfardata)
+    testnodes = farnodes(testfardata)
+    trialnodes = farnodes(trialfardata)
+    nfars = length(testnodes)
+    nnodes = length(testptr) - 1
 
     couplingmatrices = Vector{Matrix{T}}(undef, nfars)
     sdiridcs = Vector{Int}(undef, nfars)
     tdiridcs = Vector{Int}(undef, nfars)
     @tasks for t in 1:nnodes
         @set scheduler = scheduler
-        for (localsidx, sidx) in enumerate(testfp[t]:(testfp[t + 1] - 1))
-            s = testfs[sidx]
+        for (localsidx, sidx) in enumerate(testptr[t]:(testptr[t + 1] - 1))
+            s = testnodes[sidx]
             tdiridx = diridxfromlocalfaridx(testfardata, t, localsidx)
-            localtidx = findfirst(==(t), view(trialfs, trialfp[s]:(trialfp[s + 1] - 1)))
+            localtidx = findfirst(
+                ==(t), view(trialnodes, trialptr[s]:(trialptr[s + 1] - 1))
+            )
             sdiridx = diridxfromlocalfaridx(trialfardata, s, localtidx)
             couplingmatrices[sidx] = zeros(
                 T, length(testpivots[tdiridx]), length(trialpivots[sdiridx])
@@ -68,12 +73,15 @@ function assemble_couplingstore(
             sdiridcs[sidx] = sdiridx
             tdiridcs[sidx] = tdiridx
 
-            farmatrix(couplingmatrices[sidx], testpivots[tdiridx], trialpivots[sdiridx])
+            if !isempty(testpivots[tdiridx]) && !isempty(trialpivots[sdiridx])
+                farmatrix(couplingmatrices[sidx], testpivots[tdiridx], trialpivots[sdiridx])
+            end
+            next!(pbar)
         end
     end
 
     return CouplingStore{T}(
-        DirCouplingTraversalPlan(Int.(testfp), Int.(tdiridcs), Int.(sdiridcs)),
+        DirCouplingTraversalPlan(Int.(testptr), Int.(tdiridcs), Int.(sdiridcs)),
         couplingmatrices,
     )
 end

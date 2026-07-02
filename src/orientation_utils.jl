@@ -108,15 +108,8 @@ function phase_orientation_ids(
     return phaseids, length(selected)
 end
 
-function basisfunction_orientation_ids(
-    edges,
-    normals;
-    edge_digits=1,
-    normal_digits=1,
-)
-    edge_keys = [
-        _canonical_direction_key(edge; digits=edge_digits) for edge in edges
-    ]
+function basisfunction_orientation_ids(edges, normals; edge_digits=1, normal_digits=1)
+    edge_keys = [_canonical_direction_key(edge; digits=edge_digits) for edge in edges]
     normal_keys = [
         _canonical_direction_key(normal; digits=normal_digits) for normal in normals
     ]

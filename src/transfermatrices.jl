@@ -1,36 +1,39 @@
 function _build_transfer_storage(
     transfer::Vector{Vector{Matrix{T}}}, leveltransfernodes::Vector{Vector{Int}}, tree
 ) where {T}
-    levelptr = Vector{Int}(undef, length(leveltransfernodes) + 1)
-    levelptr[1] = 1
+    leveltoidcsptr = Vector{Int}(undef, length(leveltransfernodes) + 1)
+    leveltoidcsptr[1] = 1
     for level in 1:length(leveltransfernodes)
-        levelptr[level + 1] = levelptr[level] + length(leveltransfernodes[level])
+        leveltoidcsptr[level + 1] =
+            leveltoidcsptr[level] + length(leveltransfernodes[level])
     end
-    levelnodes = collect(Iterators.flatten(leveltransfernodes))
+    levelidcs = collect(Iterators.flatten(leveltransfernodes))
 
-    childptr = Vector{Int}(undef, length(levelnodes) + 1)
-    childptr[1] = 1
-    for nodeidx in eachindex(levelnodes)
-        childptr[nodeidx + 1] = childptr[nodeidx] + length(transfer[levelnodes[nodeidx]])
+    idxtochdsptr = Vector{Int}(undef, length(levelidcs) + 1)
+    idxtochdsptr[1] = 1
+    for nodeidx in eachindex(levelidcs)
+        idxtochdsptr[nodeidx + 1] =
+            idxtochdsptr[nodeidx] + length(transfer[levelidcs[nodeidx]])
     end
 
-    transferbocks = Vector{Matrix{T}}(undef, childptr[end] - 1)
-    childnodes = Vector{Int}(undef, childptr[end] - 1)
+    transferbocks = Vector{Matrix{T}}(undef, idxtochdsptr[end] - 1)
+    chdsidcs = Vector{Int}(undef, idxtochdsptr[end] - 1)
     edgeidx = 1
-    for levelptridx in 1:(length(levelptr) - 1)
-        for nodeidx in levelptr[levelptridx]:(levelptr[levelptridx + 1] - 1)
-            node = levelnodes[nodeidx]
+    for levelptridx in 1:(length(leveltoidcsptr) - 1)
+        for nodeidx in leveltoidcsptr[levelptridx]:(leveltoidcsptr[levelptridx + 1] - 1)
+            node = levelidcs[nodeidx]
             children = collect(H2Trees.ChildIterator(tree, node))
             for childidx in eachindex(transfer[node])
                 transferbocks[edgeidx] = transfer[node][childidx]
-                childnodes[edgeidx] = children[childidx]
+                chdsidcs[edgeidx] = children[childidx]
                 edgeidx += 1
             end
         end
     end
 
     return TransferStore{T}(
-        TransferTraversalPlan(levelptr, levelnodes, childptr, childnodes), transferbocks
+        TransferTraversalPlan(leveltoidcsptr, levelidcs, idxtochdsptr, chdsidcs),
+        transferbocks,
     )
 end
 
@@ -38,100 +41,62 @@ function _build_dirtransfer_storage(
     transfer::Vector{Vector{Matrix{T}}},
     transferdirs::Vector{Vector{Int}},
     leveltransferdirs::Vector{Vector{Int}},
-    tree,
+    leveltransfergroupsizes::Vector{Vector{Int}},
 ) where {T}
-    levelptr = Vector{Int}(undef, length(leveltransferdirs) + 1)
-    levelptr[1] = 1
+    leveltoidcsptr = Vector{Int}(undef, length(leveltransferdirs) + 1)
+    leveltoidcsptr[1] = 1
     for level in 1:length(leveltransferdirs)
-        levelptr[level + 1] = levelptr[level] + length(leveltransferdirs[level])
+        leveltoidcsptr[level + 1] = leveltoidcsptr[level] + length(leveltransferdirs[level])
     end
-    leveldirs = collect(Iterators.flatten(leveltransferdirs))
+    levelidcs = collect(Iterators.flatten(leveltransferdirs))
 
-    childdirptr = Vector{Int}(undef, length(leveldirs) + 1)
-    childdirptr[1] = 1
-    for diridx in eachindex(leveldirs)
-        childdirptr[diridx + 1] = childdirptr[diridx] + length(transfer[leveldirs[diridx]])
+    idxtochdsptr = Vector{Int}(undef, length(levelidcs) + 1)
+    idxtochdsptr[1] = 1
+    for diridx in eachindex(levelidcs)
+        idxtochdsptr[diridx + 1] =
+            idxtochdsptr[diridx] + length(transfer[levelidcs[diridx]])
     end
 
-    transferblocks = Vector{Matrix{T}}(undef, childdirptr[end] - 1)
-    transferblockdirs = Vector{Int}(undef, childdirptr[end] - 1)
-    #childdiridcs = Vector{Int}(undef, childdirptr[end] - 1)
+    transferblocks = Vector{Matrix{T}}(undef, idxtochdsptr[end] - 1)
+    chdsidcs = Vector{Int}(undef, idxtochdsptr[end] - 1)
     edgeidx = 1
-    for levelptridx in 1:(length(levelptr) - 1)
-        for diridx in levelptr[levelptridx]:(levelptr[levelptridx + 1] - 1)
-            dir = leveldirs[diridx]
+    for levelptridx in 1:(length(leveltoidcsptr) - 1)
+        for diridx in leveltoidcsptr[levelptridx]:(leveltoidcsptr[levelptridx + 1] - 1)
+            dir = levelidcs[diridx]
             for childidx in eachindex(transfer[dir])
                 transferblocks[edgeidx] = transfer[dir][childidx]
-                transferblockdirs[edgeidx] = transferdirs[dir][childidx]
-                #childdiridcs[edgeidx] = children[childidx]
+                chdsidcs[edgeidx] = transferdirs[dir][childidx]
                 edgeidx += 1
             end
         end
     end
 
+    ngroups = sum(length, leveltransfergroupsizes)
+    leveltogroupsptr = Vector{Int}(undef, length(leveltransferdirs) + 1)
+    groupsptr = Vector{Int}(undef, ngroups + 1)
+    leveltogroupsptr[1] = 1
+    grp = 1
+    groupsptr[1] = 1
+    for level in 1:length(leveltransferdirs)
+        leveltogroupsptr[level + 1] =
+            leveltogroupsptr[level] + length(leveltransfergroupsizes[level])
+        for gsz in leveltransfergroupsizes[level]
+            groupsptr[grp + 1] = groupsptr[grp] + gsz
+            grp += 1
+        end
+    end
+
     return TransferStore{T}(
-        TransferTraversalPlan(levelptr, leveldirs, childdirptr, transferblockdirs),
+        DirTransferTraversalPlan(
+            leveltoidcsptr, levelidcs, idxtochdsptr, chdsidcs, leveltogroupsptr, groupsptr
+        ),
         transferblocks,
     )
 end
-#=
-function _build_transfer_store(
-    transfer::Vector{Vector{Matrix{T}}},
-    level_transfer_nodes::Vector{Vector{Int}},
-    level_child_counts::Vector{Vector{Int}},
-    tree,
-) where {T}
-    nlevels = length(level_transfer_nodes)
-    level_ptr = Vector{Int}(undef, nlevels + 1)
-    level_ptr[1] = 1
-    for level in 1:nlevels
-        level_ptr[level + 1] = level_ptr[level] + length(level_transfer_nodes[level])
-    end
-
-    nnodes = level_ptr[end] - 1
-    level_nodes = Vector{Int}(undef, nnodes)
-    node_child_counts = Vector{Int}(undef, nnodes)
-    idx = 1
-    @inbounds for level in 1:nlevels
-        nodes = level_transfer_nodes[level]
-        counts = level_child_counts[level]
-        for i in eachindex(nodes)
-            level_nodes[idx] = nodes[i]
-            node_child_counts[idx] = counts[i]
-            idx += 1
-        end
-    end
-
-    node_ptr = Vector{Int}(undef, nnodes + 1)
-    node_ptr[1] = 1
-    for i in 1:nnodes
-        node_ptr[i + 1] = node_ptr[i] + node_child_counts[i]
-    end
-
-    nedges = node_ptr[end] - 1
-    edge_child = Vector{Int}(undef, nedges)
-    blocks = Vector{Matrix{T}}(undef, nedges)
-
-    e = 1
-    @inbounds for i in 1:nnodes
-        node = level_nodes[i]
-        children = collect(H2Trees.ChildIterator(tree, node))
-        tblocks = transfer[node]
-        for j in eachindex(children)
-            edge_child[e] = children[j]
-            blocks[e] = tblocks[j]
-            e += 1
-        end
-    end
-
-    plan = TransferTraversalPlan(level_ptr, level_nodes, node_ptr, edge_child)
-    return TransferStore{T}(plan, blocks)
-end=#
 
 function testtransfermatrices!(
     tree, transfer, levelnodes, pivots, buf; scheduler=DynamicScheduler()
 )
-    levelnodecounts = Vector{Int}(undef, length(levelnodes))
     @tasks for nodeidx in eachindex(levelnodes)
         @set scheduler = scheduler
         node = levelnodes[nodeidx]
@@ -142,9 +107,8 @@ function testtransfermatrices!(
             nodetransfers[j] = testtransfer(pivots[node], pivots[child], buf)
         end
         transfer[node] = nodetransfers
-        levelnodecounts[nodeidx] = length(children)
     end
-    return levelnodecounts
+    return nothing
 end
 
 function testtransfer(rows, childrows, buf)
@@ -156,7 +120,6 @@ end
 function trialtransfermatrices!(
     tree, transfer, levelnodes, pivots, buf; scheduler=DynamicScheduler()
 )
-    levelnodecounts = Vector{Int}(undef, length(levelnodes))
     @tasks for nodeidx in eachindex(levelnodes)
         @set scheduler = scheduler
         node = levelnodes[nodeidx]
@@ -167,9 +130,8 @@ function trialtransfermatrices!(
             nodetransfers[j] = trialtransfer(pivots[node], pivots[child], buf)
         end
         transfer[node] = nodetransfers
-        levelnodecounts[nodeidx] = length(children)
     end
-    return levelnodecounts
+    return nothing
 end
 
 function trialtransfer(cols, childcols, buf)
@@ -177,119 +139,3 @@ function trialtransfer(cols, childcols, buf)
     transfer = buf[1:n, childcols]
     return ldiv!(lu!(buf[1:n, cols]), transfer)
 end
-
-#=
-# directional topdowncompressor
-function testtransfermatrix(
-    t::Int,
-    dir::Int,
-    pivs::Tuple{Vector{Int},Vector{Int}},
-    buffer::Matrix{K},
-    pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
-    tree,
-    dirdata::DirectionalData,
-) where {I,K}
-    tmats = Tuple{Int,Matrix{K}}[]
-    for child in ChildIterator(tree, t)
-        crows = pivots[child][paternaldirection(dirdata, child, dir)][1]
-        rows = pivs[1]
-
-        @assert length(crows) == length(unique(crows))
-        @assert length(rows) == length(unique(rows))
-
-        @views tmat = buffer[crows, 1:length(rows)] / buffer[rows, 1:length(rows)]
-        push!(tmats, (paternaldirection(dirdata, child, dir), tmat))
-    end
-    return tmats
-end
-
-function testtransfermatrices!(
-    tmats::Vector{Dict{Int,Vector{Tuple{Int,Matrix{K}}}}},
-    level::Int,
-    blocks::Vector{D},
-    pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
-    tree,
-    dirdata::DirectionalData;
-    ntasks=Threads.nthreads(),
-) where {I,K,D<:Dict{Int,Matrix{K}}}
-    @tasks for t in collect(H2Trees.LevelIterator(tree, level))
-        @set ntasks = ntasks
-        if !isdirectionalroot(dirdata, tree, t) && isassigned(pivots, t)
-            ntmats = Vector{Tuple{Int,Matrix{K}}}[]
-            for (dir, piv) in pivots[t]
-                dntmats = Tuple{Int,Matrix{K}}[]
-                #cdirs = Int[]
-                for child in ChildIterator(tree, t)
-                    crows = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, t)) for
-                        idx in pivots[child][paternaldirection(dirdata, child, dir)][1]
-                    ]
-                    rows = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, t)) for idx in piv[1]
-                    ]
-                    tmat = blocks[t][dir][crows, :] / blocks[t][dir][rows, :]
-
-                    push!(dntmats, (paternaldirection(dirdata, child, dir), tmat))
-                end
-                push!(ntmats, dntmats)
-            end
-            tmats[t] = Dict(keys(pivots[t]) .=> ntmats)
-        end
-    end
-end
-
-# directional topdowncompressor
-function trialtransfermatrix(
-    s::Int,
-    dir::Int,
-    pivs,
-    buffer::Matrix{K},
-    pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
-    tree,
-    dirdata::DirectionalData,
-) where {I,K}
-    tmats = Tuple{Int,Matrix{K}}[]
-    for child in ChildIterator(tree, s)
-        ccols = pivots[child][paternaldirection(dirdata, child, dir)][2]
-        cols = pivs[2]
-        @views tmat = buffer[1:length(cols), cols] \ buffer[1:length(cols), ccols]
-
-        push!(tmats, (paternaldirection(dirdata, child, dir), tmat))
-    end
-    return tmats
-end
-
-function trialtransfermatrices!(
-    tmats::Vector{Dict{Int,Vector{Tuple{Int,Matrix{K}}}}},
-    level::Int,
-    blocks::Vector{D},
-    pivots::Vector{Dict{Int,Tuple{Vector{I},Vector{I}}}},
-    tree,
-    dirdata::DirectionalData;
-    ntasks=Threads.nthreads(),
-) where {I,K,D<:Dict{Int,Matrix{K}}}
-    @tasks for s in collect(H2Trees.LevelIterator(tree, level))
-        @set ntasks = ntasks
-        if !isdirectionalroot(dirdata, tree, s) && isassigned(pivots, s)
-            ntmats = Vector{Tuple{Int,Matrix{K}}}[]
-            for (dir, piv) in pivots[s]
-                dntmats = Tuple{Int,Matrix{K}}[]
-                for child in ChildIterator(tree, s)
-                    ccols = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, s)) for
-                        idx in pivots[child][paternaldirection(dirdata, child, dir)][2]
-                    ]
-                    cols = [
-                        findfirst(x -> x == idx, H2Trees.values(tree, s)) for idx in piv[2]
-                    ]
-                    tmat = blocks[s][dir][:, cols] \ blocks[s][dir][:, ccols]
-
-                    push!(dntmats, (paternaldirection(dirdata, child, dir), tmat))
-                end
-                push!(ntmats, dntmats)
-            end
-            tmats[s] = Dict(keys(pivots[s]) .=> ntmats)
-        end
-    end
-end
-=#

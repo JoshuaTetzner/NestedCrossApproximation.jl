@@ -1,65 +1,37 @@
-using CompScienceMeshes
-using H2Trees
-using NestedCrossApproximation
-using LinearAlgebra: dot
-using StaticArrays: SVector
 using Test
+using NestedCrossApproximation
+using StaticArrays
 
-pts = meshicosphere(40, 1.0).vertices
-pts2 = translate(meshicosphere(40, 1.0), SVector(1.0, 0.0, 0.0)).vertices
-ttree = TwoNTree(pts, 2 / 2^10; minvalues=10)
-stree = TwoNTree(pts2, 2 / 2^10; minvalues=10)
-tree = BlockTree(ttree, stree)
+@testset "DirectionTree structure" begin
+    N = 3
+    maxlevel = 2
+    tree = NestedCrossApproximation.DirectionTree(Val(N), maxlevel, 5)
 
-##
-λ = 20.0
-k = 2 * pi / λ
+    @test length(NestedCrossApproximation.rootnodes(tree)) == 2N
+    @test NestedCrossApproximation.numberofnodes(tree) == 2N * (4^maxlevel - 1) ÷ 3
 
-isnear = NestedCrossApproximation.isnearwideband(k)
-testdata, trialdata = NestedCrossApproximation.fardata(tree, isnear)
-
-@test all((testdata.dirs .== 0))
-@test all((trialdata.dirs .== 0))
-##
-
-λ = 0.4
-k = 2π / λ
-
-isnear = NestedCrossApproximation.isnearwideband(k)
-testdata, trialdata = NestedCrossApproximation.fardata(tree, isnear)
-
-@test all((testdata.dirs .!== 0))
-@test all((trialdata.dirs .!== 0))
-##
-length(testdata.fdata.fars)
-length(testdata.fdata.farptr)
-length(testdata.dirptr)
-testdata.dirs
-
-##
-
-for node in eachindex(ttree.nodes)
-    fars = NestedCrossApproximation.fars(testdata, node)
-    dirs = NestedCrossApproximation.dirs(testdata, node)
-    sfars = Int[]
-
-    @test length(dirs) == length(unique(dirs))
-    for dir in dirs
-        dirfars = NestedCrossApproximation.dirfars(testdata, node, dir)
-        dirfarfield = NestedCrossApproximation.dirfarfield(ttree, testdata, node, dir)
-        @test dirfarfield[1:length(dirfars)] == dirfars
-        append!(sfars, dirfars)
-    end
-
-    @test length(sfars) == length(unique(sfars))
-
-    if node > 1
-        pnode = H2Trees.parent(ttree, node)
-        dirmap = NestedCrossApproximation.dirmap(testdata, node)
-        pdirs = NestedCrossApproximation.dirs(testdata, pnode)
-        @test length(dirmap) == length(pdirs)
-        for dir in dirmap
-            @test dir in Vector(1:length(dirs))
+    for root in NestedCrossApproximation.rootnodes(tree)
+        @test NestedCrossApproximation.parent(tree, root) == 0
+        for child in NestedCrossApproximation.children(tree, root)
+            @test NestedCrossApproximation.parent(tree, child) == root
+            @test NestedCrossApproximation.isleaf(tree, child)
         end
     end
+end
+
+@testset "direction descent" begin
+    tree = NestedCrossApproximation.DirectionTree(Val(3), 3, 5)
+
+    # Root order is +x,-x,+y,-y,+z,-z; an x-dominant vector must match root 1.
+    @test NestedCrossApproximation.direction(SVector(5.0, 0.1, 0.1), tree, 5) == 1
+
+    # direction(...,clusterlevel) walks the same greedy path as the full
+    # descent, just stopped earlier: shallower picks must be ancestors.
+    vec = SVector(0.4, 0.3, 0.8)
+    shallow = NestedCrossApproximation.direction(vec, tree, 5)  # maxdepth 1
+    mid = NestedCrossApproximation.direction(vec, tree, 4)      # maxdepth 2
+    full = NestedCrossApproximation.direction(vec, tree)        # maxdepth 3 (tree.level)
+
+    @test NestedCrossApproximation.parent(tree, mid) == shallow
+    @test NestedCrossApproximation.parent(tree, full) == mid
 end

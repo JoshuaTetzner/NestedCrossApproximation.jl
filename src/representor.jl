@@ -1,32 +1,26 @@
-#using ChebyshevApprox
-
 abstract type Representor end
 
-struct PetrovGelarkinChebyshevRep{I,D,F} <: Representor
-    testpos::Vector{SVector{D,F}}
-    trialpos::Vector{SVector{D,F}}
-    nodes::Vector{SVector{D,F}}
-    N::I
+# All representors are called as `representor(refidcs, idcs, npivots) -> Vector{Int}`:
+# pick at most `npivots` representative point indices from the candidate set `idcs`,
+# optionally guided by the reference point set `refidcs` (the cluster the result will
+# stand in for). They reduce a far-field index set before it's handed to the low-rank
+# factorization, trading some accuracy for a smaller, cheaper pivot search.
+
+struct RandomRep <: Representor end
+
+function (::RandomRep)(::AbstractVector{Int}, idcs::AbstractVector{Int}, npivots::Int)
+    n = length(idcs)
+    k = min(npivots, n)
+    pool = collect(idcs)
+    @inbounds for i in 1:k
+        j = i + rand(0:(n - i))
+        pool[i], pool[j] = pool[j], pool[i]
+    end
+    return pool[1:k]
 end
 
-struct ChebyshevRep{I,D,F} <: Representor
+struct ChebyshevRep{D,F} <: Representor
     pos::Vector{SVector{D,F}}
-    nodes::Vector{SVector{D,F}}
-    N::I
-end
-#=
-function ChebyshevRep(
-    ε::F,
-    η::F,
-    pos::Vector{SVector{D,F}};
-    γ=0.35,
-    N=Int(abs(round(log((sqrt(3) * γ * η), ε)))),
-) where {D,F}
-    cn = ChebyshevApprox.nodes(N, :chebyshev_nodes).points
-    #To-Do: This should use D to determine the dimension. I think 2D is better in general
-    #Bebendorf proposes 3D.
-    nodes3d = [SVector(cn[i], cn[j], cn[k]) for i in 1:N for j in 1:N for k in 1:N]
-    return ChebyshevRep(pos, nodes3d, N^3)
 end
 
 #Covariance matrix (Bebendorf)
@@ -58,50 +52,59 @@ function covmat(M::AbstractVector{SVector{D,F}}) where {D,F}
     return s, hs, cₘ
 end
 
-function (cr::ChebyshevRep{I})(rc::Vector{Int}) where {I}
-    length(rc) < cr.N && return rc
-    @views S, hs, cₘ = covmat(cr.pos[rc])
-    refnodes = copy(cr.nodes)
+function _chebyshevnodes1d(N::Int, ::Type{F}) where {F}
+    return [cos(F((2i - 1) * π / (2N))) for i in 1:N]
+end
 
-    @views for n in eachindex(refnodes)
+# Smallest 3D tensor-product Chebyshev grid with at least `npivots` nodes.
+function _chebyshevgrid3d(npivots::Int, ::Type{F}) where {F}
+    N = max(1, ceil(Int, cbrt(npivots)))
+    cn = _chebyshevnodes1d(N, F)
+    return [SVector(cn[i], cn[j], cn[k]) for i in 1:N for j in 1:N for k in 1:N]
+end
+
+# refidcs is unused: unlike MimicryRep, the Chebyshev grid is fit to the candidate set's
+# own spatial distribution (via covmat), not mimicking a separate reference distribution.
+function (cr::ChebyshevRep{D,F})(
+    ::AbstractVector{Int}, idcs::AbstractVector{Int}, npivots::Int
+) where {D,F}
+    @assert D == 3 "ChebyshevRep currently only supports 3D point sets."
+    npivots <= 0 && return Int[]
+    length(idcs) <= npivots && return collect(idcs)
+
+    @views S, hs, cₘ = covmat(cr.pos[idcs])
+    refnodes = _chebyshevgrid3d(npivots, F)
+    @inbounds for n in eachindex(refnodes)
         refnodes[n] = S * (refnodes[n] .* hs) + cₘ
     end
 
-    idcs = zeros(Int, cr.N)
-    used = zeros(Bool, length(rc))
-    @views for (idx, refnode) in enumerate(refnodes)
-        minval = norm(cr.pos[argmin(used)] - refnode)
-        idcs[idx] = argmin(used)
-        for (nidx, node) in enumerate(cr.pos[rc])
-            if !used[nidx] && (minval > norm(node - refnode) || minval == 0.0)
-                minval = norm(node - refnode)
-                idcs[idx] = nidx
+    used = falses(length(idcs))
+    chosen = Int[]
+    sizehint!(chosen, npivots)
+    @inbounds for refnode in refnodes
+        length(chosen) == npivots && break
+        best = 0
+        bestdist = Inf
+        for (nidx, node) in enumerate(idcs)
+            used[nidx] && continue
+            d = norm(cr.pos[node] - refnode)
+            if d < bestdist
+                bestdist = d
+                best = nidx
             end
         end
-        used[idcs[idx]] = true
+        used[best] = true
+        push!(chosen, idcs[best])
     end
-
-    return rc[idcs]
-end
-=#
-struct RandomRep{I} <: Representor
-    N::I
+    return chosen
 end
 
-function RandomRep(ε::F, η::F) where {F}
-    return RandomRep(Int(abs(log(η, ε))))
+struct MimicryRep{D,T,TreeType} <: Representor
+    pivoting::AdaptiveCrossApproximation.TreeMimicryPivoting{D,T,TreeType}
 end
 
-function (cr::RandomRep{I})(M::Vector{SVector{D,F}}) where {D,I,F}
-    return rand(M, cr.N)
-end
-
-struct MimicryRep <: Representor
-    pivoting::AdaptiveCrossApproximation.TreeMimicryPivoting
-end
-
-struct MimicryRepFunctor <: Representor
-    pivoting::AdaptiveCrossApproximation.TreeMimicryPivotingFunctor
+struct MimicryRepFunctor{D,T,TreeType} <: Representor
+    pivoting::AdaptiveCrossApproximation.TreeMimicryPivotingFunctor{D,T,TreeType}
 end
 
 function (pr::MimicryRepFunctor)(

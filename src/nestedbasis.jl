@@ -11,17 +11,17 @@ function _build_dirbasis_storage(bases::Vector{Matrix{T}}, cntr::Vector{Int}) wh
     blocks, diridcs = collect_assigned(bases)
 
     nodes = Vector{Int}(undef, nassigned)
-    diridxptr = Vector{Int}(undef, nassigned + 1)
-    diridxptr[1] = 1
+    idxtodiridxptr = Vector{Int}(undef, nassigned + 1)
+    idxtodiridxptr[1] = 1
     i = 1
     @inbounds for node in eachindex(cntr)
         iszero(cntr[node]) && continue
         nodes[i] = node
-        diridxptr[i + 1] = diridxptr[i] + cntr[node]
+        idxtodiridxptr[i + 1] = idxtodiridxptr[i] + cntr[node]
         i += 1
     end
 
-    return BasisStore{T}(DirBasisTraversalPlan(nodes, diridxptr, diridcs), blocks)
+    return BasisStore{T}(DirBasisTraversalPlan(nodes, idxtodiridxptr, diridcs), blocks)
 end
 
 function nestedtestbasis(

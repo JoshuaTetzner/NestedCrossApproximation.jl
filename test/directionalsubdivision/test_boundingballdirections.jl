@@ -1,68 +1,42 @@
-using CompScienceMeshes
-using ParallelKMeans
-using H2Trees
-using NestedCrossApproximation
-using LinearAlgebra: dot
-using StaticArrays: SVector
 using Test
+using NestedCrossApproximation
+using LinearAlgebra
+using StaticArrays
 
-pts = meshicosphere(40, 1.0).vertices
-pts2 = translate(meshicosphere(40, 1.0), SVector(1.0, 0.0, 0.0)).vertices
-ttree = KMeansTree(pts, 2; minvalues=10)
-stree = KMeansTree(pts2, 2; minvalues=10)
-tree = BlockTree(ttree, stree)
+@testset "sphericalfibonaccipoints" begin
+    n = 200
+    pts = NestedCrossApproximation.sphericalfibonaccipoints(n)
+    @test length(pts) == n
+    @test all(p -> isapprox(norm(p), 1.0), pts)
+    @test length(unique(pts)) == n
+end
 
-##
-λ = 20.0
-k = 2 * pi / λ
+@testset "directions (2D)" begin
+    F = Float64
+    evecs = NestedCrossApproximation.directions(Val(2), F(1.0), F(1.0), F(1.0))
+    @test length(evecs) >= 4
+    @test all(e -> isapprox(norm(e), 1.0), evecs)
 
-isnear = NestedCrossApproximation.isnearwideband(k)
-testdata, trialdata = NestedCrossApproximation.fardata(tree, isnear)
+    # Finer (larger k*diam) admissibility needs at least as many directions.
+    coarse = NestedCrossApproximation.directions(Val(2), F(1.0), F(0.1), F(1.0))
+    fine = NestedCrossApproximation.directions(Val(2), F(1.0), F(10.0), F(1.0))
+    @test length(fine) >= length(coarse)
+end
 
-@test all((testdata.dirs .== 0))
-@test all((trialdata.dirs .== 0))
-##
+@testset "directions (3D)" begin
+    F = Float64
+    evecs = NestedCrossApproximation.directions(Val(3), F(1.0), F(1.0), F(1.0))
+    @test length(evecs) >= 6
+    @test all(e -> isapprox(norm(e), 1.0), evecs)
 
-λ = 0.1
-k = 2π / λ
+    coarse = NestedCrossApproximation.directions(Val(3), F(1.0), F(0.1), F(1.0))
+    fine = NestedCrossApproximation.directions(Val(3), F(1.0), F(10.0), F(1.0))
+    @test length(fine) >= length(coarse)
+end
 
-isnear = NestedCrossApproximation.isnearwideband(k)
-testdata, trialdata = NestedCrossApproximation.fardata(tree, isnear)
-@test all((testdata.dirs .!== 0))
-@test all((trialdata.dirs .!== 0))
-
-for node in eachindex(ttree.nodes)
-    fars = NestedCrossApproximation.fars(testdata, node)
-    dirs = NestedCrossApproximation.dirs(testdata, node)
-    sfars = Int[]
-
-    @test length(dirs) == length(unique(dirs))
-    for dir in dirs
-        dirfars = NestedCrossApproximation.dirfars(testdata, node, dir)
-        dirfarfield = NestedCrossApproximation.dirfarfield(ttree, testdata, node, dir)
-        @test dirfarfield[1:length(dirfars)] == dirfars
-        append!(sfars, dirfars)
-    end
-
-    @test length(sfars) == length(unique(sfars))
-
-    if node > 1
-        pnode = H2Trees.parent(ttree, node)
-        dirmap = NestedCrossApproximation.dirmap(testdata, node)
-        pdirs = NestedCrossApproximation.dirs(testdata, pnode)
-        @test length(dirmap) == length(pdirs)
-        for dir in dirmap
-            @test dir in Vector(1:length(dirs))
-        end
-    end
-    t = node
-    for (localsidx, sidx) in enumerate(NestedCrossApproximation.farrange(testdata, node))
-        s = NestedCrossApproximation.fars(testdata)[sidx]
-        tdiridx = NestedCrossApproximation.diridxfromlocalfaridx(testdata, t, localsidx)
-        localtidx = findfirst(==(t), NestedCrossApproximation.fars(trialdata, s))
-        sdiridx = NestedCrossApproximation.diridxfromlocalfaridx(trialdata, s, localtidx)
-        println(tdiridx, sdiridx)
-        @test !isnothing(tdiridx)
-        @test !isnothing(sdiridx)
-    end
+@testset "_nearest_direction" begin
+    evecs = [SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0)]
+    @test NestedCrossApproximation._nearest_direction(evecs, SVector(0.9, 0.1, 0.1)) == 1
+    @test NestedCrossApproximation._nearest_direction(evecs, SVector(0.1, 0.9, 0.1)) == 2
+    @test NestedCrossApproximation._nearest_direction(evecs, SVector(0.1, 0.1, 0.9)) == 3
 end

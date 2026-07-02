@@ -1,109 +1,145 @@
-import H2Trees: isleaf, testtree, trialtree, root, children, numberofnodes
+import H2Trees: testtree, trialtree, root, children, numberofnodes
 
 struct FarData{I<:Integer}
-    farptr::Vector{I}
-    fars::Vector{I}
+    nodetofarnodesptr::Vector{I}
+    farnodes::Vector{I}
 end
 
-@inline farptr(data::FarData) = data.farptr
-@inline fars(data::FarData) = data.fars
-function fars(data::FarData, node::Int)
+@inline farptr(data::FarData) = data.nodetofarnodesptr
+@inline farnodes(data::FarData) = data.farnodes
+
+function farnodes(data::FarData, node::Int)
     ptr = farptr(data)
-    ff = fars(data)
-    return @view ff[Int(ptr[node]):(Int(ptr[node + 1]) - 1)]
+    nodes = farnodes(data)
+    return @view nodes[Int(ptr[node]):(Int(ptr[node + 1]) - 1)]
 end
 
 function farfield(tree, fardata::FarData, node::Int)
-    fp = farptr(fardata)
-    fs = fars(fardata)
-    far_nodes = Int[]
-    for i in fp[node]:(fp[node + 1] - 1)
-        push!(far_nodes, fs[i])
+    ptr = farptr(fardata)
+    nodes = farnodes(fardata)
+
+    total = ptr[node + 1] - ptr[node]
+    for parent in H2Trees.ParentUpwardsIterator(tree, node)
+        total += ptr[parent + 1] - ptr[parent]
+    end
+
+    result = Vector{Int}(undef, total)
+    k = 0
+    for i in ptr[node]:(ptr[node + 1] - 1)
+        k += 1
+        result[k] = nodes[i]
     end
     for parent in H2Trees.ParentUpwardsIterator(tree, node)
-        for i in fp[parent]:(fp[parent + 1] - 1)
-            push!(far_nodes, fs[i])
+        for i in ptr[parent]:(ptr[parent + 1] - 1)
+            k += 1
+            result[k] = nodes[i]
         end
     end
-    return far_nodes
+    return result
 end
 
-function farptr(counter::AbstractVector{<:Integer})
-    ptr = Vector{Int}(undef, length(counter) + 1)
+# Counts clusters that will actually do work in testbases/trialbases: a node is
+# "active" if it has its own raw far nodes, or any ancestor does (the latter gets
+# inherited via the parent's pivots once the parent is processed). This is exactly
+# equivalent to `!isempty(farfield(tree, fardata, node))` but O(1) per node instead
+# of walking the ancestor chain, so it's cheap enough to run as a dry-run pass
+# before the real (TopDown or BottomUp) traversal to size the progress bar — and it
+# naturally excludes levels with no interactions instead of weighting every level
+# by its raw cluster count.
+function _farworkload(tree, fardata::FarData)
+    ptr = farptr(fardata)
+    active = falses(numberofnodes(tree))
+    workload = 0
+    for level in levels(tree)
+        for t in LevelIterator(tree, level)
+            ownfar = ptr[t + 1] > ptr[t]
+            parentactive = level == 1 ? false : active[H2Trees.parent(tree, t)]
+            if ownfar || parentactive
+                active[t] = true
+                workload += 1
+            end
+        end
+    end
+    return workload
+end
+
+function ptrfromcounts(counts::AbstractVector{<:Integer})
+    ptr = Vector{Int}(undef, length(counts) + 1)
     ptr[1] = 1
-    @inbounds for i in eachindex(counter)
-        ptr[i + 1] = ptr[i] + Int(counter[i])
+    @inbounds for i in eachindex(counts)
+        ptr[i + 1] = ptr[i] + Int(counts[i])
     end
     return ptr
 end
 
-function reorder_fars(
-    fars::AbstractVector{<:Tuple{Int,Int}},
-    farptr::AbstractVector{<:Integer},
-    tupleindex::Int,
+function farnodesfrompairs(
+    farpairs::AbstractVector{<:Tuple{Int,Int}},
+    ptr::AbstractVector{<:Integer},
+    nodeidx::Int,
+    farnodeidx::Int,
 )
-    sorted = Vector{Tuple{Int,Int}}(undef, length(fars))
-    writeptr = Int.(farptr)
-    @inbounds for far in fars
-        node = far[tupleindex]
-        sorted[writeptr[node]] = far
-        writeptr[node] += 1
+    nodes = Vector{Int}(undef, length(farpairs))
+    writeptr = Int.(ptr)
+    @inbounds for pair in farpairs
+        n = pair[nodeidx]
+        nodes[writeptr[n]] = pair[farnodeidx]
+        writeptr[n] += 1
     end
-    return sorted
+    return nodes
 end
 
-function fars!(
+function farpairs!(
     ttree,
     stree,
-    tfctr,
-    sfctr,
-    fars::Vector{Tuple{Int,Int}},
+    tcounts,
+    scounts,
+    farpairs::Vector{Tuple{Int,Int}},
     tnode::Int,
     snode::Int;
     isnear=isnear(),
 )
     if !isnear(ttree, stree, tnode, snode)
-        push!(fars, (tnode, snode))
-        tfctr[tnode] += 1
-        sfctr[snode] += 1
+        push!(farpairs, (tnode, snode))
+        tcounts[tnode] += 1
+        scounts[snode] += 1
     else
         for tchild in children(ttree, tnode)
             for schild in children(stree, snode)
-                fars!(ttree, stree, tfctr, sfctr, fars, tchild, schild; isnear=isnear)
+                farpairs!(
+                    ttree, stree, tcounts, scounts, farpairs, tchild, schild; isnear=isnear
+                )
             end
         end
     end
 end
 
 function farinteractions(tree::BlockTree; isnear=isnear())
-    testfarcounter = zeros(Int, H2Trees.numberofnodes(testtree(tree)))
-    trialfarcounter = zeros(Int, H2Trees.numberofnodes(trialtree(tree)))
+    testcounts = zeros(Int, numberofnodes(testtree(tree)))
+    trialcounts = zeros(Int, numberofnodes(trialtree(tree)))
     if !isnear(testtree(tree), trialtree(tree), root(testtree(tree)), root(trialtree(tree)))
-        testfarcounter[root(testtree(tree))] += 1
-        trialfarcounter[root(trialtree(tree))] += 1
-        testfarptr = farptr(testfarcounter)
-        trialfarptr = farptr(trialfarcounter)
-        return FarData(testfarptr, [root(trialtree(tree))]),
-        FarData(trialfarptr, [root(testtree(tree))])
+        testcounts[root(testtree(tree))] += 1
+        trialcounts[root(trialtree(tree))] += 1
+        testptr = ptrfromcounts(testcounts)
+        trialptr = ptrfromcounts(trialcounts)
+        return FarData(testptr, [root(trialtree(tree))]),
+        FarData(trialptr, [root(testtree(tree))])
     end
-    fars = Tuple{Int,Int}[]
-    fars!(
+    farpairs = Tuple{Int,Int}[]
+    farpairs!(
         testtree(tree),
         trialtree(tree),
-        testfarcounter,
-        trialfarcounter,
-        fars,
+        testcounts,
+        trialcounts,
+        farpairs,
         root(testtree(tree)),
         root(trialtree(tree));
         isnear=isnear,
     )
-    testfarptr = farptr(testfarcounter)
-    trialfarptr = farptr(trialfarcounter)
-    testfars_sorted = reorder_fars(fars, testfarptr, 1)
-    trialfars_sorted = reorder_fars(fars, trialfarptr, 2)
-    testfars = [t[2] for t in testfars_sorted]
-    trialfars = [t[1] for t in trialfars_sorted]
-    return FarData(testfarptr, testfars), FarData(trialfarptr, trialfars)
+    testptr = ptrfromcounts(testcounts)
+    trialptr = ptrfromcounts(trialcounts)
+    testfarnodes = farnodesfrompairs(farpairs, testptr, 1, 2)
+    trialfarnodes = farnodesfrompairs(farpairs, trialptr, 2, 1)
+    return FarData(testptr, testfarnodes), FarData(trialptr, trialfarnodes)
 end
 
 function fardata(tree::BlockTree, isnear::IsNearFunctor)

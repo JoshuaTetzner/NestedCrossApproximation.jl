@@ -106,10 +106,10 @@ end
 #              (clusters at this level use the 2N root directions)
 #   maxlevel = dirroot - firsthflevel + 1: depth of the direction tree, determined
 #              by the coarsest HF level that has a far interaction
-function _dirroot_and_maxlevel(tree::TwoNTree, farptr::AbstractVector{<:Integer}, islf)
+function _dirroot_and_maxlevel(tree::TwoNTree, ptr::AbstractVector{<:Integer}, islf)
     nnodes = H2Trees.numberofnodes(tree)
-    length(farptr) == nnodes + 1 ||
-        error("Invalid farptr length: expected $(nnodes + 1), got $(length(farptr)).")
+    length(ptr) == nnodes + 1 ||
+        error("Invalid ptr length: expected $(nnodes + 1), got $(length(ptr)).")
 
     # Find the first LF level (going coarse→fine, level numbers increase)
     lflevel = H2Trees.minimumlevel(tree)
@@ -122,7 +122,7 @@ function _dirroot_and_maxlevel(tree::TwoNTree, farptr::AbstractVector{<:Integer}
     # Find the coarsest HF level that has a far interaction to bound the tree depth
     firsthflevel = dirroot  # sentinel; will be updated below
     @inbounds for node in 1:nnodes
-        if farptr[node + 1] > farptr[node]
+        if ptr[node + 1] > ptr[node]
             lev = H2Trees.level(tree, node)
             !islf(tree, lev) && lev < firsthflevel && (firsthflevel = lev)
         end
@@ -132,9 +132,9 @@ function _dirroot_and_maxlevel(tree::TwoNTree, farptr::AbstractVector{<:Integer}
 end
 
 function DirectionTree(
-    tree::TwoNTree{N,D,T}, farptr::AbstractVector{<:Integer}, islf
+    tree::TwoNTree{N,D,T}, ptr::AbstractVector{<:Integer}, islf
 ) where {N,D,T}
-    dirroot, maxlvl = _dirroot_and_maxlevel(tree, farptr, islf)
+    dirroot, maxlvl = _dirroot_and_maxlevel(tree, ptr, islf)
     return DirectionTree(Val(N), maxlvl, dirroot, T)
 end
 
@@ -168,6 +168,8 @@ function direction(interaction::SVector{N,T}, tree::DirectionTree{N}) where {N,T
     return _descend_direction(interaction, tree, tree.level)
 end
 
+# Minimizing angle(interaction, dir) over unit-norm `dir` candidates is equivalent to
+# maximizing dot(interaction, dir), which skips the norm/acos work.
 function _descend_direction(
     interaction::SVector{N,T}, tree::DirectionTree{N}, maxdepth::Int
 ) where {N,T}
@@ -177,11 +179,11 @@ function _descend_direction(
         isempty(nextnodes) && break
 
         bestnode = first(nextnodes)
-        minangle = typemax(T)
+        bestdot = typemin(T)
         for candidate in nextnodes
-            newangle = angle(interaction, tree.nodes[candidate].dir)
-            if newangle < minangle
-                minangle = newangle
+            newdot = dot(interaction, tree.nodes[candidate].dir)
+            if newdot > bestdot
+                bestdot = newdot
                 bestnode = candidate
             end
         end
@@ -191,104 +193,90 @@ function _descend_direction(
 end
 
 function directionalfardata(fardata::FarData, tree::TwoNTree, fartree::TwoNTree, isnear)
-    farptr = NestedCrossApproximation.farptr(fardata)
-    fars = NestedCrossApproximation.fars(fardata)
-    dirtree = DirectionTree(tree, farptr, isnear.islf)
-    nnodes = length(farptr) - 1
+    ptr = farptr(fardata)
+    nodes = farnodes(fardata)
+    dirtree = DirectionTree(tree, ptr, isnear.islf)
+    nnodes = length(ptr) - 1
     dirs = Vector{Vector{Int}}(undef, nnodes)
-    dircounter = [Int[] for _ in 1:nnodes]
-    pdirmap = [Int[] for _ in 1:nnodes]
-    pdircounter = zeros(Int, nnodes)
+    dircount = [Int[] for _ in 1:nnodes]
+    partochddirmap = [Int[] for _ in 1:nnodes]
+    partochddircount = zeros(Int, nnodes)
+
     for level in H2Trees.levels(tree)
         for node in H2Trees.LevelIterator(tree, level)
             pnode = H2Trees.parent(tree, node)
-            hasfars = farptr[node + 1] > farptr[node]
+            hasfars = ptr[node + 1] > ptr[node]
             hasparentdirs = pnode != 0 && !isempty(dirs[pnode])
 
             # LF nodes do not use directional subdivision.
-            # Store [0] for direct LF fars, or when inheriting from an LF parent with dirs.
+            # Store [0] for direct LF far nodes, or when inheriting from an LF parent with dirs.
             if isnear.islf(tree, level)
                 inheritlf = hasparentdirs && level > 1 && isnear.islf(tree, level - 1)
                 dirs[node] = (hasfars || inheritlf) ? Int[0] : Int[]
-                pdirmap[node] = inheritlf ? [1] : Int[]
+                partochddirmap[node] = inheritlf ? [1] : Int[]
                 continue
             end
 
-            (!hasfars && !hasparentdirs) && (dirs[node] = Int[]; continue)
+            (!hasfars && !hasparentdirs) && (dirs[node]=Int[]; continue)
 
-            nfars_node = Int(farptr[node + 1] - farptr[node])
-            nodedirs = Vector{Int}(undef, nfars_node)
-            for (i, faridx) in enumerate(farptr[node]:(farptr[node + 1] - 1))
-                vec = interaction(node, fars[faridx], tree, fartree)
+            nfar = Int(ptr[node + 1] - ptr[node])
+            nodedirs = Vector{Int}(undef, nfar)
+            for (i, faridx) in enumerate(ptr[node]:(ptr[node + 1] - 1))
+                vec = interaction(node, nodes[faridx], tree, fartree)
                 nodedirs[i] = direction(vec, dirtree, level)
             end
 
             perm = sortperm(nodedirs)
-            permute!(view(fars, farptr[node]:(farptr[node + 1] - 1)), perm)
+            permute!(view(nodes, ptr[node]:(ptr[node + 1] - 1)), perm)
             uniquenodedirs = sort!(unique(nodedirs))
+            noriginal = length(uniquenodedirs)
 
             # Inherit child-directions from parent.
-            dirmap = iszero(pnode) ? Int[] : zeros(Int, length(dirs[pnode]))
+            partochddir = iszero(pnode) ? Int[] : zeros(Int, length(dirs[pnode]))
             if hasparentdirs
-                for (i, parentdir) in enumerate(dirs[pnode])
-                    dirmap[i] = parent(dirtree, parentdir)
+                for (i, pardir) in enumerate(dirs[pnode])
+                    partochddir[i] = parent(dirtree, pardir)
                 end
 
-                for (idx, dir) in enumerate(dirmap)
-                    !(dir in uniquenodedirs) && push!(uniquenodedirs, dir)
-                    dirmap[idx] = findfirst(==(dir), uniquenodedirs)
+                for (idx, cdir) in enumerate(partochddir)
+                    !(cdir in uniquenodedirs) && push!(uniquenodedirs, cdir)
+                    partochddir[idx] = findfirst(==(cdir), uniquenodedirs)
                 end
             end
-            localdircounter = zeros(Int, length(uniquenodedirs))
-            for (uidx, udir) in enumerate(uniquenodedirs)
-                for dir in nodedirs
-                    udir == dir && (localdircounter[uidx] += 1)
+            # nodedirs[perm] is sorted to match uniquenodedirs[1:noriginal]; run-length
+            # count over that shared order gives the same per-direction counts as
+            # matching every unique direction against every far node, for less work.
+            # Directions appended above (beyond noriginal) come only from parent
+            # inheritance and have no own far nodes, so they correctly stay at 0.
+            localdircount = zeros(Int, length(uniquenodedirs))
+            sortednodedirs = view(nodedirs, perm)
+            n = length(sortednodedirs)
+            i = 1
+            for uidx in 1:noriginal
+                c = 0
+                while i <= n && sortednodedirs[i] == uniquenodedirs[uidx]
+                    c += 1
+                    i += 1
                 end
+                localdircount[uidx] = c
             end
 
-            pdirmap[node] = dirmap
-            pdircounter[node] = count(!iszero, dirmap)
+            partochddirmap[node] = partochddir
+            partochddircount[node] = count(!iszero, partochddir)
             dirs[node] = uniquenodedirs
-            dircounter[node] = localdircounter
+            dircount[node] = localdircount
         end
     end
 
-    # Fill dircounter for LF sentinel nodes (dirs=[0], dircounter not set in second pass).
+    # Fill dircount for LF sentinel nodes (dirs=[0], dircount not set in second pass).
     for node in eachindex(dirs)
-        if !isempty(dirs[node]) && isempty(dircounter[node])
-            dircounter[node] = [max(0, Int(farptr[node + 1] - farptr[node]))]
-            pdircounter[node] = length(pdirmap[node])
+        if !isempty(dirs[node]) && isempty(dircount[node])
+            dircount[node] = [max(0, Int(ptr[node + 1] - ptr[node]))]
+            partochddircount[node] = length(partochddirmap[node])
         end
     end
 
-    # Build linear direction storage.
-    dirptr = Vector{Int}(undef, length(dirs) + 1)
-    pdirptr = Vector{Int}(undef, length(pdirmap) + 1)
-    dirptr[1] = 1
-    pdirptr[1] = 1
-    for node in eachindex(dirs)
-        dirptr[node + 1] = dirptr[node] + length(dirs[node])
-        pdirptr[node + 1] = pdirptr[node] + pdircounter[node]
-    end
-    linedirs = Vector{Int}(undef, dirptr[end] - 1)
-    linedircounter = Vector{Int}(undef, dirptr[end] - 1)
-    lineparentdir = Vector{Int}(undef, pdirptr[end] - 1)
-    for node in eachindex(dirs)
-        first = dirptr[node]
-        last = dirptr[node + 1] - 1
-        first > last && continue
-        linedirs[first:last] = dirs[node]
-        linedircounter[first:last] = dircounter[node]
-
-        pfirst = pdirptr[node]
-        plast = pdirptr[node + 1] - 1
-        pfirst > plast && continue
-        lineparentdir[pfirst:plast] = pdirmap[node]
-    end
-
-    linefardata = fardata
-
-    return DirectionalData(
-        linefardata, dirptr, linedirs, linedircounter, pdirptr, lineparentdir, isnear
+    return _finalize_directionaldata(
+        fardata, dirs, dircount, partochddirmap, partochddircount, isnear
     )
 end

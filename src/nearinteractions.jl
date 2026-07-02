@@ -1,57 +1,27 @@
-import H2Trees: isleaf, testtree, trialtree, root, children, halfsize, radius, center
-
-struct IsNearFunctor{F}
-    η::F
-end
+import H2Trees: halfsize, radius, center, isleaf
+import AdaptiveCrossApproximation:
+    IsNearFunctor, isnear, nearinteractions, assemblenears, PreserveSpaceOrder
 
 """
-Low-frequency classifier based on diameter and wavenumber.
+    IsNearWidebandFunctor{F,LF}
 
-`islf(d)` returns true when `k * d <= 1`.
-"""
-struct IsLowFrequencyFunctor{F}
-    γ::F
-    k::F
-end
+Admissibility predicate for wideband (mixed low-/high-frequency) hierarchical
+matrices.
 
-wavenumber(f::IsLowFrequencyFunctor) = f.k
+Classifies a pair of tree nodes as near (inadmissible for compression, must be
+assembled directly) or far (admissible). The criterion switches per pair between
+a geometric one in the low-frequency regime and a wave-based one in the
+high-frequency regime, as decided by the `islf` field.
 
-function islf(γ::Real, k::Real)
-    F = float(typeof(k))
-    return IsLowFrequencyFunctor{F}(F(γ), F(k))
-end
+Construct with [`isnearwideband`](@ref) rather than calling the constructor
+directly.
 
-@inline function (f::IsLowFrequencyFunctor)(diam::Real)
-    return f.k * diam <= f.γ * one(promote_type(typeof(f.k), typeof(diam)))
-end
+# Fields
 
-@inline function (f::IsLowFrequencyFunctor)(tree::H2Trees.TwoNTree, level::Int)
-    # Characteristic box diameter at this level in TwoN trees.
-    rootlevel = H2Trees.minimumlevel(tree)
-    N = size(eltype(tree), 1)
-    diam = 2 * sqrt(N) * H2Trees.halfsize(tree) / (2.0^(level - rootlevel))
-    return f.k * diam <= f.γ * one(promote_type(typeof(f.k), typeof(diam)))
-end
-
-# Generalized node radius for BoundingBallTree.
-# This enforces identical LF/HF classification for all siblings.
-function _bbgenradius(tree::H2Trees.BoundingBallTree, node::Int)
-    pnode = H2Trees.parent(tree, node)
-    pnode == 0 && return H2Trees.radius(tree, node)
-    sibs = collect(H2Trees.children(tree, pnode))
-    avg = mapreduce(c -> H2Trees.radius(tree, c), +, sibs) / length(sibs)
-    return min(_bbgenradius(tree, pnode), avg)
-end
-
-@inline function (f::IsLowFrequencyFunctor)(tree::H2Trees.BoundingBallTree, node::Int)
-    return f(2 * _bbgenradius(tree, node))
-end
-
-"""
-HF/LF-aware near criterion for wideband settings.
-
-  - LF branch: geometric admissibility with `ηlf`.
-  - HF branch: wave admissibility with `ηhf` and `k`.
+  - `k::F`: wavenumber.
+  - `ηlf::F`: admissibility parameter used in the low-frequency branch.
+  - `ηhf::F`: admissibility parameter used in the high-frequency branch.
+  - `islf::LF`: low-frequency classifier, e.g. an [`IsLowFrequencyFunctor`](@ref).
 """
 struct IsNearWidebandFunctor{F,LF}
     k::F
@@ -60,35 +30,35 @@ struct IsNearWidebandFunctor{F,LF}
     islf::LF
 end
 
+"""
+    isnearwideband(k::Real; ηlf=1.0, ηhf=5.0, γ=1.0, islf=islf(γ, k))
+
+Create a wideband admissibility predicate for hierarchical matrix construction.
+
+Two nodes are classified as near when, depending on whether their size places
+them in the low- or high-frequency regime (as decided by `islf`), they fail the
+corresponding geometric (`ηlf`) or wave-based (`ηhf`) separation criterion for
+wavenumber `k`.
+
+# Arguments
+
+  - `k::Real`: wavenumber.
+  - `ηlf::Real = 1.0`: admissibility parameter for the low-frequency branch.
+  - `ηhf::Real = 5.0`: admissibility parameter for the high-frequency branch.
+  - `γ::Real = 1.0`: threshold used by the default low-frequency classifier
+    (see [`islf`](@ref)); ignored if `islf` is passed explicitly.
+  - `islf = islf(γ, k)`: low-frequency classifier deciding, per node, which
+    branch applies.
+
+# Returns
+
+  - [`IsNearWidebandFunctor`](@ref).
+"""
 function isnearwideband(
     k::Real; ηlf::Real=1.0, ηhf::Real=5.0, γ::Real=1.0, islf::Any=islf(γ, k)
 )
     F = promote_type(float(typeof(k)), float(typeof(ηlf)), float(typeof(ηhf)))
     return IsNearWidebandFunctor{F,typeof(islf)}(F(k), F(ηlf), F(ηhf), islf)
-end
-
-function isnear(η::Real=Float64(1.0))
-    return IsNearFunctor{typeof(η)}(η)
-end
-
-function (isnear::IsNearFunctor{F})(
-    treea::TwoNTree, treeb::TwoNTree, nodea::Int, nodeb::Int
-) where {F}
-    ths = halfsize(treea, nodea) * sqrt(3)
-    shs = halfsize(treeb, nodeb) * sqrt(3)
-    dist = norm(center(treea, nodea) - center(treeb, nodeb)) - (ths + shs)
-
-    (2 * max(ths, shs) <= isnear.η * max(dist, 0.0)) ? (return false) : (return true)
-end
-
-function (isnear::IsNearFunctor{F})(
-    treea::H2Trees.BoundingBallTree, treeb::H2Trees.BoundingBallTree, nodea::Int, nodeb::Int
-) where {F}
-    ths = radius(treea, nodea)
-    shs = radius(treeb, nodeb)
-    dist = norm(center(treea, nodea) - center(treeb, nodeb)) - (ths + shs)
-
-    (2 * max(ths, shs) <= isnear.η * max(dist, 0.0)) ? (return false) : (return true)
 end
 
 function (isnear::IsNearWidebandFunctor{F})(
@@ -118,77 +88,65 @@ function (isnear::IsNearWidebandFunctor{F})(
     return 4 * isnear.k * max(ths^2, shs^2) > isnear.ηhf * sep
 end
 
-function nears!(
-    tree,
-    values::Vector{V},
-    nearvalues::Vector{V},
-    tnode::Int,
-    snodes::V;
-    isnear=H2Trees.isnear,
-) where {V<:Vector{Int}}
-    nearnodes = Int[]
-    childnearnodes = Int[]
-    for snode in snodes
-        if isnear(testtree(tree), trialtree(tree), tnode, snode)
-            if isleaf(testtree(tree), tnode) || isleaf(trialtree(tree), snode)
-                push!(nearnodes, snode)
-            else
-                append!(childnearnodes, collect(children(trialtree(tree), snode)))
-            end
-        end
-    end
-    if nearnodes != []
-        push!(nearvalues, H2Trees.values(trialtree(tree), nearnodes))
-        push!(values, H2Trees.values(testtree(tree), tnode))
-    end
-    if childnearnodes != []
-        for child in children(testtree(tree), tnode)
-            nears!(tree, values, nearvalues, child, childnearnodes; isnear=isnear)
-        end
-    end
+"""
+    IsLowFrequencyFunctor{F}
+
+Classifier deciding whether a tree node is in the low-frequency regime.
+
+A node is low-frequency when `k * d <= γ`, where `d` is a characteristic
+diameter: a plain value when called as `f(d)`, or one derived from a tree node
+when called as `f(tree, node)`.
+
+Construct with [`islf`](@ref) rather than calling the constructor directly.
+
+# Fields
+
+  - `γ::F`: admissibility threshold.
+  - `k::F`: wavenumber.
+"""
+struct IsLowFrequencyFunctor{F}
+    γ::F
+    k::F
 end
 
-function nearinteractions(tree::BlockTree; isnear=H2Trees.isnear)
-    !isnear(testtree(tree), trialtree(tree), root(testtree(tree)), root(trialtree(tree))) &&
-        return Vector{Int}(), Vector{Int}[]
-    values = Vector{Int}[]
-    nearvalues = Vector{Int}[]
-    nears!(
-        tree,
-        values,
-        nearvalues,
-        root(testtree(tree)),
-        [root(trialtree(tree))];
-        isnear=isnear,
-    )
-    return values, nearvalues
+wavenumber(f::IsLowFrequencyFunctor) = f.k
+
+"""
+    islf(γ::Real, k::Real)
+
+Create a low-frequency classifier for wavenumber `k` and threshold `γ`.
+
+# Returns
+
+  - [`IsLowFrequencyFunctor`](@ref).
+"""
+function islf(γ::Real, k::Real)
+    F = float(typeof(k))
+    return IsLowFrequencyFunctor{F}(F(γ), F(k))
 end
 
-function assemblenears(
-    operator,
-    testspace,
-    trialspace,
-    tree;
-    isnear=isnear(),
-    scheduler=SerialScheduler(),
-    matrixdata=defaultmatrixdata(operator, testspace, trialspace),
-)
-    nearmatrix = AdaptiveCrossApproximation.AbstractKernelMatrix(
-        operator, testspace, trialspace; matrixdata=matrixdata
-    )
-    values, nearvalues = nearinteractions(tree; isnear=isnear)
-    if isempty(values)
-        return BlockSparseMatrix(
-            Matrix{eltype(nearmatrix)}[], Vector{Int}[], Vector{Int}[], size(nearmatrix)
-        )
-    end
-    blocks = zeros.(eltype(nearmatrix), length.(values), length.(nearvalues))
-    @tasks for i in eachindex(blocks)
-        @set scheduler = scheduler
-        nearmatrix(blocks[i], values[i], nearvalues[i])
-    end
-    nears = BlockSparseMatrix(
-        blocks, values, nearvalues, size(nearmatrix); scheduler=scheduler
-    )
-    return nears
+@inline function (f::IsLowFrequencyFunctor)(diam::Real)
+    return f.k * diam <= f.γ * one(promote_type(typeof(f.k), typeof(diam)))
+end
+
+@inline function (f::IsLowFrequencyFunctor)(tree::H2Trees.TwoNTree, level::Int)
+    # Characteristic box diameter at this level in TwoN trees.
+    rootlevel = H2Trees.minimumlevel(tree)
+    N = size(eltype(tree), 1)
+    diam = 2 * sqrt(N) * H2Trees.halfsize(tree) / (2.0^(level - rootlevel))
+    return f.k * diam <= f.γ * one(promote_type(typeof(f.k), typeof(diam)))
+end
+
+# Generalized node radius for BoundingBallTree.
+# This enforces identical LF/HF classification for all siblings.
+function _bbgenradius(tree::H2Trees.BoundingBallTree, node::Int)
+    pnode = H2Trees.parent(tree, node)
+    pnode == 0 && return H2Trees.radius(tree, node)
+    sibs = collect(H2Trees.children(tree, pnode))
+    avg = mapreduce(c -> H2Trees.radius(tree, c), +, sibs) / length(sibs)
+    return min(_bbgenradius(tree, pnode), avg)
+end
+
+@inline function (f::IsLowFrequencyFunctor)(tree::H2Trees.BoundingBallTree, node::Int)
+    return f(2 * _bbgenradius(tree, node))
 end

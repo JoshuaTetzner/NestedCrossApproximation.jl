@@ -1,45 +1,104 @@
 using H2Trees: H2Trees
 
 struct DirectionalData{I<:Integer}
-    fdata::FarData{I}      # farptr/fars bundled once via the generic FarData container
-    dirptr::Vector{I}      # length nnodes+1;      node     → range in dirs/parentdir/dircounter
-    dirs::Vector{I}        # direction-tree node indices, grouped by cluster node
-    dircounter::Vector{I}  # number of fars per direction slot (same indexing as dirs)
-    parentdirptr::Vector{I}  # length nnodes+1; parent node → range in parentdir
-    parentdir::Vector{I}   # local parent-dir index per dir-slot (0 if none)
-    isnear                 # near-interaction classifier functor
+    fardata::FarData{I}           # farptr/farnodes bundled once via the generic FarData container
+    nodetodirsptr::Vector{I}      # length nnodes+1; node → range in dirs/diridxtofarptr
+    dirs::Vector{I}               # direction-tree node indices, grouped by cluster node
+    diridxtofarptr::Vector{I}     # length nodetodirsptr[end]; diridx → range in farnodes
+    nodetochdirptr::Vector{I}     # length nnodes+1; node (=child) → range in partochddirmap, one entry per parent direction
+    partochddirmap::Vector{I}     # parent's local dir slot (key) → this node's own matching local dir slot (value, 0 if none)
+    isnear                        # near-interaction classifier functor
 
     function DirectionalData(
         fardata::FarData{I},
-        dirptr::Vector{I},
+        nodetodirsptr::Vector{I},
         dirs::Vector{I},
-        dircounter::Vector{I},
-        parentdirptr::Vector{I},
-        parentdir::Vector{I},
+        diridxtofarptr::Vector{I},
+        nodetochdirptr::Vector{I},
+        partochddirmap::Vector{I},
         isnear,
     ) where {I<:Integer}
-        return new{I}(fardata, dirptr, dirs, dircounter, parentdirptr, parentdir, isnear)
+        return new{I}(
+            fardata,
+            nodetodirsptr,
+            dirs,
+            diridxtofarptr,
+            nodetochdirptr,
+            partochddirmap,
+            isnear,
+        )
     end
+end
+
+# Shared by both directionalfardata builders (TwoNTree, BoundingBallTree): flattens the
+# per-node ragged dirs/dircount/partochddirmap into DirectionalData's CSR storage.
+# `dircount[node]` holds raw per-direction far-node counts (same indexing as dirs[node]);
+# this turns those counts into the cumulative diridxtofarptr.
+function _finalize_directionaldata(
+    fardata::FarData, dirs, dircount, partochddirmap, partochddircount, isnear
+)
+    ptr = farptr(fardata)
+    nnodes = length(dirs)
+
+    nodetodirsptr = Vector{Int}(undef, nnodes + 1)
+    nodetochdirptr = Vector{Int}(undef, nnodes + 1)
+    nodetodirsptr[1] = 1
+    nodetochdirptr[1] = 1
+    for node in 1:nnodes
+        nodetodirsptr[node + 1] = nodetodirsptr[node] + length(dirs[node])
+        nodetochdirptr[node + 1] = nodetochdirptr[node] + partochddircount[node]
+    end
+
+    linedirs = Vector{Int}(undef, nodetodirsptr[end] - 1)
+    diridxtofarptr = Vector{Int}(undef, nodetodirsptr[end])
+    linepartochddirmap = Vector{Int}(undef, nodetochdirptr[end] - 1)
+
+    for node in 1:nnodes
+        first = nodetodirsptr[node]
+        last = nodetodirsptr[node + 1] - 1
+        if first <= last
+            linedirs[first:last] = dirs[node]
+            offset = Int(ptr[node])
+            for (i, c) in enumerate(dircount[node])
+                diridxtofarptr[first + i - 1] = offset
+                offset += c
+            end
+            @assert offset == ptr[node + 1] "Direction counts for node $node do not sum to its far node count."
+        end
+
+        pfirst = nodetochdirptr[node]
+        plast = nodetochdirptr[node + 1] - 1
+        pfirst <= plast && (linepartochddirmap[pfirst:plast] = partochddirmap[node])
+    end
+    diridxtofarptr[end] = Int(ptr[end])
+
+    return DirectionalData(
+        fardata,
+        nodetodirsptr,
+        linedirs,
+        diridxtofarptr,
+        nodetochdirptr,
+        linepartochddirmap,
+        isnear,
+    )
 end
 
 function fardata(tree::BlockTree, isnear::IsNearWidebandFunctor)
     ttree = H2Trees.testtree(tree)
     stree = H2Trees.trialtree(tree)
-    testfardata, trialfardata = NestedCrossApproximation.farinteractions(
-        tree; isnear=isnear
-    )
+    testfardata, trialfardata = farinteractions(tree; isnear=isnear)
 
     testdirdata = directionalfardata(testfardata, ttree, stree, isnear)
     trialdirdata = directionalfardata(trialfardata, stree, ttree, isnear)
     return testdirdata, trialdirdata
 end
 
-@inline fardata(data::DirectionalData) = data.fdata
-@inline farptr(data::DirectionalData) = farptr(data.fdata)
-@inline fars(data::DirectionalData) = fars(data.fdata)
+@inline fardata(data::DirectionalData) = data.fardata
+@inline farptr(data::DirectionalData) = farptr(data.fardata)
+@inline farnodes(data::DirectionalData) = farnodes(data.fardata)
 @inline isnear(data::DirectionalData) = data.isnear
 
-@inline function nfars(data::DirectionalData, node::Int)
+@inline function nfarnodes(data::DirectionalData, node::Int)
     ptr = farptr(data)
     return Int(ptr[node + 1] - ptr[node])
 end
@@ -50,85 +109,61 @@ end
 end
 
 # View of the reference-side far nodes for `node`.
-@inline function fars(data::DirectionalData, node::Int)
+@inline function farnodes(data::DirectionalData, node::Int)
     ptr = farptr(data)
-    ff = fars(data)
-    return @view ff[Int(ptr[node]):(Int(ptr[node + 1]) - 1)]
+    nodes = farnodes(data)
+    return @view nodes[Int(ptr[node]):(Int(ptr[node + 1]) - 1)]
 end
 
 @inline function ndirections(data::DirectionalData, node::Int)
-    return Int(data.dirptr[node + 1] - data.dirptr[node])
+    return Int(data.nodetodirsptr[node + 1] - data.nodetodirsptr[node])
 end
 
 @inline function dirrange(data::DirectionalData, node::Int)
-    return Int(data.dirptr[node]):(Int(data.dirptr[node + 1]) - 1)
+    return Int(data.nodetodirsptr[node]):(Int(data.nodetodirsptr[node + 1]) - 1)
 end
 
 # View of the direction indices for `node`.
 @inline function dirs(data::DirectionalData, node::Int)
-    return @view data.dirs[Int(data.dirptr[node]):(Int(data.dirptr[node + 1]) - 1)]
-end
-
-@inline function directionref(data::DirectionalData, node::Int, localdir::Int)
-    return Int(data.dirs[Int(data.dirptr[node]) + localdir - 1])
-end
-
-# Local index of the parent's direction that contains localdir of node.
-@inline function parentdirref(data::DirectionalData, node::Int, localdir::Int)
-    return Int(data.parentdir[Int(data.parentdirptr[node]) + localdir - 1])
+    return @view data.dirs[Int(data.nodetodirsptr[node]):(Int(data.nodetodirsptr[node + 1]) - 1)]
 end
 
 # View of the far nodes belonging to direction value `dir` of `node`.
-# `dir` must be one of dirs(data, node). Fars within a node are stored
+# `dir` must be one of dirs(data, node). Far nodes within a node are stored
 # contiguously sorted by direction.
-function dirfars(data::DirectionalData, node::Int, dir::Int)
+function dirfarnodes(data::DirectionalData, node::Int, dir::Int)
     node_dirs = dirs(data, node)
     localdir = findfirst(==(dir), node_dirs)
     isnothing(localdir) && error(
         "Direction $dir is not present in node $node. Use dirs(data, node) to query available directions.",
     )
 
-    ptr = farptr(data)
-    ff = fars(data)
-    farstart = Int(ptr[node])
-    base = Int(data.dirptr[node])
-    for i in 1:(localdir - 1)
-        farstart += Int(data.dircounter[base + i - 1])
-    end
-    count = Int(data.dircounter[base + localdir - 1])
-    return @view ff[farstart:(farstart + count - 1)]
+    diridx = Int(data.nodetodirsptr[node]) + localdir - 1
+    farstart = Int(data.diridxtofarptr[diridx])
+    farend = Int(data.diridxtofarptr[diridx + 1]) - 1
+    return @view farnodes(data)[farstart:farend]
 end
 
 function diridxfromlocalfaridx(data::DirectionalData, node::Int, faridx::Int)
-    drange = dirrange(data, node)
-    total = 0
-    @inbounds for diridx in drange
-        total += data.dircounter[diridx]
-    end
-    @assert total >= faridx "Local far index $faridx exceeds total fars $total for node $node."
+    nf = nfarnodes(data, node)
+    @assert nf >= faridx "Local far index $faridx exceeds total far nodes $nf for node $node."
 
     remaining = faridx
-    @inbounds for diridx in drange
-        remaining -= data.dircounter[diridx]
+    @inbounds for diridx in dirrange(data, node)
+        remaining -= Int(data.diridxtofarptr[diridx + 1] - data.diridxtofarptr[diridx])
         if remaining <= 0
             return diridx
         end
     end
-    return error("Local far index $faridx exceeds total fars $total for node $node.")
-end
-
-# Range of local dir indices of node whose parent direction is pdir.
-function childdirrange(data::DirectionalData, node::Int, pdir::Int)
-    block = data.parentdir[Int(data.parentdirptr[node]):(Int(data.parentdirptr[node + 1]) - 1)]
-    return findall(==(pdir), block)
+    return error("Local far index $faridx exceeds total far nodes $nf for node $node.")
 end
 
 function dirmap(data::DirectionalData, node::Int)
-    return data.parentdir[data.parentdirptr[node]:(data.parentdirptr[node + 1] - 1)]
+    return data.partochddirmap[data.nodetochdirptr[node]:(data.nodetochdirptr[node + 1] - 1)]
 end
 
 # Return all far interactions associated with `dir` at `node`, including direct
-# fars and inherited fars from paternal nodes.
+# far nodes and inherited far nodes from paternal nodes.
 # HF case (`dir != 0`): propagate matching directions upward using dirmap.
 # LF case (`dir == 0`): climb while ancestors stay LF (i.e. still have dir 0).
 function dirfarfield(tree, data::DirectionalData, node::Int, dir::Int)
@@ -150,53 +185,24 @@ function dirfarfield(tree, data::DirectionalData, node::Int, dir::Int)
             if isempty(current_dirs) || findfirst(==(0), current_dirs) === nothing
                 break
             end
-            append!(ff, dirfars(data, current, 0))
+            append!(ff, dirfarnodes(data, current, 0))
             current = H2Trees.parent(tree, current)
         end
         return ff
     end
 
-    append!(ff, dirfars(data, node, dir))
-    #println("levelfars: ", length(ff))
-    ##
+    append!(ff, dirfarnodes(data, node, dir))
     current = node
     diridcs = [localdir]
     while H2Trees.parent(tree, current) != 0
-        dirmap = NestedCrossApproximation.dirmap(data, current)
-        diridcs = findall(x -> x in diridcs, dirmap)
-        dirs = NestedCrossApproximation.dirs(data, H2Trees.parent(tree, current))
-        for dir in dirs[diridcs]
-            append!(
-                ff,
-                NestedCrossApproximation.dirfars(data, H2Trees.parent(tree, current), dir),
-            )
+        curdirmap = dirmap(data, current)
+        diridcs = findall(x -> x in diridcs, curdirmap)
+        pardirs = dirs(data, H2Trees.parent(tree, current))
+        for pardir in pardirs[diridcs]
+            append!(ff, dirfarnodes(data, H2Trees.parent(tree, current), pardir))
         end
         current = H2Trees.parent(tree, current)
     end
-    ##
-    #=current_node = node
-    current_local = [Int(localdir)]
-    while true
-        pnode = H2Trees.parent(tree, current_node)
-        pnode == 0 && break
-
-        map = dirmap(data, current_node)
-        parent_local = Int[]
-        for (plocal, clocal) in enumerate(map)
-            clocal == 0 && continue
-            clocal in current_local || continue
-            push!(parent_local, plocal)
-        end
-        isempty(parent_local) && break
-
-        parent_dirs = dirs(data, pnode)
-        for plocal in parent_local
-            append!(ff, dirfars(data, pnode, Int(parent_dirs[plocal])))
-        end
-
-        current_node = pnode
-        current_local = parent_local
-    end=#
 
     return ff
 end
@@ -206,13 +212,30 @@ function interaction(node::Int, farnode::Int, tree, fartree)
     return H2Trees.center(tree, node) - H2Trees.center(fartree, farnode)
 end
 
+# Per-direction analogue of `_farworkload(tree, fardata::FarData)`: counts
+# (node, dir) pairs that will actually do work in the BottomUp DirectionalData
+# testbases/trialbases traversal. The LF/HF inheritance rules folded into
+# `dirfarfield` (climb-while-LF vs dirmap-intersection) are intricate enough that
+# re-deriving a static propagation risks silently diverging from the real
+# traversal, so this dry run just reuses `dirfarfield` itself — correct by
+# construction, and its cost (bounded by tree depth, not by ACA/iACA pivoting) is
+# negligible next to the real factorization work it's sizing a bar for.
+function _farworkload(tree, fardata::DirectionalData)
+    workload = 0
+    for level in levels(tree)
+        for t in LevelIterator(tree, level)
+            for diridx in dirrange(fardata, t)
+                isempty(dirfarfield(tree, fardata, t, fardata.dirs[diridx])) ||
+                    (workload += 1)
+            end
+        end
+    end
+    return workload
+end
+
 function isbasisnode(tree, data::DirectionalData, node::Int, dir::Int)
     H2Trees.isleaf(tree, node) && return true
     dir == 0 && return false
     firstchild = H2Trees.firstchild(tree, node)
     return (dirs(data, firstchild) == [0] || dirs(data, firstchild) == [])
-end
-
-function angle(a::SVector{D,F}, b::SVector{D,F}) where {D,F}
-    return acos(clamp(dot(a, b) / (norm(a) * norm(b)), -1.0, 1.0))
 end

@@ -6,6 +6,7 @@ using H2Trees
 using LinearMaps
 using LinearAlgebra
 using OhMyThreads
+using ProgressMeter
 using StaticArrays
 
 include("nearinteractions.jl")
