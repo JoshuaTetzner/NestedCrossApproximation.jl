@@ -161,7 +161,7 @@ function _buildbases_and_coupling(
         _basesworkload(testcompressor, testtree(tree), testfardata) +
         _basesworkload(trialcompressor, trialtree(tree), trialfardata)
     basespbar = Progress(basesworkload; desc="Assembling far bases: ", enabled=verbose)
-    nestedtestbases, testtransfermats, testpivots = testbases(
+    @time nestedtestbases, testtransfermats, testpivots = testbases(
         testcompressor,
         farmatrix,
         tree,
@@ -170,7 +170,7 @@ function _buildbases_and_coupling(
         maxrank=maxrank,
         pbar=basespbar,
     )
-    nestedtrialbases, trialtransfermats, trialpivots = trialbases(
+    @time nestedtrialbases, trialtransfermats, trialpivots = trialbases(
         trialcompressor,
         farmatrix,
         tree,
@@ -184,7 +184,7 @@ function _buildbases_and_coupling(
     couplingpbar = Progress(
         length(farnodes(testfardata)); desc="Assembling far coupling: ", enabled=verbose
     )
-    couplingmatrices = assemble_couplingstore(
+    @time couplingmatrices = assemble_couplingstore(
         farmatrix,
         testpivots,
         trialpivots,
@@ -602,7 +602,7 @@ function tolerance!(
 end
 
 function tolerance!(
-    lrf::AdaptiveCrossApproximation.iACA{RP,CP,CC}, denominator::F
+    lrf::AdaptiveCrossApproximation.IACA{RP,CP,CC}, denominator::F
 ) where {RP,CP,CC<:FNormExtrapolator,F}
     return lrf.convergence.estimator.tol = lrf.convergence.estimator.tol / denominator
 end

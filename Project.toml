@@ -14,7 +14,7 @@ ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
-AdaptiveCrossApproximation = "0.1"
+AdaptiveCrossApproximation = "0.2"
 Aqua = "0.8"
 BlockSparseMatrices = "0.3"
 CompScienceMeshes = "0.11"

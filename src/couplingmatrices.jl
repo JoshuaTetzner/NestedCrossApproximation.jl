@@ -1,3 +1,7 @@
+# Block filling is delegated to `assemble_blocks`, so CPU/GPU dispatch safety
+# (e.g. the forced-serial GPU path - concurrent CUDA launches from multiple
+# threads corrupt results without device/stream coordination) is handled
+# there rather than being this function's responsibility.
 function assemble_couplingstore(
     farmatrix::AbstractKernelMatrix{T},
     testpivots::AbstractVector{<:AbstractVector{Int}},
@@ -15,25 +19,31 @@ function assemble_couplingstore(
 
     nnodes = length(ptr) - 1
     couplingmatrices = Vector{Matrix{T}}(undef, nfars)
+    rowidcs = Vector{Vector{Int}}(undef, nfars)
+    colidcs = Vector{Vector{Int}}(undef, nfars)
     @inbounds for tnode in 1:nnodes
         for i in ptr[tnode]:(ptr[tnode + 1] - 1)
             snode = nodes[i]
-            couplingmatrices[i] = zeros(
-                T, length(testpivots[tnode]), length(trialpivots[snode])
-            )
+            rowidcs[i] = testpivots[tnode]
+            colidcs[i] = trialpivots[snode]
+            couplingmatrices[i] = zeros(T, length(rowidcs[i]), length(colidcs[i]))
         end
     end
 
-    @tasks for tnode in 1:nnodes
-        @set scheduler = scheduler
-        for i in ptr[tnode]:(ptr[tnode + 1] - 1)
-            snode = nodes[i]
-            if !isempty(testpivots[tnode]) && !isempty(trialpivots[snode])
-                farmatrix(couplingmatrices[i], testpivots[tnode], trialpivots[snode])
-            end
-            next!(pbar)
-        end
-    end
+    # Empty pivot sets (a node with no selected far-field rank) must be
+    # skipped rather than handed to the kernel matrix - farmatrix(_, [], _)
+    # is not a safe no-op for every backend, so this guard is load-bearing,
+    # not just a perf optimization (see test_couplingmatrices.jl).
+    active = filter(i -> !isempty(rowidcs[i]) && !isempty(colidcs[i]), 1:nfars)
+    assemble_blocks_sparse(
+        farmatrix,
+        view(couplingmatrices, active),
+        view(rowidcs, active),
+        view(colidcs, active);
+        scheduler=scheduler,
+        pbar=pbar,
+    )
+    next!(pbar; step=nfars - length(active))
 
     return CouplingStore{T}(CouplingTraversalPlan(Int.(ptr), Int.(nodes)), couplingmatrices)
 end
@@ -55,6 +65,8 @@ function assemble_couplingstore(
     nnodes = length(testptr) - 1
 
     couplingmatrices = Vector{Matrix{T}}(undef, nfars)
+    rowidcs = Vector{Vector{Int}}(undef, nfars)
+    colidcs = Vector{Vector{Int}}(undef, nfars)
     sdiridcs = Vector{Int}(undef, nfars)
     tdiridcs = Vector{Int}(undef, nfars)
     @tasks for t in 1:nnodes
@@ -66,19 +78,27 @@ function assemble_couplingstore(
                 ==(t), view(trialnodes, trialptr[s]:(trialptr[s + 1] - 1))
             )
             sdiridx = diridxfromlocalfaridx(trialfardata, s, localtidx)
-            couplingmatrices[sidx] = zeros(
-                T, length(testpivots[tdiridx]), length(trialpivots[sdiridx])
-            )
 
+            rowidcs[sidx] = testpivots[tdiridx]
+            colidcs[sidx] = trialpivots[sdiridx]
+            couplingmatrices[sidx] = zeros(T, length(rowidcs[sidx]), length(colidcs[sidx]))
             sdiridcs[sidx] = sdiridx
             tdiridcs[sidx] = tdiridx
-
-            if !isempty(testpivots[tdiridx]) && !isempty(trialpivots[sdiridx])
-                farmatrix(couplingmatrices[sidx], testpivots[tdiridx], trialpivots[sdiridx])
-            end
-            next!(pbar)
         end
     end
+
+    # Empty pivot sets must be skipped rather than handed to the kernel
+    # matrix - see the FarData method above for why this guard is load-bearing.
+    active = filter(i -> !isempty(rowidcs[i]) && !isempty(colidcs[i]), 1:nfars)
+    assemble_blocks(
+        farmatrix,
+        view(couplingmatrices, active),
+        view(rowidcs, active),
+        view(colidcs, active);
+        scheduler=scheduler,
+        pbar=pbar,
+    )
+    next!(pbar; step=nfars - length(active))
 
     return CouplingStore{T}(
         DirCouplingTraversalPlan(Int.(testptr), Int.(tdiridcs), Int.(sdiridcs)),

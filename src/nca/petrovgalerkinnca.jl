@@ -76,7 +76,8 @@ function PetrovGalerkinNCA(
     maxrank=50,
     verbose::Bool=false,
 )
-    nears = assemblenears(
+    println("Nearinteractions assembly")
+    @time nears = assemblenears(
         operator,
         testspace,
         trialspace,
@@ -91,6 +92,7 @@ function PetrovGalerkinNCA(
     farmatrix = AdaptiveCrossApproximation.AbstractKernelMatrix(
         operator, testspace, trialspace; matrixdata=farmatrixdata
     )
+    println("Far interactions assembly")
     fars = assemblefars(
         tree,
         isnear,

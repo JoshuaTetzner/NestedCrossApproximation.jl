@@ -37,12 +37,12 @@ function comparematvec(h2mat, A, x, xt)
 end
 
 ##
-Γ = meshsphere(1.0, 0.025)
+Γ = meshicosphere(60, 1.0)
 RT = raviartthomas(Γ)
 println("Size RT ", length(RT))
 
 h = edgeinfo(Γ)[3]
-λ = 50h
+λ = 4#50h
 k = 2 * pi / λ
 op = Maxwell3D.singlelayer(; wavenumber=k)
 
@@ -78,17 +78,17 @@ comparematvec(h2mat_topdown, A, x, xt)
     RT,
     tree;
     testcompressor=NestedCrossApproximation.BottomUp(;
-        factorization=iACA(
+        factorization=IACA(
             MaximumValue(),
             TreeMimicryPivoting(RT.pos, RT.pos, H2Trees.trialtree(tree)),
-            FNormExtrapolator(iFNormEstimator(tol)),
+            FNormExtrapolator(AdaptiveCrossApproximation.FNormEstimator(tol)),
         ),
     ),
     trialcompressor=NestedCrossApproximation.BottomUp(;
-        factorization=iACA(
+        factorization=IACA(
             TreeMimicryPivoting(RT.pos, RT.pos, H2Trees.testtree(tree)),
             MaximumValue(),
-            FNormExtrapolator(iFNormEstimator(tol)),
+            FNormExtrapolator(AdaptiveCrossApproximation.FNormEstimator(tol)),
         ),
     ),
     scheduler=DynamicScheduler(),
@@ -105,17 +105,17 @@ isnear = NestedCrossApproximation.isnearwideband(k; ηhf=5.0, γ=1.0)
     tree;
     isnear=isnear,
     testcompressor=NestedCrossApproximation.BottomUp(;
-        factorization=iACA(
+        factorization=IACA(
             MaximumValue(),
             TreeMimicryPivoting(RT.pos, RT.pos, H2Trees.trialtree(tree)),
-            FNormExtrapolator(iFNormEstimator(tol)),
+            FNormExtrapolator(FNormEstimator(tol)),
         ),
     ),
     trialcompressor=NestedCrossApproximation.BottomUp(;
-        factorization=iACA(
+        factorization=IACA(
             TreeMimicryPivoting(RT.pos, RT.pos, H2Trees.testtree(tree)),
             MaximumValue(),
-            FNormExtrapolator(iFNormEstimator(tol)),
+            FNormExtrapolator(FNormEstimator(tol)),
         ),
     ),
     scheduler=DynamicScheduler(),

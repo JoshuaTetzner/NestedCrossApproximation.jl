@@ -31,7 +31,7 @@ end
 end
 
 @inline function _stateful_factorization(
-    factorization::AdaptiveCrossApproximation.iACA, maxrank::Int
+    factorization::AdaptiveCrossApproximation.IACA, maxrank::Int
 )
     return factorization([1], [1], maxrank)
 end
@@ -66,11 +66,9 @@ function _ranklimit(maxrank::Int, nrows::Int, ncols::Int)
     return min(maxrank, min(nrows, ncols))
 end
 
-_use_tree_mimicry(f::AdaptiveCrossApproximation.iACA) =
+_use_tree_mimicry(f::AdaptiveCrossApproximation.IACA) =
     (f.rowpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor) ||
-    (f.rowpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor2) ||
-    (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor) ||
-    (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor2)
+    (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor)
 
 # A representor has already reduced/capped Fidcs to the achievable representative count,
 # so its resolved length is authoritative regardless of factorization type or Ft's shape.
@@ -90,7 +88,7 @@ _effective_far_count(
 ) = length(Fidcs)
 
 function _effective_far_count(
-    factorization::AdaptiveCrossApproximation.iACA,
+    factorization::AdaptiveCrossApproximation.IACA,
     tree,
     ::Vector{Int},
     ::Nothing,
@@ -150,7 +148,7 @@ adapt_farfield_indices(factorization, ::Nothing, tree, t::Vector{Int}, Ft::Vecto
     adapt_farfield_indices(factorization, tree, Ft)
 
 function adapt_farfield_indices(
-    factorization::AdaptiveCrossApproximation.iACA, tree, Ft::Vector{Int}
+    factorization::AdaptiveCrossApproximation.IACA, tree, Ft::Vector{Int}
 )
     @assert allunique(Ft) "Expected unique far-field cluster ids (Ft)."
     if _use_tree_mimicry(factorization)
@@ -171,7 +169,7 @@ _test_rowbuffer_for_rawpivots(
 ) = view(rowbuffer, 1:ranklimit, Ftidcs)
 
 _test_rowbuffer_for_rawpivots(
-    ::AdaptiveCrossApproximation.iACA,
+    ::AdaptiveCrossApproximation.IACA,
     rowbuffer::AbstractMatrix,
     Ftidcs::Vector{Int},
     ranklimit::Int,
@@ -185,7 +183,7 @@ _trial_colbuffer_for_rawpivots(
 ) = view(colbuffer, Fsidcs, 1:ranklimit)
 
 _trial_colbuffer_for_rawpivots(
-    ::AdaptiveCrossApproximation.iACA,
+    ::AdaptiveCrossApproximation.IACA,
     colbuffer::AbstractMatrix,
     Fsidcs::Vector{Int},
     ranklimit::Int,
@@ -297,7 +295,7 @@ function _compute_raw_pivots!(
 end
 
 function _compute_raw_pivots!(
-    factorization::AdaptiveCrossApproximation.iACA,
+    factorization::AdaptiveCrossApproximation.IACA,
     farmatrix,
     rowidcs,
     colidcs,
@@ -413,7 +411,7 @@ function _finalize_test_buffers!(
 end
 
 function _finalize_test_buffers!(
-    ::AdaptiveCrossApproximation.iACA,
+    ::AdaptiveCrossApproximation.IACA,
     colbuffer,
     rowbuffer,
     tidcs,
@@ -443,7 +441,7 @@ function _finalize_trial_buffers!(
 end
 
 function _finalize_trial_buffers!(
-    ::AdaptiveCrossApproximation.iACA,
+    ::AdaptiveCrossApproximation.IACA,
     colbuffer,
     rowbuffer,
     Fsidcs,

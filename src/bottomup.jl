@@ -179,32 +179,6 @@ function trialbases(
     return basis_store, transfer_store, spivots
 end
 
-# GPU
-#=
-function testbases(
-    compressor::BottomUp,
-    farmatrix::GPUBEASTKernelMatrix{T},
-    tree::BlockTree,
-    fardata::FarData;
-    scheduler=DynamicScheduler(),
-    maxrank=40,
-) where {T}
-    trialpivots = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
-    for level in reverse(levels(testtree(tree)))
-        testclusters = collect(LevelIterator(testtree(tree), level))
-        for t in testclusters
-            Ft = farfield(testtree(tree), fardata, t)
-            if !isempty(Ft)
-                trialpivots[t] = trialpivots!(
-                    factorization, tree, tvalues, Ft; maxrank=maxrank
-                )
-            end
-        end
-    end
-
-    return trialpivots
-end=#
-
 # wideband nca
 
 function testbases(
