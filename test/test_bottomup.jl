@@ -4,12 +4,9 @@ using NestedCrossApproximation
 using AdaptiveCrossApproximation
 using LinearAlgebra
 
-# Structural/regression coverage for bottomup.jl's testbases/trialbases (FarData path).
-# Numerical matvec accuracy through the full pipeline is covered end-to-end in
-# test_petrovgalerkinnca.jl. ACA() is the default factorization for BottomUp, and the
-# combination used to be explicitly disabled (a commented-out guard in the BottomUp
-# constructor) because of the _stateful_factorization bug fixed alongside this test -
-# the "ACA (default)" case below is the regression guard for both of those.
+# Structural coverage for bottomup.jl's testbases/trialbases (FarData path). Numerical
+# matvec accuracy through the full pipeline is covered end-to-end in
+# test_petrovgalerkinnca.jl.
 @testset "bottomup.jl" begin
     testpts, trialpts = randomwellseparatedclouds(150; seed=6)
     kernel = HelmholtzTestKernel(2.0)

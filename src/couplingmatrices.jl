@@ -1,7 +1,3 @@
-# Block filling is delegated to `assemble_blocks`, so CPU/GPU dispatch safety
-# (e.g. the forced-serial GPU path - concurrent CUDA launches from multiple
-# threads corrupt results without device/stream coordination) is handled
-# there rather than being this function's responsibility.
 function assemble_couplingstore(
     farmatrix::AbstractKernelMatrix{T},
     testpivots::AbstractVector{<:AbstractVector{Int}},
@@ -30,12 +26,10 @@ function assemble_couplingstore(
         end
     end
 
-    # Empty pivot sets (a node with no selected far-field rank) must be
-    # skipped rather than handed to the kernel matrix - farmatrix(_, [], _)
-    # is not a safe no-op for every backend, so this guard is load-bearing,
-    # not just a perf optimization (see test_couplingmatrices.jl).
+    # Nodes without a selected far-field rank must be skipped: farmatrix(_, [], _) is
+    # not a safe no-op for every backend.
     active = filter(i -> !isempty(rowidcs[i]) && !isempty(colidcs[i]), 1:nfars)
-    assemble_blocks_sparse(
+    assemble_blocks(
         farmatrix,
         view(couplingmatrices, active),
         view(rowidcs, active),
@@ -87,8 +81,7 @@ function assemble_couplingstore(
         end
     end
 
-    # Empty pivot sets must be skipped rather than handed to the kernel
-    # matrix - see the FarData method above for why this guard is load-bearing.
+    # Empty pivot sets must be skipped, see the FarData method above.
     active = filter(i -> !isempty(rowidcs[i]) && !isempty(colidcs[i]), 1:nfars)
     assemble_blocks(
         farmatrix,

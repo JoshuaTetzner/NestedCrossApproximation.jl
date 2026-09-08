@@ -150,10 +150,8 @@ end
     end
 
     @testset "mixed LF/HF regime" begin
-        # k chosen so the tree genuinely splits into an HF top and an LF
-        # bottom (verified to give a real mix of empty/HF nodes for this
-        # seed) - this is the regime where the LF/HF boundary discussed with
-        # the user actually occurs.
+        # k chosen so the tree genuinely splits into an HF top and an LF bottom,
+        # giving a real mix of empty/HF nodes for this seed.
         isnear = NestedCrossApproximation.isnearwideband(2π / 1.5; γ=1.0)
         testdata, trialdata = NestedCrossApproximation.fardata(tree, isnear)
 
@@ -218,26 +216,16 @@ end
 end
 
 # -----------------------------------------------------------------------------
-# Dedicated edge case: HF parent whose children fall into the LF regime, with
-# no connection between a node's own regime and its parent's. Raised while
-# reviewing the directionalsubdivision code: a child with zero far
-# interactions of its own, sitting right below an HF parent, ends up with
-# `dirs(data, child) == []` (not even the `[0]` LF sentinel), since there is
-# no LF ancestor to inherit a sentinel from. The question was whether the
-# rest of the code (specifically bottomup.jl's dirmap-driven traversal) can
-# handle that `[]` correctly, or whether `[0]` needs to be assigned instead.
+# Edge case: an HF parent whose children fall into the LF regime. A child with no far
+# interactions of its own directly below an HF parent ends up with
+# `dirs(data, child) == []` (not even the `[0]` LF sentinel), since it has no LF
+# ancestor to inherit one from.
 #
-# Traced through bottomup.jl: `isbasisnode` decides whether to recurse into
-# children's `dirmap` based only on the *first* child's `dirs`. Because a
-# node's LF/HF classification is always uniform across siblings (same level
-# for TwoNTree, same sibling-group mean radius for BoundingBallTree), the
-# first child reflects every sibling's regime, so `isbasisnode` always
-# returns `true` for an HF node whose children are LF - the dangerous
-# children-dirmap branch is never taken in this case, regardless of which
-# particular sibling has its own far interactions and which doesn't. This
-# synthetic test pins that down for both possible orderings (the far-less
-# child listed first, and listed second) directly, rather than relying on
-# random point clouds to happen to hit the case.
+# `isbasisnode` decides whether to recurse into the children's `dirmap` from the first
+# child's `dirs` alone. LF/HF classification is uniform across siblings (same level for
+# TwoNTree, same sibling-group mean radius for BoundingBallTree), so it returns `true`
+# for an HF node with LF children and the children-dirmap branch is never taken. This
+# synthetic test pins that down for both child orderings.
 # -----------------------------------------------------------------------------
 
 @testset "DirectionalData edge case: HF parent, LF children, no shared fars" begin

@@ -4,15 +4,9 @@ using NestedCrossApproximation
 using AdaptiveCrossApproximation
 using LinearAlgebra
 
-# Structural/regression coverage for topdown.jl's testbases/trialbases. Numerical
-# matvec accuracy through the full pipeline (this + couplingmatrices.jl +
-# transfermatrices.jl + abstractnca.jl) is covered end-to-end in
-# test_petrovgalerkinnca.jl; this file checks that the orchestration itself produces
-# well-formed output and, in particular, regression-tests the three bugs found while
-# verifying this file: unqualified isleaf calls (crashed for every factorization
-# choice), the double conversion of far-field indices for inherited parent pivots, and
-# a missing maxrank=maxrank forwarded to compute_test_pivots! (silently used the
-# hardcoded default of 40 instead of the caller's maxrank).
+# Structural coverage for topdown.jl's testbases/trialbases: the orchestration itself
+# must produce well-formed output. Numerical matvec accuracy through the full pipeline
+# is covered end-to-end in test_petrovgalerkinnca.jl.
 @testset "topdown.jl" begin
     testpts, trialpts = randomwellseparatedclouds(150; seed=5)
     kernel = HelmholtzTestKernel(2.0)
@@ -21,15 +15,13 @@ using LinearAlgebra
     testfardata, trialfardata = NestedCrossApproximation.farinteractions(tree)
     n = length(testpts)
     m = length(trialpts)
-    # Below the factorization.jl default of 40: a regression guard for the missing
-    # maxrank=maxrank bug, which only manifests when the caller's maxrank is smaller
-    # than that hardcoded default.
+    # Below the factorization.jl default of 40, so that a maxrank that is not forwarded
+    # to compute_test_pivots! shows up as a rank above this bound.
     maxrank = 25
 
-    # iACA+MimicryPivoting is deliberately not exercised here: it hits an unrelated,
-    # pre-existing gap in AdaptiveCrossApproximation itself (MimicryPivotingFunctor's
-    # deflation step isn't callable with an Int index), reproduced identically for both
-    # TopDown and BottomUp - outside this package's scope to fix.
+    # IACA+MimicryPivoting is not exercised here: MimicryPivotingFunctor's deflation
+    # step isn't callable with an Int index, a gap in AdaptiveCrossApproximation that
+    # affects TopDown and BottomUp alike.
     compressors = [
         "ACA (default pivoting/convergence)" =>
             NestedCrossApproximation.TopDown(; factorization=ACA()),

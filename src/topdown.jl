@@ -170,12 +170,9 @@ function trialbases(
     return basis_store, transfer_store, spivots
 end
 
-# TopDown descends root-to-leaves: each active level has more clusters than the
-# last, but each one is correspondingly cheaper (less work per cluster as Ftvalues
-# narrows), so wall time per active level is roughly constant — about nleaves(tree)
-# coupling-matrix-equivalents — rather than scaling with that level's cluster count.
-# Mirrors the `levelactive`/`next!(pbar; step=nleaves)` runtime logic above so the
-# dry-run total matches exactly what gets incremented.
+# Descending root-to-leaves, each level has more clusters than the last but each is
+# correspondingly cheaper, so an active level costs roughly nleaves(tree)
+# coupling-matrix-equivalents regardless of its own cluster count.
 function _basesworkload(::TopDown, tree, fardata::FarData)
     ptr = farptr(fardata)
     active = falses(numberofnodes(tree))

@@ -1,5 +1,4 @@
-# Per-node point count without materializing the full point-id array (H2Trees.values
-# recursively concatenates leaf data; counting only needs leaf sizes).
+# Per-node point count without materializing the full point-id array.
 function _clustersize(tree, node::Int)
     isleaf(tree, node) && return length(H2Trees.values(H2Trees.data(tree, node)))
     n = 0
@@ -9,11 +8,10 @@ function _clustersize(tree, node::Int)
     return n
 end
 
-# Marks far-field indices that are already point-level. TopDown must merge its own
-# far-field node's points with inherited point-level parent pivots before calling
-# compute_test_pivots!/compute_trial_pivots! (BottomUp never needs this — it always
-# passes raw node ids). Wrapping that merged list tells adapt_farfield_indices to
-# skip the node->point conversion it would otherwise apply.
+# Marks far-field indices that are already point-level. TopDown merges its own far-field
+# node's points with inherited parent pivots; wrapping that list tells
+# adapt_farfield_indices to skip the node-to-point conversion. BottomUp always passes
+# raw node ids and never needs it.
 struct PreResolvedIndices
     idcs::Vector{Int}
 end
@@ -36,10 +34,9 @@ end
     return factorization([1], [1], maxrank)
 end
 
-# ACA's 2-arg form only resolves for the literal default MaximumValue/MaximumValue/
-# FNormEstimator combo, and even then builds the convergence criterion without
-# seeing the matrix or maxrank. The 3-arg form is the generically-correct one, so
-# always route ACA through it; iACA only has the maxrank-aware 2-arg form.
+# ACA's 2-arg form only resolves for the default MaximumValue/MaximumValue/
+# FNormEstimator combination, so route ACA through the generic 3-arg form. IACA only
+# has the maxrank-aware 2-arg form.
 @inline function _build_stateful_factorization(
     factorization::AdaptiveCrossApproximation.ACA, farmatrix, maxrank::Int
 )
@@ -76,9 +73,8 @@ _effective_far_count(
     factorization, tree, Ft, representor::Representor, Fidcs::Vector{Int}
 ) = length(Fidcs)
 
-# Pre-resolved Ft is always point-level by construction, regardless of factorization
-# type, so its effective count is always just its length (bypasses the tree-mimicry
-# per-cluster counting below, which only makes sense for genuinely node-level Ft).
+# Pre-resolved Ft is point-level by construction, so its effective count is its length;
+# the tree-mimicry counting below only applies to node-level Ft.
 _effective_far_count(
     factorization, tree, ::PreResolvedIndices, ::Nothing, Fidcs::Vector{Int}
 ) = length(Fidcs)
@@ -105,10 +101,8 @@ adapt_farfield_indices(
     factorization, ::Nothing, tree, t::Vector{Int}, Ft::PreResolvedIndices
 ) = Ft.idcs
 
-# MimicryRep needs node-level Ft so it can walk the tree top-down from a coherent cluster.
-# PreResolvedIndices is already a flattened, multi-origin point set (TopDown's own
-# far-field node merged with inherited parent pivots) with no single node to walk from,
-# so it isn't supported there - only with BottomUp, which always passes raw node ids.
+# MimicryRep walks the tree top-down from a coherent cluster and so needs node-level Ft.
+# PreResolvedIndices is a flattened, multi-origin point set with no node to walk from.
 function adapt_farfield_indices(
     factorization, ::MimicryRepFunctor, tree, t::Vector{Int}, Ft::PreResolvedIndices
 )

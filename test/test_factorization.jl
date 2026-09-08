@@ -41,13 +41,10 @@ using LinearAlgebra
         @test built isa iACA
     end
 
-    # compute_test_pivots!/compute_trial_pivots! don't leave colbuffer/rowbuffer holding
-    # plain U/V rank factors - after _finalize_test_buffers!/_finalize_trial_buffers!,
-    # colbuffer holds A sampled at the pivot *columns* (resp. rowbuffer at the pivot
-    # *rows*), which is what nestedbasis.jl's rdiv!/ldiv! step consumes. So the right
-    # invariant to check here is that post-finalize buffer slice, not a direct
-    # colbuffer*rowbuffer product (full-reconstruction is covered in
-    # test_nestedbasis_transfermatrices.jl, the actual consumer of this contract).
+    # After _finalize_test_buffers!/_finalize_trial_buffers!, colbuffer holds A sampled
+    # at the pivot columns (resp. rowbuffer at the pivot rows), which is what
+    # nestedbasis.jl's rdiv!/ldiv! step consumes - not plain U/V rank factors. The
+    # invariant checked here is therefore that post-finalize buffer slice.
     @testset "compute_test_pivots! selects good pivots (ACA, node-level Ft)" begin
         colbuffer = zeros(ComplexF64, n, maxrank)
         rowbuffer = zeros(ComplexF64, maxrank, m)
@@ -95,8 +92,7 @@ using LinearAlgebra
     end
 
     @testset "PreResolvedIndices (TopDown's already-point-level Ft) matches the node-level path" begin
-        # This is the exact mechanism that fixes TopDown's double-conversion bug: Ft
-        # wrapped in PreResolvedIndices must be used as-is (point-level), not
+        # Ft wrapped in PreResolvedIndices must be used as-is (point-level), not
         # re-expanded via H2Trees.values as if it were still node-level.
         colbuffer1 = zeros(ComplexF64, n, maxrank)
         rowbuffer1 = zeros(ComplexF64, maxrank, m)

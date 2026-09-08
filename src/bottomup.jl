@@ -92,10 +92,8 @@ function testbases(
     return basis_store, transfer_store, tpivots
 end
 
-# BottomUp: each active cluster costs about one coupling-matrix-equivalent
-# (computing its pivots is comparable work to evaluating one coupling block), so
-# the per-active-cluster dry run is already the right cost model — no per-level
-# correction needed here, unlike TopDown.
+# Each active cluster costs about one coupling-matrix-equivalent, so the
+# per-active-cluster count is already the right cost model.
 _basesworkload(::BottomUp, tree, fardata::FarData) = _farworkload(tree, fardata)
 
 function trialbases(
@@ -391,10 +389,8 @@ function trialbases(
     return basis_store, transfer_store, spivots
 end
 
-# BottomUp + DirectionalData: LF pairs (dir==0) keep weight 1 each; HF levels
-# (dir!=0) follow the same per-level-constant model as TopDown — roughly
-# nleaves × avg-HF-directions-per-cluster per active HF level. Mirrors the
-# `fardata.dirs[diridx]==0 && next!(pbar)` + post-loop HF batch logic above.
+# LF pairs (dir == 0) weigh 1 each; HF levels follow the per-level-constant model,
+# roughly nleaves × average number of HF directions per cluster.
 function _basesworkload(::BottomUp, tree, fardata::DirectionalData)
     nleaves = count(n -> isleaf(tree, n), 1:numberofnodes(tree))
     workload = 0

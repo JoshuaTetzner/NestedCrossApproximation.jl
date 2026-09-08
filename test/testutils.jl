@@ -6,11 +6,9 @@ using StaticArrays
 using Random
 using LinearAlgebra
 
-# Self-contained point-based Helmholtz kernel, used throughout the nca/* tests so they
-# don't depend on BEAST/CompScienceMeshes (those are only needed for the manual,
-# non-CI scripts test_nca.jl / test_wnca*.jl). Implemented as a callable struct (not a
-# plain function) to use AbstractKernelMatrix's recommended interface and avoid the
-# "plain function kernel" warning.
+# Self-contained point-based Helmholtz kernel, so the tests don't depend on
+# BEAST/CompScienceMeshes (those are only needed for the scripts in examples/).
+# A callable struct rather than a plain function, as AbstractKernelMatrix recommends.
 struct HelmholtzTestKernel
     k::Float64
 end

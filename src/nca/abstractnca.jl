@@ -24,11 +24,10 @@ struct TransferTraversalPlan
     chdsidcs::Vector{Int}       # children's node or diridx ids, paired 1:1 with the store's blocks
 end
 
-# Directional variant of TransferTraversalPlan: carries spatial-node grouping pointers so
-# that _disaggregate_coefficients! can parallelize over spatial nodes (safe: different
-# spatial nodes own disjoint child-direction ranges) while processing each node's direction
-# indices serially within one task (avoiding the write-write race that occurs when sibling
-# direction-tree nodes at the same cluster level share the same child direction index).
+# Directional variant of TransferTraversalPlan. The extra grouping pointers let
+# disaggregation parallelize over spatial nodes (which own disjoint child-direction
+# ranges) while keeping each node's directions serial, where sibling direction nodes
+# may share a child direction.
 struct DirTransferTraversalPlan
     leveltoidcsptr::Vector{Int}    # same role as TransferTraversalPlan
     levelidcs::Vector{Int}
@@ -81,16 +80,11 @@ function plan_from_pivots(pivots::AbstractVector, nvals::Int=length(pivots))
     return CoefficientPlan(globalidxtocoeffptr)
 end
 
-# `fardata(tree, isnear)` returns either a (FarData,FarData) or a
-# (DirectionalData,DirectionalData) pair depending on isnear's concrete type
-# (IsNearFunctor vs IsNearWidebandFunctor). Dispatching `assemblefars` on
-# isnear's concrete type, rather than branching on `isnear isa
-# IsNearWidebandFunctor` inside one method, keeps every method body — and the
-# `_buildbases_and_coupling` methods each one calls — locked to a single
-# concrete fardata type from the start. A shared `where {T<:Union{...}}`
-# bound would not do this: JET's package-level analysis checks declared
-# signatures rather than per-call instantiations, so it would still see T as
-# that Union and report the (impossible) cross-combinations as ambiguous.
+# `fardata(tree, isnear)` returns a (FarData, FarData) or a
+# (DirectionalData, DirectionalData) pair depending on isnear's concrete type. The two
+# `assemblefars` methods must stay separate rather than share a Union bound, so that
+# each body — and the `_buildbases_and_coupling` method it calls — is locked to one
+# concrete fardata type.
 function assemblefars(
     tree,
     isnear::IsNearWidebandFunctor,
@@ -139,13 +133,6 @@ function assemblefars(
     )
 end
 
-# Bases (ACA/iACA pivoting, one bar) and coupling (one kernel-block evaluation per
-# far pair, a separate bar) have unrelated per-unit costs, so they get separate
-# progress bars rather than sharing one linear scale where neither end is weighted
-# correctly. `_farworkload` is a cheap dry run that counts only clusters (or, for
-# DirectionalData, cluster/direction pairs) that will actually do work, so levels
-# with no interactions contribute nothing; both bars advance at per-cluster /
-# per-coupling-block granularity (not per-level / not in one final batch).
 function _buildbases_and_coupling(
     testcompressor,
     trialcompressor,
@@ -454,10 +441,8 @@ function _disaggregate_coefficients!(
     end
 end
 
-# Directional disaggregation: parallelise over spatial-node groups (safe — different
-# spatial nodes own disjoint child-direction index ranges), process each node's
-# direction indices serially so sibling direction-tree nodes that share a common child
-# direction accumulate without a write-write race.
+# Parallelise over spatial-node groups, but keep each node's direction indices serial:
+# sibling direction nodes may share a child direction and would otherwise race.
 function _disaggregate_coefficients!(
     yhat::AbstractVector,
     transfer_store::TransferStore{T,<:DirTransferTraversalPlan},
@@ -487,21 +472,6 @@ function _disaggregate_coefficients!(
     end
 end
 
-#=
-function _disaggregate_coefficients!(
-    yhat::AbstractVector, transfer_store, plan, transferop, scheduler
-)
-    return _propagate_coefficients!(
-        yhat,
-        transfer_store,
-        plan,
-        transferop,
-        scheduler;
-        reverse_levels=false,
-        reset_parent=false,
-    )
-end=#
-
 function _project_to_output!(
     y::AbstractVector,
     yhat::AbstractVector,
@@ -519,7 +489,6 @@ function _project_to_output!(
         ynode = @view y[valuesfun(node)]
         yhat_node = @view yhat[ptr0:ptr1]
         @views ynode .+= basisop(basis_store.blocks[i]) * yhat_node
-        #mul!(y_node, basisop(basis_store.blocks[i]), yhat_node)
     end
 end
 

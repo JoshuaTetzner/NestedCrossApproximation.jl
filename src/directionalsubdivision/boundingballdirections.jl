@@ -125,11 +125,10 @@ function directionalfardata(
                     end
                 end
             end
-            # nodedirs[perm] is sorted to match uniquenodedirs[1:noriginal]; run-length
-            # count over that shared order gives the same per-direction counts as
-            # matching every unique direction against every far node, for less work.
-            # Directions appended above (beyond noriginal) come only from parent
-            # inheritance and have no own far nodes, so they correctly stay at 0.
+            # nodedirs[perm] is sorted to match uniquenodedirs[1:noriginal], so a
+            # run-length count over that shared order gives the per-direction counts.
+            # Directions appended beyond noriginal are inherited from the parent and
+            # have no own far nodes, so they stay at 0.
             localdircount = zeros(Int, length(uniquenodedirs))
             sortednodedirs = view(nodedirs, perm)
             n = length(sortednodedirs)

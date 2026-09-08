@@ -8,11 +8,7 @@ using Random
 # End-to-end matvec accuracy for the full PetrovGalerkinNCA pipeline (nearinteractions +
 # fardata + testbases/trialbases + transfermatrices + couplingmatrices + abstractnca's
 # aggregate/couple/disaggregate matvec), compared against a dense reference. This is the
-# contract every other nca/* test file's narrower checks ultimately exist to support -
-# in particular it's the regression test that ties together every fix made to
-# topdown.jl/bottomup.jl/factorization.jl in this pass (isleaf, the ACA stateful-init
-# asymmetry, TopDown's index double-conversion, and the missing maxrank forwarding):
-# before those fixes, every combination below either crashed or silently misconverged.
+# contract every other test file's narrower checks exist to support.
 @testset "petrovgalerkinnca.jl (end-to-end matvec)" begin
     testpts, trialpts = randomwellseparatedclouds(200; seed=7)
     kernel = HelmholtzTestKernel(2.0)

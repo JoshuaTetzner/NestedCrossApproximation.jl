@@ -38,14 +38,9 @@ function farfield(tree, fardata::FarData, node::Int)
     return result
 end
 
-# Counts clusters that will actually do work in testbases/trialbases: a node is
-# "active" if it has its own raw far nodes, or any ancestor does (the latter gets
-# inherited via the parent's pivots once the parent is processed). This is exactly
-# equivalent to `!isempty(farfield(tree, fardata, node))` but O(1) per node instead
-# of walking the ancestor chain, so it's cheap enough to run as a dry-run pass
-# before the real (TopDown or BottomUp) traversal to size the progress bar — and it
-# naturally excludes levels with no interactions instead of weighting every level
-# by its raw cluster count.
+# Counts the clusters that do work in testbases/trialbases: a node is active if it has
+# own far nodes or inherits them from an ancestor. Equivalent to
+# `!isempty(farfield(tree, fardata, node))`, but O(1) per node.
 function _farworkload(tree, fardata::FarData)
     ptr = farptr(fardata)
     active = falses(numberofnodes(tree))

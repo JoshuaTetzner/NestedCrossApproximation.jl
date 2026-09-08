@@ -1,6 +1,3 @@
-# orientation_utils.jl
-# Generic NCA-side utilities. No BEAST, no CompScienceMeshes.
-
 const ACA = AdaptiveCrossApproximation
 
 function orientation_ids(q)

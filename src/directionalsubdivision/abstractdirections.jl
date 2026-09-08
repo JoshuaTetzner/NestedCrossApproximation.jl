@@ -212,14 +212,9 @@ function interaction(node::Int, farnode::Int, tree, fartree)
     return H2Trees.center(tree, node) - H2Trees.center(fartree, farnode)
 end
 
-# Per-direction analogue of `_farworkload(tree, fardata::FarData)`: counts
-# (node, dir) pairs that will actually do work in the BottomUp DirectionalData
-# testbases/trialbases traversal. The LF/HF inheritance rules folded into
-# `dirfarfield` (climb-while-LF vs dirmap-intersection) are intricate enough that
-# re-deriving a static propagation risks silently diverging from the real
-# traversal, so this dry run just reuses `dirfarfield` itself — correct by
-# construction, and its cost (bounded by tree depth, not by ACA/iACA pivoting) is
-# negligible next to the real factorization work it's sizing a bar for.
+# Per-direction analogue of `_farworkload(tree, fardata::FarData)`: counts the
+# (node, dir) pairs that do work in the DirectionalData traversal. Reuses `dirfarfield`
+# instead of re-deriving its LF/HF inheritance rules.
 function _farworkload(tree, fardata::DirectionalData)
     workload = 0
     for level in levels(tree)
