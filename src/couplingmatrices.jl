@@ -1,7 +1,13 @@
-# Block filling is delegated to `assemble_blocks`, so CPU/GPU dispatch safety
-# (e.g. the forced-serial GPU path - concurrent CUDA launches from multiple
-# threads corrupt results without device/stream coordination) is handled
-# there rather than being this function's responsibility.
+"""
+    assemble_couplingstore(farmatrix, testpivots, trialpivots, testfardata, trialfardata;
+        scheduler, pbar)
+
+Evaluate the coupling matrix `A[testpivots, trialpivots]` of every admissible cluster pair
+and return them as a [`CouplingStore`](@ref).
+
+With [`DirectionalData`](@ref) the pivots of the directions the two clusters lie in with
+respect to each other are used.
+"""
 function assemble_couplingstore(
     farmatrix::AbstractKernelMatrix{T},
     testpivots::AbstractVector{<:AbstractVector{Int}},
@@ -30,16 +36,14 @@ function assemble_couplingstore(
         end
     end
 
-    # Empty pivot sets (a node with no selected far-field rank) must be
-    # skipped rather than handed to the kernel matrix - farmatrix(_, [], _)
-    # is not a safe no-op for every backend, so this guard is load-bearing,
-    # not just a perf optimization (see test_couplingmatrices.jl).
+    # Blocks without pivots on one side are skipped: not every kernel matrix accepts an
+    # empty index set.
     active = filter(i -> !isempty(rowidcs[i]) && !isempty(colidcs[i]), 1:nfars)
-    assemble_blocks_sparse(
+    assemble_blocks(
         farmatrix,
-        view(couplingmatrices, active),
-        view(rowidcs, active),
-        view(colidcs, active);
+        couplingmatrices[active],
+        rowidcs[active],
+        colidcs[active];
         scheduler=scheduler,
         pbar=pbar,
     )
@@ -87,14 +91,13 @@ function assemble_couplingstore(
         end
     end
 
-    # Empty pivot sets must be skipped rather than handed to the kernel
-    # matrix - see the FarData method above for why this guard is load-bearing.
+    # Blocks without pivots on one side are skipped, as above.
     active = filter(i -> !isempty(rowidcs[i]) && !isempty(colidcs[i]), 1:nfars)
     assemble_blocks(
         farmatrix,
-        view(couplingmatrices, active),
-        view(rowidcs, active),
-        view(colidcs, active);
+        couplingmatrices[active],
+        rowidcs[active],
+        colidcs[active];
         scheduler=scheduler,
         pbar=pbar,
     )
