@@ -2,32 +2,41 @@
     testbases(compressor, farmatrix, tree, fardata; scheduler, maxrank, pbar)
     trialbases(compressor, farmatrix, tree, fardata; scheduler, maxrank, pbar)
 
-Build one side's nested bases and transfer matrices, returning
-`(basis_store, transfer_store, pivots)`.
+Build the nested bases and transfer matrices of the test or the trial side.
 
-This is the contract every compressor implements. For each `fardata` type it supports, a
-compressor must provide:
+Interface of the compressors: [`TopDown`](@ref), [`BottomUp`](@ref), and
+[`BatchedBottomUp`](@ref) implement both functions for [`FarData`](@ref), [`BottomUp`](@ref)
+also for [`DirectionalData`](@ref).
 
-  - `testbases` and `trialbases` as above;
-  - `_basesworkload(compressor, tree, fardata)`, the dry-run weight used to size the
-    assembly progress bar. Those methods live in utils/workload.jl, next to the
-    `_farworkload` passes they are built from and to each other, since the point of each
-    is to total exactly what its own traversal increments.
+# Arguments
 
-Implementations: [`TopDown`](@ref) and [`BottomUp`](@ref) for `FarData`,
-[`BottomUp`](@ref) for `DirectionalData` (wideband), [`BatchedBottomUp`](@ref) for
-`FarData`.
+  - `compressor`: compressor that selects the pivots
+  - `farmatrix`: kernel matrix for the evaluation of far-field entries
+  - `tree`: block tree
+  - `fardata`: far interactions of the side that is compressed
+
+# Keyword Arguments
+
+  - `scheduler`: `OhMyThreads` scheduler
+  - `maxrank::Int`: maximum number of pivots of a cluster
+  - `pbar`: progress bar
+
+# Returns
+
+  - `basisstore`: leaf bases, see [`BasisStore`](@ref)
+  - `transferstore`: transfer matrices, see [`TransferStore`](@ref)
+  - `pivots`: pivots of each cluster (or of each cluster and direction)
+
+# Notes
+
+A new compressor additionally implements `_basesworkload(compressor, tree, fardata)`, which
+sizes the progress bar.
 """
 function testbases end
 
 @doc (@doc testbases) function trialbases end
 
-# Wideband (directional) assembly is implemented for `BottomUp` only: `TopDown` has no
-# DirectionalData `testbases`/`trialbases`, and `BatchedBottomUp`'s geometric
-# pivotselector has no directional far-field selection. Checked before any work so an
-# unsupported compressor reports itself, instead of surfacing as a MethodError from
-# progress-bar sizing. The accepting `::BottomUp` method lives in bottomup.jl, so the
-# file that implements wideband is the file that opts into it.
+# Directional far fields are implemented for `BottomUp` only, which overrides this method.
 function _check_wideband_compressor(compressor, side::Symbol)
     return throw(
         ArgumentError(

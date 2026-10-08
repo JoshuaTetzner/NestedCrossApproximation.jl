@@ -1,11 +1,30 @@
+"""
+    Representor
+
+Abstract type for strategies that reduce the far field of a cluster to a few
+representative points before the low-rank factorization.
+
+A compressor with a representor factorizes the cluster against the representatives only,
+which reduces the number of evaluated matrix entries at the cost of some accuracy.
+
+# Interface
+
+A representor is called as `representor(refidcs, idcs, npivots)` and returns at most
+`npivots` of the candidates `idcs`; `refidcs` are the indices of the cluster.
+
+# Concrete Types
+
+  - [`RandomRep`](@ref): Random subset
+  - [`ChebyshevRep`](@ref): Points close to a Chebyshev grid
+  - [`MimicryRep`](@ref): Geometric selection by tree mimicry pivoting
+"""
 abstract type Representor end
 
-# All representors are called as `representor(refidcs, idcs, npivots) -> Vector{Int}`:
-# pick at most `npivots` representative point indices from the candidate set `idcs`,
-# optionally guided by the reference point set `refidcs` (the cluster the result will
-# stand in for). They reduce a far-field index set before it's handed to the low-rank
-# factorization, trading some accuracy for a smaller, cheaper pivot search.
+"""
+    RandomRep <: Representor
 
+Representor that draws the representatives uniformly at random from the far field.
+"""
 struct RandomRep <: Representor end
 
 function (::RandomRep)(::AbstractVector{Int}, idcs::AbstractVector{Int}, npivots::Int)
@@ -20,6 +39,21 @@ function (::RandomRep)(::AbstractVector{Int}, idcs::AbstractVector{Int}, npivots
     return pool[1:k]
 end
 
+"""
+    ChebyshevRep{D,F} <: Representor
+
+Representor that selects the points of the far field closest to a tensor Chebyshev grid.
+
+The grid is aligned with the principal axes of the far field and scaled to its extent.
+
+# Fields
+
+  - `pos::Vector{SVector{D,F}}`: positions of the indices of the far field
+
+# Notes
+
+Only three-dimensional positions are supported.
+"""
 struct ChebyshevRep{D,F} <: Representor
     pos::Vector{SVector{D,F}}
 end
@@ -34,11 +68,7 @@ function covmat(M::AbstractVector{SVector{D,F}}) where {D,F}
     end
     s, _, _ = svd(Cₜ)
 
-    # Half-extent along each principal axis. `abs` matters: `refnodes` below spans
-    # [-1,1] and is scaled by `hs`, so `hs` has to be the largest deviation from the
-    # centroid in *either* direction. Tracking the signed maximum instead gave only the
-    # positive-side extent, so a distribution skewed along an axis got a grid sized to
-    # its short side and left the long side uncovered.
+    # Half extent along each principal axis, on either side of the centroid.
     axes = (SVector{D,F}(s[:, 1]), SVector{D,F}(s[:, 2]), SVector{D,F}(s[:, 3]))
     hs = zeros(F, 3)
     for mᵢ in M
@@ -63,8 +93,7 @@ function _chebyshevgrid3d(npivots::Int, ::Type{F}) where {F}
     return [SVector(cn[i], cn[j], cn[k]) for i in 1:N for j in 1:N for k in 1:N]
 end
 
-# refidcs is unused: unlike MimicryRep, the Chebyshev grid is fit to the candidate set's
-# own spatial distribution (via covmat), not mimicking a separate reference distribution.
+# The grid is fit to the candidates themselves, `refidcs` is not used.
 function (cr::ChebyshevRep{D,F})(
     ::AbstractVector{Int}, idcs::AbstractVector{Int}, npivots::Int
 ) where {D,F}
@@ -99,6 +128,23 @@ function (cr::ChebyshevRep{D,F})(
     return chosen
 end
 
+"""
+    MimicryRep{D,T,TreeType} <: Representor
+
+Representor that selects the representatives with the tree mimicry pivoting, i.e. from the
+geometry of the cluster and its far field.
+
+# Fields
+
+  - `pivoting::TreeMimicryPivoting{D,T,TreeType}`: pivoting strategy of
+    AdaptiveCrossApproximation.jl, built from the positions of the cluster side, the
+    positions of the far side, and the tree of the far side
+
+# Notes
+
+Requires a far field given as clusters and is therefore only supported with
+[`BottomUp`](@ref).
+"""
 struct MimicryRep{D,T,TreeType} <: Representor
     pivoting::AdaptiveCrossApproximation.TreeMimicryPivoting{D,T,TreeType}
 end

@@ -86,8 +86,7 @@ using Random
         @test NestedCrossApproximation._use_tree_mimicry(treeiaca)
     end
 
-    # Node-level far fields count their points only for tree mimicry, which is handed the
-    # nodes themselves; everything else has been resolved to points already.
+    # Node-level far fields count their points only for tree mimicry.
     @testset "_effective_far_count" begin
         resolved = NestedCrossApproximation.PreResolvedIndices(svalues)
         @test NestedCrossApproximation._effective_far_count(
@@ -161,9 +160,8 @@ using Random
         )
     end
 
-    # After the search the column buffer holds the block's pivot columns on the cluster
-    # rows, which is what `nestedtestbasis` divides by; the row buffer is handed back
-    # clean. The trial side mirrors this.
+    # The column buffer holds the pivot columns on the cluster rows, the row buffer is
+    # handed back clean. The trial side mirrors this.
     @testset "compute_test_pivots! ($T)" for T in scalartypes
         kernel = if T <: Complex
             (x, y) -> T(cis(norm(x - y)) / norm(x - y))
@@ -360,8 +358,7 @@ using Random
         @test basis * block[rows, :] ≈ block[cluster, :] rtol = 1e-2
     end
 
-    # IACA searches with a `maxrank x maxrank` scratch buffer and leaves the same
-    # contract behind.
+    # IACA searches with a `maxrank x maxrank` scratch buffer and leaves the same contract.
     @testset "compute_test_pivots! ($name)" for (name, factorization) in (
         ("IACA, MimicryPivoting", iaca), ("IACA, TreeMimicryPivoting", treeiaca)
     )

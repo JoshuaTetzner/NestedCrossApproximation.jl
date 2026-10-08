@@ -1,6 +1,3 @@
-# Upward half of the matvec: project the input onto each cluster's nested basis
-# coefficients, then accumulate child coefficients into parents level by level.
-
 function _project_to_coefficients!(
     coeffs::AbstractVector,
     x::AbstractVector,

@@ -1,3 +1,36 @@
+"""
+    PetrovGalerkinNCA{T} <: LinearMaps.LinearMap{T}
+
+H²-matrix constructed with the nested cross approximation.
+
+Near interactions are stored as dense blocks. Far interactions are stored in nested form:
+a basis for each leaf cluster, a transfer matrix for each cluster and child, and a coupling
+matrix for each admissible pair of clusters. Test and trial side have separate bases, so
+the test and the trial space may differ.
+
+# Fields
+
+  - `tree`: block tree of the test and the trial cluster tree
+  - `nearinteractions`: block-sparse matrix of the near field
+  - `nestedtestbases`, `nestedtrialbases`: leaf bases, see [`BasisStore`](@ref)
+  - `testtransfermatrices`, `trialtransfermatrices`: transfer matrices, see
+    [`TransferStore`](@ref)
+  - `couplingmatrices`: coupling matrices, see [`CouplingStore`](@ref)
+  - `aggregationplan`, `disaggregationplan`: position of the coefficients of each trial and
+    test cluster in the coefficient vectors of the matrix-vector product
+  - `scheduler`: scheduler of the matrix-vector product
+  - `dim::Tuple{Int,Int}`: matrix dimensions `(m, n)`
+
+# Notes
+
+A `PetrovGalerkinNCA` is a linear map that supports `*`, `mul!`, `transpose`, and `adjoint`.
+It is created through the constructor
+`PetrovGalerkinNCA(operator, testspace, trialspace, tree; kwargs...)`.
+
+# See also
+
+[`farmatrix`](@ref), [`nearmatrix`](@ref), [`storage`](@ref)
+"""
 struct PetrovGalerkinNCA{
     T,
     TreeType,
@@ -58,6 +91,41 @@ struct PetrovGalerkinNCA{
     end
 end
 
+"""
+    PetrovGalerkinNCA(operator, testspace, trialspace, tree; kwargs...)
+
+Assemble an H²-matrix of `operator` with the nested cross approximation.
+
+The near field is assembled densely. For the far field the test and the trial compressor
+select pivots for every cluster, from which the nested bases, the transfer matrices and
+the coupling matrices are computed.
+
+# Arguments
+
+  - `operator`: operator or kernel that defines the matrix entries
+  - `testspace`, `trialspace`: test and trial space, e.g. basis functions or point sets.
+    Together with `operator` they have to be supported by
+    `AdaptiveCrossApproximation.AbstractKernelMatrix`.
+  - `tree`: block tree (`H2Trees.BlockTree`) of the cluster trees of both spaces
+
+# Keyword Arguments
+
+  - `testcompressor = TopDown()`: compressor for the test bases, one of [`TopDown`](@ref),
+    [`BottomUp`](@ref), and [`BatchedBottomUp`](@ref)
+  - `trialcompressor = TopDown()`: compressor for the trial bases
+  - `isnear = isnear()`: admissibility condition. With [`isnearwideband`](@ref) a directional
+    H²-matrix is built, which requires [`BottomUp`](@ref) on both sides.
+  - `maxrank::Int = 50`: maximum number of pivots of a cluster
+  - `matrixdata`: data for the evaluation of the near field, e.g. a quadrature strategy
+  - `farmatrixdata`: data for the evaluation of the far field
+  - `scheduler = DynamicScheduler()`: `OhMyThreads` scheduler for the assembly and the
+    matrix-vector product
+  - `verbose::Bool = false`: show progress bars during the assembly
+
+# Returns
+
+  - [`PetrovGalerkinNCA`](@ref)
+"""
 function PetrovGalerkinNCA(
     operator,
     testspace,
@@ -123,6 +191,13 @@ Base.size(A::PetrovGalerkinNCA) = A.dim
 Base.size(A::PetrovGalerkinNCA, dim::Int) = A.dim[dim]
 Base.eltype(::PetrovGalerkinNCA{T}) where {T} = T
 
+"""
+    farmatrix(h2mat::PetrovGalerkinNCA)
+
+Return the far field of `h2mat` as a [`PetrovGalerkinNCA`](@ref) with an empty near field.
+
+The nested bases, transfer and coupling matrices are shared with `h2mat`.
+"""
 function farmatrix(h2mat::PetrovGalerkinNCA)
     blocks = Matrix{eltype(h2mat)}[]
     nears = BlockSparseMatrix(blocks, Vector{Int}[], Vector{Int}[], h2mat.dim)
@@ -142,10 +217,28 @@ function farmatrix(h2mat::PetrovGalerkinNCA)
     )
 end
 
+"""
+    nearmatrix(h2mat::PetrovGalerkinNCA)
+
+Return the near field of `h2mat` as a block-sparse matrix.
+"""
 function nearmatrix(h2mat::PetrovGalerkinNCA)
     return h2mat.nearinteractions
 end
 
+"""
+    storage(h2mat::PetrovGalerkinNCA)
+
+Print the memory footprint of `h2mat` and its compression ratio with respect to the dense
+matrix.
+
+Counts the entries of the near field, the coupling and transfer matrices, and the leaf
+bases.
+
+# Returns
+
+  - Storage of these entries in GB.
+"""
 function storage(h2mat::PetrovGalerkinNCA)
     refsize = size(h2mat, 1) * size(h2mat, 2) * sizeof(eltype(h2mat))
     matsize = 0

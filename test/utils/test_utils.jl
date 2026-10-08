@@ -4,9 +4,7 @@ using LinearAlgebra
 
 @testset "utils.jl" begin
     @testset "ptrfromcounts builds CSR offsets" begin
-        # Entry i owns ptr[i]:ptr[i+1]-1, a slot exactly as wide as its count, and the
-        # slots tile 1:sum(counts) without gap or overlap. A zero count is a zero-width
-        # slot, not a skipped entry.
+        # The slots tile 1:sum(counts); a zero count is a slot of zero width.
         counts = [2, 0, 3, 1]
         ptr = NestedCrossApproximation.ptrfromcounts(counts)
         @test ptr == [1, 3, 3, 6, 7]
@@ -29,8 +27,7 @@ using LinearAlgebra
         @test nodes == [2, 5]
         @test blocks == [[1, 2], [3]]
 
-        # Nothing assigned: empty result, not an error - this is the shape the compressors
-        # produce for a tree level that contributed no bases at all.
+        # Nothing assigned gives an empty result.
         eblocks, enodes = NestedCrossApproximation.collect_assigned(
             Vector{Vector{Int}}(undef, 3)
         )
@@ -43,10 +40,8 @@ using LinearAlgebra
         @test fblocks == full
     end
 
-    # The guard that turns an unusable cross matrix into a diagnosis. Both nestedbasis.jl
-    # and transfermatrices.jl divide by A[pivots, cols]; when the selected pivots are
-    # linearly dependent that division is meaningless, and plain `lu!` reports it as a
-    # bare SingularException from inside a parallel assembly.
+    # Dependent pivots are reported as SingularCrossMatrixError instead of a bare
+    # SingularException.
     @testset "_crossfactorization" begin
         @testset "invertible cross matrix factorizes as usual" begin
             X = ComplexF64[2 1; 1 3]
@@ -57,8 +52,7 @@ using LinearAlgebra
         end
 
         @testset "dependent pivots raise SingularCrossMatrixError, not SingularException" begin
-            # Two identical rows: exactly what coincident points produce once the pivot
-            # search has picked a point and, later, its duplicate.
+            # Two identical rows, as coincident points produce them.
             S = ComplexF64[1 2; 1 2]
             err = try
                 NestedCrossApproximation._crossfactorization(copy(S), :nested_test_basis)
@@ -72,8 +66,7 @@ using LinearAlgebra
 
             msg = sprint(showerror, err)
             @test occursin("nested_test_basis", msg)
-            # The message has to point at the matrix, not at the pivot search: the search
-            # never repeats an index, so a dependent pivot set means duplicate rows.
+            # The message points at the matrix, not at the pivot search.
             @test occursin("coincident points", msg)
         end
     end

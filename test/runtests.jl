@@ -7,13 +7,10 @@ using Random
 Random.seed!(1234)
 
 @testset "NestedCrossApproximation" begin
-    # Shared helpers (tree builders, kernel, dense reference) first: every test
-    # file below may use them.
+    # Shared helpers first.
     include("testutils.jl")
 
-    # Order mirrors the include list in src/NestedCrossApproximation.jl, so that the
-    # test tree can be read as a checklist against it. `# (no test file)` marks a src
-    # file with no counterpart yet.
+    # Same order as the includes in src/NestedCrossApproximation.jl.
     include("admissibility/test_nearinteractions.jl")
     include("admissibility/test_farinteractions.jl")
     include("admissibility/directionalsubdivision/test_abstractdirections.jl")

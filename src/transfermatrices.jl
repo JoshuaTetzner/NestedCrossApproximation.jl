@@ -111,6 +111,17 @@ function testtransfermatrices!(
     return nothing
 end
 
+"""
+    testtransfer(rows, childrows, buf)
+    trialtransfer(cols, childcols, buf)
+
+Compute the transfer matrix between a cluster and one of its children.
+
+With the pivots `τ`, `σ` of the cluster and the pivots `τc` (`σc`) of the child, the
+transfer matrix is `A[τc, σ] * inv(A[τ, σ])` on the test side and
+`inv(A[τ, σ]) * A[τ, σc]` on the trial side. As for the leaf bases, `buf` holds the pivot
+columns (rows) of the cluster.
+"""
 function testtransfer(rows, childrows, buf)
     n = length(rows)
     transfer = buf[childrows, 1:n]
@@ -134,7 +145,7 @@ function trialtransfermatrices!(
     return nothing
 end
 
-function trialtransfer(cols, childcols, buf)
+@doc (@doc testtransfer) function trialtransfer(cols, childcols, buf)
     n = length(cols)
     transfer = buf[1:n, childcols]
     return ldiv!(_crossfactorization(buf[1:n, cols], :trial_transfer_matrix), transfer)

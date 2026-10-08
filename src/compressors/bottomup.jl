@@ -1,5 +1,27 @@
 import H2Trees: levels, LevelIterator
 
+"""
+    BottomUp{LowRankFactorizationType,RepresentorType}
+
+Compressor that constructs the nested bases from the leaves to the root.
+
+For each cluster a block against its far field, the admissible clusters of the cluster and
+of all its ancestors, is factorized. In a leaf all points of the cluster are candidates
+for the pivots, in any other cluster the pivots of its children. The selected pivots of the
+cluster define its basis and transfer matrices.
+
+# Fields
+
+  - `factorization::LowRankFactorizationType`: low-rank factorization that selects the
+    pivots, an `ACA` or an `IACA` of AdaptiveCrossApproximation.jl
+  - `representor::RepresentorType`: [`Representor`](@ref) that reduces the far field before
+    the factorization, or `nothing`
+
+# Notes
+
+`BottomUp` is the only compressor that supports directional H²-matrices (see
+[`isnearwideband`](@ref)), where a basis is built for each cluster and direction.
+"""
 mutable struct BottomUp{LowRankFactorizationType,RepresentorType}
     factorization::LowRankFactorizationType
     representor::RepresentorType
@@ -9,6 +31,16 @@ mutable struct BottomUp{LowRankFactorizationType,RepresentorType}
     end
 end
 
+"""
+    BottomUp(; factorization=ACA(), representor=nothing)
+
+Build a [`BottomUp`](@ref) compressor from keyword arguments.
+
+# Keyword Arguments
+
+  - `factorization = ACA()`: low-rank factorization that selects the pivots
+  - `representor = nothing`: [`Representor`](@ref) that reduces the far field
+"""
 function BottomUp(; factorization=AdaptiveCrossApproximation.ACA(), representor=nothing)
     return BottomUp(factorization, representor)
 end
@@ -175,8 +207,6 @@ end
 
 # wideband nca
 
-# BottomUp is the one compressor with a DirectionalData traversal; see
-# `_check_wideband_compressor` in abstractcompressor.jl for the rejecting fallback.
 _check_wideband_compressor(::BottomUp, ::Symbol) = nothing
 
 function testbases(

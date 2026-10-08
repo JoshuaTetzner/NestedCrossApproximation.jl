@@ -5,13 +5,12 @@ import AdaptiveCrossApproximation:
 """
     IsNearWidebandFunctor{F,LF}
 
-Admissibility predicate for wideband (mixed low-/high-frequency) hierarchical
-matrices.
+Admissibility condition for wideband problems, in which clusters may be small or large
+compared to the wavelength.
 
-Classifies a pair of tree nodes as near (inadmissible for compression, must be
-assembled directly) or far (admissible). The criterion switches per pair between
-a geometric one in the low-frequency regime and a wave-based one in the
-high-frequency regime, as decided by the `islf` field.
+Classifies a pair of clusters as near (assembled densely) or far (compressed). The
+condition switches per pair between a geometric one in the low-frequency regime and a
+wavenumber-dependent one in the high-frequency regime, as decided by `islf`.
 
 Construct with [`isnearwideband`](@ref) rather than calling the constructor
 directly.
@@ -33,19 +32,24 @@ end
 """
     isnearwideband(k::Real; ηlf=1.0, ηhf=5.0, γ=1.0, islf=islf(γ, k))
 
-Create a wideband admissibility predicate for hierarchical matrix construction.
+Create the wideband admissibility condition for wavenumber `k`.
 
-Two nodes are classified as near when, depending on whether their size places
-them in the low- or high-frequency regime (as decided by `islf`), they fail the
-corresponding geometric (`ηlf`) or wave-based (`ηhf`) separation criterion for
-wavenumber `k`.
+Passed as `isnear` to [`PetrovGalerkinNCA`](@ref) it leads to a directional H²-matrix. With
+the diameters `d` of two clusters and their distance `dist`, the pair is in the
+low-frequency regime if `k * min(d) <= γ`. It is far (admissible) if
 
-All parameters are stored as `float(typeof(k))`, so the wavenumber alone fixes
-the predicate's element type.
+  - `max(d) <= ηlf * dist` in the low-frequency regime,
+  - `k * max(d)^2 <= ηhf * dist` in the high-frequency regime.
+
+All parameters are stored as `float(typeof(k))`, so the wavenumber alone fixes the element
+type.
 
 # Arguments
 
   - `k::Real`: wavenumber.
+
+# Keyword Arguments
+
   - `ηlf::Real = 1.0`: admissibility parameter for the low-frequency branch.
   - `ηhf::Real = 5.0`: admissibility parameter for the high-frequency branch.
   - `γ::Real = 1.0`: threshold used by the default low-frequency classifier

@@ -16,8 +16,7 @@ function (kernel::HelmholtzKernel)(x, y)
     return r == 0 ? zero(ComplexF64) : exp(-im * kernel.k * r) / (4π * r)
 end
 @testset "petrovgalerkinnca.jl" begin
-    # Squares of side a in the plane z = 0, the vertices of a mesh with edge length h
-    # stand in for the basis functions.
+    # Vertices of a mesh with edge length h on squares of side a in the plane z = 0.
     a = 1.0
     small = meshrectangle(a, a, 0.16).vertices
     large = meshrectangle(a, a, 0.01).vertices

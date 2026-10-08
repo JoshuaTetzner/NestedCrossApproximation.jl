@@ -16,9 +16,7 @@ using Random
     twonbuilder = TwoNTreeBuilder(; minhalfsize=1 / 2^6, minvalues=10)
     singlenode = KMeansTreeBuilder(; numberofclusters=2, minvalues=100)
 
-    # The last two pair distinct trees: with one tree on both sides the far relation is
-    # symmetric and a swapped pair index would go unnoticed. In the last one the roots
-    # are already far, which returns before the recursion.
+    # The last two pair distinct trees; in the last one the roots are already far.
     @testset "farinteractions ($name)" for (name, ttree, stree) in (
         (
             "KMeansTree",
@@ -77,8 +75,7 @@ using Random
         @test all(==(1), covered)
     end
 
-    # FarData's index type is a struct parameter and the accessors convert on read, so a
-    # narrower integer type has to give identical answers.
+    # A narrower index type has to give identical answers.
     for I in (Int, Int32)
         data = NestedCrossApproximation.FarData(I[1, 3, 3, 5], I[7, 8, 9, 10])
 
@@ -90,8 +87,7 @@ using Random
         @test NestedCrossApproximation.farnodes(data, 3) == [9, 10]
     end
 
-    # farfield is what the compressors consume: a node's own far nodes followed by every
-    # ancestor's, since those are inherited through the parent's pivots.
+    # A node's own far nodes followed by those of every ancestor.
     @testset "farfield" begin
         Random.seed!(3)
         pts = [SVector{3,Float64}(rand(3)) for _ in 1:60]

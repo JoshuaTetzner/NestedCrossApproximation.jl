@@ -27,9 +27,7 @@ function sphericalfibonaccipoints(n::Int)
     return pts
 end
 
-# Find the index in `evecs` (unit direction vectors) whose direction best matches `vec`.
-# Minimizing angle(a,b) over fixed `vec` and unit-norm `evecs` is equivalent to maximizing
-# dot(a,b), which skips the norm/acos work.
+# Index of the unit vector in `evecs` with the smallest angle to `vec`.
 @inline function _nearest_direction(evecs::AbstractVector, vec)
     best = 1
     bestdot = dot(evecs[1], vec)
@@ -49,14 +47,10 @@ function directionalfardata(
     ptr = farptr(fardata)
     nodes = farnodes(fardata)
     nnodes = length(ptr) - 1
-    N = size(eltype(tree), 1)   # spatial dimension
-    F = eltype(eltype(tree))    # float type
+    N = size(eltype(tree), 1)
+    F = eltype(eltype(tree))
     k = isnear.k
     γ = isnear.islf.γ
-    # dirs[node]  = indices into that node's totalEvec that are actually used (unique)
-    # farE[node]  = for each far, local direction index (1..ndirs) into dirs[node]
-    # partochddirmap[node] = for each parent direction (1..ndirs_parent), child's local dir index
-    # Evec[node]  = actual direction vectors for the used directions (temp, for child mapping)
     dirs = Vector{Vector{Int}}(undef, nnodes)
     dircount = [Int[] for _ in 1:nnodes]
     partochddirmap = [Int[] for _ in 1:nnodes]
@@ -64,7 +58,6 @@ function directionalfardata(
 
     dirsvec = Vector{Vector{SVector{N,F}}}(undef, nnodes)
 
-    # --- Top-down pass ---
     for level in H2Trees.levels(tree)
         for node in H2Trees.LevelIterator(tree, level)
             pnode = H2Trees.parent(tree, node)
@@ -74,8 +67,7 @@ function directionalfardata(
             if !isnear.islf(tree, node)
                 @assert hasparentvecs == hasparentdirs "Parent dirs without parent vecs should not happen"
             end
-            # LF nodes do not use directional subdivision.
-            # Store [0] for direct LF far nodes, or when inheriting from an LF parent with dirs.
+            # LF nodes carry the direction 0, if they have far nodes or an LF parent with it.
             if isnear.islf(tree, node)
                 inheritlf =
                     hasparentdirs &&
@@ -89,7 +81,7 @@ function directionalfardata(
             (!hasfars && !hasparentvecs) && (dirs[node]=Int[]; continue)
 
             totaldirsvec = directions(Val(N), F(2) * H2Trees.radius(tree, node), F(k), F(γ))
-            # Assign each far to the closest direction (index into totalEvec).
+            # Assign each far node to the closest direction.
             nfar = Int(ptr[node + 1] - ptr[node])
             nodedirs = Vector{Int}(undef, nfar)
             for (i, faridx) in enumerate(ptr[node]:(ptr[node + 1] - 1))
@@ -102,8 +94,7 @@ function directionalfardata(
             uniquenodedirs = sort!(unique(nodedirs))
             noriginal = length(uniquenodedirs)
 
-            # Map each parent direction to the closest direction in totalEvec,
-            # using child-centered far vectors when the parent direction has far nodes.
+            # Closest direction of the node for each parent direction, seen from its own centre.
             partochddir = iszero(pnode) ? Int[] : zeros(Int, length(dirs[pnode]))
             if !iszero(pnode)
                 ctopc = H2Trees.center(tree, node) - H2Trees.center(tree, pnode)
@@ -125,11 +116,7 @@ function directionalfardata(
                     end
                 end
             end
-            # nodedirs[perm] is sorted to match uniquenodedirs[1:noriginal]; run-length
-            # count over that shared order gives the same per-direction counts as
-            # matching every unique direction against every far node, for less work.
-            # Directions appended above (beyond noriginal) come only from parent
-            # inheritance and have no own far nodes, so they correctly stay at 0.
+            # Number of far nodes per direction; the inherited directions have none.
             localdircount = zeros(Int, length(uniquenodedirs))
             sortednodedirs = view(nodedirs, perm)
             n = length(sortednodedirs)
@@ -151,8 +138,7 @@ function directionalfardata(
         end
     end
 
-    # Fill dircount for LF sentinel nodes: the pass above stores dirs=[0] for them
-    # but leaves dircount empty, since they have no per-direction split.
+    # All far nodes of an LF node belong to the direction 0.
     for node in eachindex(dirs)
         if !isempty(dirs[node]) && isempty(dircount[node])
             dircount[node] = [max(0, Int(ptr[node + 1] - ptr[node]))]

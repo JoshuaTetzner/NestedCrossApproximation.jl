@@ -24,6 +24,22 @@ function _build_dirbasis_storage(bases::Vector{Matrix{T}}, cntr::Vector{Int}) wh
     return BasisStore{T}(DirBasisTraversalPlan(nodes, idxtodiridxptr, diridcs), blocks)
 end
 
+"""
+    nestedtestbasis(tvalues, pivots, buffer)
+    nestedtrialbasis(svalues, pivots, buffer)
+
+Compute the basis of a leaf cluster from the pivot columns (rows) of the matrix stored in
+`buffer`.
+
+With the row pivots `τ` and the column pivots `σ` of a test cluster `t` the basis is
+`A[t, σ] * inv(A[τ, σ])`, for a trial cluster `s` it is `inv(A[τ, σ]) * A[τ, s]`.
+
+# Arguments
+
+  - `tvalues`, `svalues`: indices of the cluster
+  - `pivots`: pivots of the cluster, `τ` on the test and `σ` on the trial side
+  - `buffer`: the first `length(pivots)` columns (rows) hold `A[:, σ]` (`A[τ, :]`)
+"""
 function nestedtestbasis(
     tvalues::Vector{Int}, pivots::Vector{Int}, buffer::AbstractMatrix{K}
 ) where {K}
@@ -32,7 +48,7 @@ function nestedtestbasis(
     return rdiv!(basis, _crossfactorization(buffer[pivots, 1:n], :nested_test_basis))
 end
 
-function nestedtrialbasis(
+@doc (@doc nestedtestbasis) function nestedtrialbasis(
     svalues::Vector{Int}, pivots::Vector{Int}, buffer::AbstractMatrix{K}
 ) where {K}
     n = length(pivots)

@@ -10,8 +10,7 @@ using NestedCrossApproximation
         @test plan isa NestedCrossApproximation.CoefficientPlan
         @test plan.globalidxtocoeffptr == [1, 3, 6, 6, 7]
 
-        # A cluster without far field is left unassigned by the compressors and counts
-        # like one with no pivots.
+        # A cluster without far field is unassigned and counts like one without pivots.
         sparsepivots = Vector{Vector{Int}}(undef, 4)
         sparsepivots[2] = [1, 2]
         sparsepivots[4] = Int[]

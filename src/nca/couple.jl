@@ -1,7 +1,3 @@
-# Middle of the matvec: apply the coupling blocks between admissible cluster pairs.
-# Forward is parallel over test clusters; reverse (transpose/adjoint) is serial because
-# several test clusters accumulate into the same trial slot.
-
 function _couple_forward!(
     yhat::AbstractVector,
     xhat::AbstractVector,
@@ -53,6 +49,7 @@ function _couple_forward!(
     end
 end
 
+# Serial: several test clusters accumulate into the same trial coefficients.
 function _couple_reverse!(
     yhat::AbstractVector,
     xhat::AbstractVector,

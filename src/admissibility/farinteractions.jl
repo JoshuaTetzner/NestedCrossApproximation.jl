@@ -1,5 +1,18 @@
 import H2Trees: testtree, trialtree, root, children, numberofnodes
 
+"""
+    FarData{I<:Integer}
+
+Far interactions of the clusters of one tree in compressed sparse row layout.
+
+The far nodes of `node`, i.e. the clusters of the other tree that form an admissible pair
+with it, are `farnodes[nodetofarnodesptr[node]:(nodetofarnodesptr[node + 1] - 1)]`.
+
+# Fields
+
+  - `nodetofarnodesptr::Vector{I}`: position of the first far node of each node
+  - `farnodes::Vector{I}`: far nodes of all nodes
+"""
 struct FarData{I<:Integer}
     nodetofarnodesptr::Vector{I}
     farnodes::Vector{I}
@@ -14,6 +27,14 @@ function farnodes(data::FarData, node::Int)
     return @view nodes[Int(ptr[node]):(Int(ptr[node + 1]) - 1)]
 end
 
+"""
+    farfield(tree, fardata::FarData, node::Int)
+
+Return the far field of `node`: its own far nodes followed by those of all its ancestors.
+
+A nested basis has to represent the cluster with respect to this set, since the
+interactions of the ancestors are passed down through the transfer matrices.
+"""
 function farfield(tree, fardata::FarData, node::Int)
     ptr = farptr(fardata)
     nodes = farnodes(fardata)
@@ -108,6 +129,17 @@ function farinteractions(tree::BlockTree; isnear=isnear())
     return FarData(testptr, testfarnodes), FarData(trialptr, trialfarnodes)
 end
 
+"""
+    fardata(tree::BlockTree, isnear)
+
+Determine the admissible cluster pairs of `tree` and return the far interactions of the
+test and of the trial tree.
+
+# Returns
+
+  - Two [`FarData`](@ref) for the standard admissibility condition, two
+    [`DirectionalData`](@ref) for [`isnearwideband`](@ref).
+"""
 function fardata(tree::BlockTree, isnear::IsNearFunctor)
     return farinteractions(tree; isnear=isnear)
 end

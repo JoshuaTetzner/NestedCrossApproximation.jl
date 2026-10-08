@@ -4,10 +4,24 @@ end
 
 struct DirBasisTraversalPlan
     nodes::Vector{Int}
-    idxtodiridxptr::Vector{Int} # length(nodes)+1; position i of nodes → range in diridx
+    idxtodiridxptr::Vector{Int} # position in nodes → range in diridx
     diridx::Vector{Int}
 end
 
+"""
+    BasisStore{T,P}
+
+Leaf bases of one side of an H²-matrix.
+
+`blocks[i]` is the basis of the cluster `plan.nodes[i]`, of size `(points, rank)` on the test
+side and `(rank, points)` on the trial side. With a directional plan a cluster holds one
+basis per direction.
+
+# Fields
+
+  - `plan::P`: clusters (and directions) the blocks belong to
+  - `blocks::Vector{Matrix{T}}`: basis matrices
+"""
 struct BasisStore{T,P}
     plan::P
     blocks::Vector{Matrix{T}}
@@ -18,21 +32,35 @@ struct BasisStore{T,P}
 end
 
 struct TransferTraversalPlan
-    leveltoidcsptr::Vector{Int} # length(levels)+1; level → range in levelidcs
-    levelidcs::Vector{Int}      # node or diridx active at that level, flattened across levels
-    idxtochdsptr::Vector{Int}   # length(levelidcs)+1; position in levelidcs → range in chdsidcs
-    chdsidcs::Vector{Int}       # children's node or diridx ids, paired 1:1 with the store's blocks
+    leveltoidcsptr::Vector{Int} # level → range in levelidcs
+    levelidcs::Vector{Int}      # parent of the transfer blocks, level by level
+    idxtochdsptr::Vector{Int}   # position in levelidcs → range in chdsidcs
+    chdsidcs::Vector{Int}       # child of each transfer block
 end
 
 struct DirTransferTraversalPlan
-    leveltoidcsptr::Vector{Int}    # same role as TransferTraversalPlan
+    leveltoidcsptr::Vector{Int}
     levelidcs::Vector{Int}
     idxtochdsptr::Vector{Int}
     chdsidcs::Vector{Int}
-    leveltogroupsptr::Vector{Int}  # length(levels)+1; level → range of groups in groupsptr
-    groupsptr::Vector{Int}         # groupsptr[g]:groupsptr[g+1]-1 = levelidcs range for group g
+    leveltogroupsptr::Vector{Int} # level → range in groupsptr
+    groupsptr::Vector{Int}        # group (the directions of one cluster) → range in levelidcs
 end
 
+"""
+    TransferStore{T,P}
+
+Transfer matrices of one side of an H²-matrix, ordered level by level.
+
+Each block connects a cluster and one of its children, and is of size
+`(child rank, parent rank)` on the test side and `(parent rank, child rank)` on the trial
+side. With a directional plan the blocks connect (cluster, direction) pairs.
+
+# Fields
+
+  - `plan::P`: levels, parents and children the blocks belong to
+  - `blocks::Vector{Matrix{T}}`: transfer matrices
+"""
 struct TransferStore{T,P}
     plan::P
     blocks::Vector{Matrix{T}}
@@ -43,16 +71,29 @@ struct TransferStore{T,P}
 end
 
 struct CouplingTraversalPlan
-    nodetofarnodesptr::Vector{Int} # length of test nodes + 1
-    farnodes::Vector{Int}          # length of blocks -> trial node idx
+    nodetofarnodesptr::Vector{Int} # test node → range in farnodes
+    farnodes::Vector{Int}          # trial node of each block
 end
 
 struct DirCouplingTraversalPlan
-    nodetodiridxptr::Vector{Int} # length of test nodes + 1; reuses the raw per-node far-pair ptr
-    tidcs::Vector{Int}           # length of blocks -> test diridx
-    sidcs::Vector{Int}           # length of blocks -> trial diridx
+    nodetodiridxptr::Vector{Int} # test node → range in tidcs and sidcs
+    tidcs::Vector{Int}           # test diridx of each block
+    sidcs::Vector{Int}           # trial diridx of each block
 end
 
+"""
+    CouplingStore{T,P}
+
+Coupling matrices of an H²-matrix.
+
+`blocks[i]` holds the matrix entries at the pivots of the `i`-th admissible pair of a test
+and a trial cluster, `A[testpivots, trialpivots]`.
+
+# Fields
+
+  - `plan::P`: test and trial cluster (or direction index) of each block
+  - `blocks::Vector{Matrix{T}}`: coupling matrices
+"""
 struct CouplingStore{T,P}
     plan::P
     blocks::Vector{Matrix{T}}
@@ -63,7 +104,7 @@ struct CouplingStore{T,P}
 end
 
 struct CoefficientPlan
-    globalidxtocoeffptr::Vector{Int} # node or diridx (reused generically for both) → range in xhat/yhat/coeffs
+    globalidxtocoeffptr::Vector{Int} # node (or diridx) → range in the coefficient vector
 end
 
 function plan_from_pivots(pivots::AbstractVector)
@@ -77,9 +118,22 @@ function plan_from_pivots(pivots::AbstractVector)
     return CoefficientPlan(globalidxtocoeffptr)
 end
 
-# Split in two rather than one Union-typed `isnear`: fardata(tree, isnear) would then
-# return Union{Tuple{FarData,FarData},Tuple{DirectionalData,DirectionalData}}, and JET
-# union-splits that into the two impossible mixed pairs.
+# One method per `isnear` type keeps the type of `fardata(tree, isnear)` inferable.
+"""
+    assemblefars(tree, isnear, testcompressor, trialcompressor, farmatrix;
+        scheduler, maxrank, verbose=false)
+
+Assemble the far field of an H²-matrix.
+
+Determines the admissible cluster pairs of `tree`, builds the nested bases of both sides
+with [`testbases`](@ref) and [`trialbases`](@ref), and evaluates the coupling matrices at
+the resulting pivots.
+
+# Returns
+
+A named tuple with `nestedtestbases`, `testtransfermats`, `testpivots`, `nestedtrialbases`,
+`trialtransfermats`, `trialpivots`, and `couplingmatrices`.
+"""
 function assemblefars(
     tree,
     isnear::IsNearWidebandFunctor,

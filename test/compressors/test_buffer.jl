@@ -54,8 +54,7 @@ using StaticArrays
         @test iszero(buffer)
     end
 
-    # The scratch buffer of the pivot search: ACA holds full far-field rows (columns),
-    # IACA only the cross matrix.
+    # ACA holds full far-field rows (columns), IACA only the cross matrix.
     @testset "fartestbuffer ($T)" for T in scalartypes
         farmatrix = AdaptiveCrossApproximation.PointMatrix{T}((i, j) -> zero(T), 1:n, 1:m)
 
