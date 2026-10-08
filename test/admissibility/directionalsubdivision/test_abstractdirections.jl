@@ -39,8 +39,7 @@ using ParallelKMeans
         @test [NestedCrossApproximation.farnodes(data, n) for n in 1:3] == [[11, 12, 13], [], [21, 22]]
         @test [NestedCrossApproximation.dirmap(data, n) for n in 1:3] == [[], [], [1, 2]]
 
-        # Per-direction counts that do not add up to a node's far count would silently
-        # offset every later direction's range.
+        # The direction counts have to add up to the far count of the node.
         @test_throws AssertionError NestedCrossApproximation._finalize_directionaldata(
             far,
             [[5, 7], Int[], [9]],
@@ -51,9 +50,7 @@ using ParallelKMeans
         )
     end
 
-    # One cloud, not two separated ones: separated clouds resolve every far pair at a
-    # single coarse level, so no low-frequency node ever holds a far interaction and the
-    # `[0]` sentinel - with every rule attached to it - never occurs.
+    # One cloud: with two separated clouds no low-frequency node holds a far interaction.
     isnear = NestedCrossApproximation.isnearwideband(2π / 1.5; γ=1.0)
     Random.seed!(3)
     points = [SVector{3,Float64}(rand(3)) for _ in 1:200]
@@ -94,7 +91,6 @@ using ParallelKMeans
         @test !isempty(testpairs)
         @test testpairs == trialpairs
         @test NestedCrossApproximation.isnear(c.testdata) === isnear
-        # Both regimes present, so everything below sees the sentinel and real directions.
         alldirs = NestedCrossApproximation.dirs.(Ref(c.testdata), 1:nt)
         @test any(==([0]), alldirs)
         @test any(d -> !isempty(d) && d != [0], alldirs)
@@ -106,8 +102,7 @@ using ParallelKMeans
             for dir in NestedCrossApproximation.dirs(c.testdata, node)
                 append!(split, NestedCrossApproximation.dirfarnodes(c.testdata, node, dir))
             end
-            # In order: far nodes are stored grouped by direction and the slices are
-            # contiguous ranges of that storage.
+            # Far nodes are stored grouped by direction.
             @test split == collect(NestedCrossApproximation.farnodes(c.testdata, node))
         end
 
@@ -155,8 +150,7 @@ using ParallelKMeans
         )
     end
 
-    # The inverse of dirfarnodes: a node's i-th far node must resolve to the direction
-    # slot whose range covers position i. couplingmatrices.jl needs this from both sides.
+    # The inverse of dirfarnodes.
     @testset "diridxfromlocalfaridx ($(c.name))" for c in cases
         for node in 1:H2Trees.numberofnodes(c.ttree)
             first = Int(NestedCrossApproximation.farptr(c.testdata)[node])
@@ -194,8 +188,7 @@ using ParallelKMeans
         )
         @test !NestedCrossApproximation.isbasisnode(c.ttree, c.testdata, inner, 0)
 
-        # Where it says to recurse, bottomup.jl reads every child's dirmap at the parent's
-        # local slot, so that slot has to exist and point into the child's own directions.
+        # The parent's local slot has to exist in the dirmap of every child.
         for t in 1:nnodes
             for (local_d, diridx) in
                 enumerate(NestedCrossApproximation.dirrange(c.testdata, t))

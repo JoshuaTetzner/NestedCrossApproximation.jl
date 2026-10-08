@@ -31,7 +31,6 @@ using Random
         )
         @test typeof(positional) === typeof(compressor)
 
-        # Neither part has a default.
         @test_throws UndefKeywordError NestedCrossApproximation.BatchedBottomUp()
         @test_throws UndefKeywordError NestedCrossApproximation.BatchedBottomUp(;
             pivotselector=pivotselector
@@ -41,8 +40,7 @@ using Random
         )
     end
 
-    # Far-field candidates are picked by geometry alone, as point indices of the far
-    # tree: at most `maxrank`, and no more than the cluster or the far field holds.
+    # At most `maxrank` points of the far tree, and no more than cluster or far field hold.
     @testset "_selectfarpivots" begin
         cluster = H2Trees.values(ttree, H2Trees.root(ttree))
         farnodes = collect(H2Trees.children(stree, H2Trees.root(stree)))

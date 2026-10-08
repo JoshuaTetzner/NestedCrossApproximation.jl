@@ -11,6 +11,24 @@ mutable struct DirectionNode{N,T}
     nchildren::Int
 end
 
+"""
+    DirectionTree{N,T}
+
+Hierarchy of directions for the directional subdivision on a `TwoNTree`.
+
+The roots are the `2N` axis directions, the centres of the faces of a cube. Each level
+subdivides a face patch into `2^(N-1)` patches, so that the directions of a level are
+nested in those of the previous one. The roots belong to the finest high-frequency level
+of the cluster tree, and every coarser level uses the next level of directions.
+
+# Fields
+
+  - `level::Int`: depth of the direction tree
+  - `dirroot::Int`: level of the cluster tree that uses the root directions
+  - `rootcount::Int`: number of root directions
+  - `branching::Int`: number of children of a direction
+  - `nodes::Vector{DirectionNode{N,T}}`: directions, level by level
+"""
 struct DirectionTree{N,T}
     level::Int       # max depth of direction tree
     dirroot::Int     # coarsest cluster tree level that is HF (direction tree root)
@@ -99,14 +117,8 @@ function DirectionTree(
 
     @assert nextidx == nnodes + 1
 
-    # Children are patch centres on the cube face, `parent.dir + scale * offset`, so their
-    # norms drift apart with depth (1.06 to 1.46 at level 3 in 3D). `_descend_direction`
-    # compares raw dot products, which orders candidates by angle only if they are unit
-    # norm; otherwise it prefers the longer corner directions and the worst-case cone
-    # *widens* with refinement (measured in 3D: 0.95, 0.61, 0.81, 0.89, 0.92 rad by depth)
-    # instead of halving (0.95, 0.61, 0.33, 0.17, 0.10). Rescaling after the loop, once
-    # every child has been generated from its parent's patch centre, leaves the
-    # subdivision geometry untouched and keeps the descent free of any norm.
+    # `_descend_direction` compares dot products, which requires unit vectors; the patch
+    # centres `parent.dir + scale * offset` are not.
     @inbounds for node in nodes
         node.dir /= norm(node.dir)
     end
@@ -114,26 +126,21 @@ function DirectionTree(
     return DirectionTree{N,T}(maxlevel, dirroot, rootcount, branching, nodes)
 end
 
-# Returns (dirroot, maxlevel) where:
-#   dirroot  = lflevel - 1: finest HF level, where the direction tree is rooted
-#              (clusters at this level use the 2N root directions)
-#   maxlevel = dirroot - firsthflevel + 1: depth of the direction tree, determined
-#              by the coarsest HF level that has a far interaction
+# dirroot: finest HF level, whose clusters use the 2N root directions.
+# maxlevel: depth of the direction tree, the number of levels from the coarsest HF level
+# with a far interaction to dirroot.
 function _dirroot_and_maxlevel(tree::TwoNTree, ptr::AbstractVector{<:Integer}, islf)
     nnodes = H2Trees.numberofnodes(tree)
     length(ptr) == nnodes + 1 ||
         error("Invalid ptr length: expected $(nnodes + 1), got $(length(ptr)).")
 
-    # Find the first LF level (going coarse→fine, level numbers increase)
     lflevel = H2Trees.minimumlevel(tree)
     while !islf(tree, lflevel)
         lflevel += 1
     end
-    # Direction tree root lives at the finest HF level, just above LF
     dirroot = lflevel - 1
 
-    # Find the coarsest HF level that has a far interaction to bound the tree depth
-    firsthflevel = dirroot  # sentinel; will be updated below
+    firsthflevel = dirroot
     @inbounds for node in 1:nnodes
         if ptr[node + 1] > ptr[node]
             lev = H2Trees.level(tree, node)
@@ -165,10 +172,8 @@ function children(tree::DirectionTree, node::Int)
     return firstchild:(firstchild + nchildren - 1)
 end
 
-# Find the direction node in `tree` that best matches `interaction`.
-# `clusterlevel` is the level of the cluster in the cluster tree; the direction
-# tree depth is derived as  min(tree.dirroot-clusterlevel + 1, tree.level),
-# so finer cluster levels use finer directions, clamped to the direction tree depth.
+# Direction node closest to `interaction`. The depth follows the level of the cluster:
+# one at `tree.dirroot` and one more per coarser level.
 function direction(
     interaction::SVector{N,T}, tree::DirectionTree{N}, clusterlevel::Int
 ) where {N,T}
@@ -176,13 +181,11 @@ function direction(
     return _descend_direction(interaction, tree, maxdepth)
 end
 
-# Variant without a cluster level: descend to full depth of the direction tree.
 function direction(interaction::SVector{N,T}, tree::DirectionTree{N}) where {N,T}
     return _descend_direction(interaction, tree, tree.level)
 end
 
-# Minimizing angle(interaction, dir) over unit-norm `dir` candidates is equivalent to
-# maximizing dot(interaction, dir), which skips the norm/acos work.
+# For unit vectors the smallest angle is the largest dot product.
 function _descend_direction(
     interaction::SVector{N,T}, tree::DirectionTree{N}, maxdepth::Int
 ) where {N,T}
@@ -205,6 +208,21 @@ function _descend_direction(
     return current
 end
 
+"""
+    directionalfardata(fardata::FarData, tree, fartree, isnear)
+
+Subdivide the far interactions of `tree` into directions and return a
+[`DirectionalData`](@ref).
+
+Each far node of a high-frequency cluster is assigned to the direction closest to the
+vector between the two cluster centres, and the far nodes in `fardata` are reordered by
+direction. A cluster also takes over the directions of its parent, which makes the
+directional bases nested.
+
+For a `TwoNTree` the directions are the nodes of a [`DirectionTree`](@ref). For a
+`BoundingBallTree` each cluster has its own set of directions, whose number follows from
+the wavenumber and the diameter of the cluster.
+"""
 function directionalfardata(fardata::FarData, tree::TwoNTree, fartree::TwoNTree, isnear)
     ptr = farptr(fardata)
     nodes = farnodes(fardata)
@@ -221,8 +239,7 @@ function directionalfardata(fardata::FarData, tree::TwoNTree, fartree::TwoNTree,
             hasfars = ptr[node + 1] > ptr[node]
             hasparentdirs = pnode != 0 && !isempty(dirs[pnode])
 
-            # LF nodes do not use directional subdivision.
-            # Store [0] for direct LF far nodes, or when inheriting from an LF parent with dirs.
+            # LF nodes carry the direction 0, if they have far nodes or an LF parent with it.
             if isnear.islf(tree, level)
                 inheritlf = hasparentdirs && level > 1 && isnear.islf(tree, level - 1)
                 dirs[node] = (hasfars || inheritlf) ? Int[0] : Int[]
@@ -256,11 +273,7 @@ function directionalfardata(fardata::FarData, tree::TwoNTree, fartree::TwoNTree,
                     partochddir[idx] = findfirst(==(cdir), uniquenodedirs)
                 end
             end
-            # nodedirs[perm] is sorted to match uniquenodedirs[1:noriginal]; run-length
-            # count over that shared order gives the same per-direction counts as
-            # matching every unique direction against every far node, for less work.
-            # Directions appended above (beyond noriginal) come only from parent
-            # inheritance and have no own far nodes, so they correctly stay at 0.
+            # Number of far nodes per direction; the inherited directions have none.
             localdircount = zeros(Int, length(uniquenodedirs))
             sortednodedirs = view(nodedirs, perm)
             n = length(sortednodedirs)
@@ -281,8 +294,7 @@ function directionalfardata(fardata::FarData, tree::TwoNTree, fartree::TwoNTree,
         end
     end
 
-    # Fill dircount for LF sentinel nodes: the pass above stores dirs=[0] for them
-    # but leaves dircount empty, since they have no per-direction split.
+    # All far nodes of an LF node belong to the direction 0.
     for node in eachindex(dirs)
         if !isempty(dirs[node]) && isempty(dircount[node])
             dircount[node] = [max(0, Int(ptr[node + 1] - ptr[node]))]

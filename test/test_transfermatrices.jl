@@ -22,8 +22,7 @@ using StaticArrays
         @test buf == original
         @test transfer * buf[rows, 1:3] ≈ buf[childrows, 1:3]
 
-        # Nestedness: on a block of rank 3 the child basis times the transfer matrix is
-        # the parent basis on the child's values.
+        # Nestedness: child basis times transfer matrix is the parent basis on the child.
         lowrank = rand(T, 12, 3) * rand(T, 3, 6)
         childvalues = [1, 4, 5, 8, 10]
         childpivots = [4, 10, 1]
@@ -168,9 +167,8 @@ using StaticArrays
         end
     end
 
-    # Transfer matrices per direction slot. On the first level the slots 1 and 2 belong to
-    # one node and hand down to the same child slots, so they form one group; slot 3 is a
-    # node of its own. The second level is a single node with the slots 4 and 5.
+    # Slots 1 and 2 belong to one node and form one group, slot 3 is a node of its own;
+    # the second level is a single node with the slots 4 and 5.
     @testset "_build_dirtransfer_storage ($T)" for T in scalartypes
         transfer = Vector{Vector{Matrix{T}}}(undef, 8)
         transferdirs = Vector{Vector{Int}}(undef, 8)

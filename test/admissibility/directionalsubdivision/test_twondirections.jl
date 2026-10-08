@@ -153,7 +153,6 @@ using CompScienceMeshes
 
         @test any(==([0]), alldirs) == haslf
         @test any(ishf, 1:nnodes) == hashf
-        # Per level.
         @test all((alldirs[n] == [0]) == lf[n] for n in 1:nnodes if !isempty(alldirs[n]))
 
         # The depth of a direction follows the level of its cluster.
@@ -183,9 +182,8 @@ using CompScienceMeshes
         )
     end
 
-    # sin of the angle between a far node's interaction vector and the direction it is
-    # filed under, relative to the aperture 1 / (k * cluster diameter). γ only steers the
-    # construction; the bounds are what each γ currently achieves.
+    # sin of the angle between interaction vector and direction, relative to the aperture
+    # 1 / (k * diam). The bounds are what each γ currently achieves.
     spherepoints = meshicosphere(100, 1.0).vertices
     spheretree = TwoNTree(spherepoints; builder=TwoNTreeBuilder(; minvalues=100))
     @testset "directional admissibility (γ=$γ)" for (γ, ownbound, inheritedbound) in (

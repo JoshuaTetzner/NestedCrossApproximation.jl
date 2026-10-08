@@ -6,8 +6,7 @@ using Random
 @testset "nestedbasis.jl" begin
     scalartypes = (Float32, Float64, ComplexF32, ComplexF64)
 
-    # The buffer holds the far-field columns the pivot search sampled: rows are global
-    # indices, only the first length(pivots) columns belong to this cluster.
+    # Global row indices; the first length(pivots) columns belong to the cluster.
     @testset "nestedtestbasis ($T)" for T in scalartypes
         Random.seed!(1)
         buffer = rand(T, 12, 6)
@@ -84,8 +83,7 @@ using Random
         @test isempty(nobases.blocks)
     end
 
-    # Bases are indexed per direction slot here; three nodes own the slots 1:2, 3:3 and
-    # 4:6, and `counts` holds how many of each node's slots carry a basis.
+    # Three nodes own the slots 1:2, 3:3 and 4:6; `counts` is the number of bases per node.
     @testset "_build_dirbasis_storage ($T)" for T in scalartypes
         bases = Vector{Matrix{T}}(undef, 6)
         bases[1] = rand(T, 4, 2)

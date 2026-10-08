@@ -1,6 +1,3 @@
-# Downward half of the matvec: push parent coefficients into children level by level,
-# then project each cluster's coefficients back onto the output vector.
-
 function _disaggregate_coefficients!(
     yhat::AbstractVector, transfer_store, plan, transferop, scheduler
 )
@@ -23,10 +20,8 @@ function _disaggregate_coefficients!(
     end
 end
 
-# Directional disaggregation: parallelise over spatial-node groups (safe — different
-# spatial nodes own disjoint child-direction index ranges), process each node's
-# direction indices serially so sibling direction-tree nodes that share a common child
-# direction accumulate without a write-write race.
+# Parallel over the clusters, serial over the directions of a cluster: these may share
+# a child direction.
 function _disaggregate_coefficients!(
     yhat::AbstractVector,
     transfer_store::TransferStore{T,<:DirTransferTraversalPlan},

@@ -29,8 +29,7 @@ using Random
         @test_throws ArgumentError rep(Int[], idcs, 0)
     end
 
-    # A cloud in a rotated box with half extents 4, 2 and 1, shifted and skewed so that
-    # the centroid is not the box centre.
+    # A cloud in a rotated box with half extents 4, 2 and 1 whose centroid is not the centre.
     @testset "covmat" begin
         Random.seed!(1)
         Q = Matrix(qr(randn(3, 3)).Q)
@@ -133,8 +132,7 @@ using Random
         @test NestedCrossApproximation._clustersize(ptree, H2Trees.root(ptree)) == 1000
     end
 
-    # Through the assembly: a representor has to cut the kernel evaluations of the pivot
-    # search (it is used) and keep the matvec close to the dense matrix (it is useful).
+    # Through the assembly: fewer kernel evaluations, and the matvec stays accurate.
     tree = H2Trees.BlockTree(ptree, ptree)
     kernel = HelmholtzTestKernel(2.0)
     dense = densereference(kernel, points, points)

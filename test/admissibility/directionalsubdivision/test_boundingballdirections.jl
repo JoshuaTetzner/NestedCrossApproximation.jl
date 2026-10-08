@@ -20,8 +20,7 @@ using CompScienceMeshes
 
             @test length(pts) == n
             @test all(p -> isapprox(norm(p), 1.0), pts)
-            # Evenly spread, not merely distinct: both the covering radius and the
-            # closest pair have to scale like 1/sqrt(n).
+            # Evenly spread: covering radius and closest pair scale like 1/sqrt(n).
             @test maximum(
                 acos(clamp(maximum(dot(p, v) for p in pts), -1, 1)) for v in unitvectors[3]
             ) < 3 / sqrt(n)
@@ -43,16 +42,13 @@ using CompScienceMeshes
             push!(counts, length(evecs))
 
             @test all(e -> isapprox(norm(e), 1.0), evecs)
-            # The count comes from the admissibility aperture asin(γ / (k * diam)), so
-            # the set has to cover the sphere that finely. 2D hits it exactly; the
-            # Fibonacci lattice used in 3D is within ~15%.
+            # Resolves the aperture asin(γ / (k * diam)): exactly in 2D, within 15% in 3D.
             @test maximum(
                 acos(clamp(maximum(dot(e, v) for e in evecs), -1, 1)) for
                 v in unitvectors[dim]
             ) < 1.2 * asin(1.0 / kd)
         end
-        # And at the expected cost: doubling k * diam doubles the count in 2D and
-        # quadruples it in 3D.
+        # Doubling k * diam doubles the count in 2D and quadruples it in 3D.
         @test all(isapprox(counts[i + 1] / counts[i], 2^(dim - 1); rtol=0.05) for i in 1:2)
     end
 
@@ -96,12 +92,10 @@ using CompScienceMeshes
         # Per node - from the sibling-group mean radius - not per level.
         @test all((alldirs[n] == [0]) == lf[n] for n in 1:nnodes if !isempty(alldirs[n]))
 
-        # The transition only ever runs HF -> LF, since `_bbgenradius` keeps the
-        # generalized radius non-increasing downwards.
+        # The transition only runs from HF to LF.
         @test all(!lf[parents[n]] || lf[n] for n in 1:nnodes if parents[n] != 0)
 
-        # Crossing it, the sentinel is never inherited: an LF node under an HF parent
-        # carries [0] only if it has far nodes of its own.
+        # An LF node under an HF parent carries [0] only if it has far nodes of its own.
         atboundary = [n for n in 1:nnodes if parents[n] != 0 && lf[n] && !lf[parents[n]]]
         @test !isempty(atboundary) == mixed
         @test all(
@@ -115,9 +109,8 @@ using CompScienceMeshes
         )
     end
 
-    # sin of the angle between a far node's interaction vector and the direction it is
-    # filed under, relative to the aperture 1 / (k * cluster diameter). γ only steers the
-    # construction; the bounds are what each γ currently achieves.
+    # sin of the angle between interaction vector and direction, relative to the aperture
+    # 1 / (k * diam). The bounds are what each γ currently achieves.
     spherepoints = meshicosphere(100, 1.0).vertices
     Random.seed!(11)
     spheretree = KMeansTree(

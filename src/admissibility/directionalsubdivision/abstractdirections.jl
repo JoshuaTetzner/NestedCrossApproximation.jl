@@ -1,13 +1,34 @@
 using H2Trees: H2Trees
 
+"""
+    DirectionalData{I<:Integer}
+
+Far interactions of the clusters of one tree, subdivided into directions.
+
+A cluster in the high-frequency regime holds a set of directions, and each of its far nodes
+belongs to one of them. A cluster in the low-frequency regime holds the single direction
+`0`. The position of a (cluster, direction) pair in `dirs` is its direction index, by which
+the pivots, bases and transfer matrices of a directional H²-matrix are addressed.
+
+# Fields
+
+  - `fardata::FarData{I}`: far nodes of each node, grouped by direction
+  - `nodetodirsptr::Vector{I}`: position of the first direction of each node in `dirs`
+  - `dirs::Vector{I}`: directions of all nodes
+  - `diridxtofarptr::Vector{I}`: position of the first far node of each direction index
+  - `nodetochdirptr::Vector{I}`: position of the first entry of each node in `partochddirmap`
+  - `partochddirmap::Vector{I}`: for each direction of the parent the matching local
+    direction of the node, `0` if there is none
+  - `isnear`: admissibility condition
+"""
 struct DirectionalData{I<:Integer}
-    fardata::FarData{I}           # farptr/farnodes bundled once via the generic FarData container
-    nodetodirsptr::Vector{I}      # length nnodes+1; node → range in dirs/diridxtofarptr
-    dirs::Vector{I}               # direction-tree node indices, grouped by cluster node
-    diridxtofarptr::Vector{I}     # length nodetodirsptr[end]; diridx → range in farnodes
-    nodetochdirptr::Vector{I}     # length nnodes+1; node (=child) → range in partochddirmap, one entry per parent direction
-    partochddirmap::Vector{I}     # parent's local dir slot (key) → this node's own matching local dir slot (value, 0 if none)
-    isnear                        # near-interaction classifier functor
+    fardata::FarData{I}
+    nodetodirsptr::Vector{I}
+    dirs::Vector{I}
+    diridxtofarptr::Vector{I}
+    nodetochdirptr::Vector{I}
+    partochddirmap::Vector{I}
+    isnear
 
     function DirectionalData(
         fardata::FarData{I},
@@ -30,10 +51,8 @@ struct DirectionalData{I<:Integer}
     end
 end
 
-# Shared by both directionalfardata builders (TwoNTree, BoundingBallTree): flattens the
-# per-node ragged dirs/dircount/partochddirmap into DirectionalData's CSR storage.
-# `dircount[node]` holds raw per-direction far-node counts (same indexing as dirs[node]);
-# this turns those counts into the cumulative diridxtofarptr.
+# Flattens the per-node vectors of the `directionalfardata` methods into the CSR layout;
+# `dircount[node]` holds the number of far nodes per direction of `node`.
 function _finalize_directionaldata(
     fardata::FarData, dirs, dircount, partochddirmap, partochddircount, isnear
 )
@@ -108,7 +127,6 @@ end
     return Int(ptr[node]):(Int(ptr[node + 1]) - 1)
 end
 
-# View of the reference-side far nodes for `node`.
 @inline function farnodes(data::DirectionalData, node::Int)
     ptr = farptr(data)
     nodes = farnodes(data)
@@ -123,14 +141,11 @@ end
     return Int(data.nodetodirsptr[node]):(Int(data.nodetodirsptr[node + 1]) - 1)
 end
 
-# View of the direction indices for `node`.
 @inline function dirs(data::DirectionalData, node::Int)
     return @view data.dirs[Int(data.nodetodirsptr[node]):(Int(data.nodetodirsptr[node + 1]) - 1)]
 end
 
-# View of the far nodes belonging to direction value `dir` of `node`.
-# `dir` must be one of dirs(data, node). Far nodes within a node are stored
-# contiguously sorted by direction.
+# Far nodes of `node` in direction `dir`; they are stored grouped by direction.
 function dirfarnodes(data::DirectionalData, node::Int, dir::Int)
     node_dirs = dirs(data, node)
     localdir = findfirst(==(dir), node_dirs)
@@ -162,10 +177,16 @@ function dirmap(data::DirectionalData, node::Int)
     return data.partochddirmap[data.nodetochdirptr[node]:(data.nodetochdirptr[node + 1] - 1)]
 end
 
-# Return all far interactions associated with `dir` at `node`, including direct
-# far nodes and inherited far nodes from paternal nodes.
-# HF case (`dir != 0`): propagate matching directions upward using dirmap.
-# LF case (`dir == 0`): climb while ancestors stay LF (i.e. still have dir 0).
+"""
+    dirfarfield(tree, data::DirectionalData, node::Int, dir::Int)
+
+Return the far field of `node` in direction `dir`: its own far nodes in this direction
+followed by those inherited from its ancestors.
+
+For a high-frequency direction the matching directions of the ancestors are followed
+upwards. For the low-frequency direction `0` the far nodes of the ancestors are collected
+as long as these are in the low-frequency regime.
+"""
 function dirfarfield(tree, data::DirectionalData, node::Int, dir::Int)
     nnodes = length(farptr(data)) - 1
     (1 <= node <= nnodes) ||
@@ -207,7 +228,7 @@ function dirfarfield(tree, data::DirectionalData, node::Int, dir::Int)
     return ff
 end
 
-# Compute the interaction vector from node in tree to farnode in fartree.
+# Vector from the centre of `farnode` to the centre of `node`.
 function interaction(node::Int, farnode::Int, tree, fartree)
     return H2Trees.center(tree, node) - H2Trees.center(fartree, farnode)
 end

@@ -8,8 +8,7 @@ using StaticArrays
 @testset "couplingmatrices.jl" begin
     scalartypes = (Float32, Float64, ComplexF32, ComplexF64)
 
-    # Three test nodes against four trial nodes; trial node 4 has no pivots, so its block
-    # is never handed to the kernel matrix.
+    # Three test nodes against four trial nodes; trial node 4 has no pivots.
     @testset "FarData ($T, $I)" for T in scalartypes, I in (Int, Int32)
         Random.seed!(1)
         M = rand(T, 9, 7)
@@ -48,8 +47,7 @@ using StaticArrays
     )
     farnodes = NestedCrossApproximation.farnodes(data)
     trialfarnodes = NestedCrossApproximation.farnodes(trialdata)
-    # Each far pair filed under the test and the trial direction slot it belongs to; a
-    # node's own far nodes are stored grouped by slot.
+    # The far nodes of a node are stored grouped by direction slot.
     testslots = zeros(Int, length(farnodes))
     trialslots = zeros(Int, length(farnodes))
     for t in 1:nnodes, d in NestedCrossApproximation.dirrange(data, t)

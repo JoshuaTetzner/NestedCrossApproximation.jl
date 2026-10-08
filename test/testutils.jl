@@ -52,14 +52,8 @@ function densereference(kernel, testpts, trialpts)
     return A
 end
 
-# Plane-wave kernels with an analytically known spectrum. With `r` directions,
-# K(x,y) = Σᵢ aᵢ exp(i cᵢ·x) exp(-i cᵢ·y) has rank exactly `r` by construction, and the
-# amplitudes aᵢ prescribe the singular-value decay. Equal amplitudes (decay=1) make every
-# far block exactly rank r, so at maxrank = r the whole H2 operator has to reproduce the
-# dense matrix to round-off - an exactness statement, not a tolerance. Geometrically
-# decaying amplitudes instead give a convergence curve with known targets: truncating at
-# rank k leaves roughly decay^k. Both are far sharper instruments than the Helmholtz
-# fixture, whose spectrum is whatever the geometry happens to produce.
+# Plane-wave kernel of rank exactly `r`, K(x,y) = Σᵢ aᵢ exp(i cᵢ·x) exp(-i cᵢ·y); the
+# amplitudes aᵢ prescribe the decay of the singular values.
 struct PlaneWaveKernel
     dirs::Vector{SVector{3,Float64}}
     amps::Vector{Float64}

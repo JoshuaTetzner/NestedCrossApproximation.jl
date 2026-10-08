@@ -1,5 +1,4 @@
-# Per-node point count without materializing the full point-id array (H2Trees.values
-# recursively concatenates leaf data; counting only needs leaf sizes).
+# Number of points of a node, without collecting them.
 function _clustersize(tree, node::Int)
     isleaf(tree, node) && return length(H2Trees.values(H2Trees.data(tree, node)))
     n = 0
@@ -9,11 +8,8 @@ function _clustersize(tree, node::Int)
     return n
 end
 
-# Marks far-field indices that are already point-level. TopDown must merge its own
-# far-field node's points with inherited point-level parent pivots before calling
-# compute_test_pivots!/compute_trial_pivots! (BottomUp never needs this — it always
-# passes raw node ids). Wrapping that merged list tells adapt_farfield_indices to
-# skip the node->point conversion it would otherwise apply.
+# Far-field indices that are points already instead of nodes: TopDown merges the points
+# of a cluster's far nodes with the far pivots of its parent.
 struct PreResolvedIndices
     idcs::Vector{Int}
 end
@@ -30,11 +26,7 @@ end
     return factorization([1], [1], maxrank)
 end
 
-# ACA's 2-arg `factorization(rows, cols)` form only resolves for the literal default
-# MaximumValue/MaximumValue/FNormEstimator combo, and even then builds the convergence
-# criterion without seeing the matrix or maxrank. Its 4-arg
-# `factorization(A, rows, cols, maxrank)` form is the generically-correct one, so always
-# route ACA through it; IACA only has the maxrank-aware 3-arg form.
+# ACA builds its convergence criterion from the matrix and maxrank, IACA from maxrank.
 @inline function _build_stateful_factorization(
     factorization::AdaptiveCrossApproximation.ACA, farmatrix, maxrank::Int
 )
@@ -49,8 +41,6 @@ end
     return MimicryRepFunctor(representor.pivoting([1], [1], maxrank))
 end
 
-# RandomRep/ChebyshevRep are stateless and already implement the (refidcs, idcs, npivots)
-# call protocol directly, so they need no per-task conversion.
 @inline _stateful_representor(representor::Representor, maxrank::Int) = representor
 
 @inline function _stateful_representor(::Nothing, maxrank::Int)
@@ -65,15 +55,11 @@ _use_tree_mimicry(f::AdaptiveCrossApproximation.IACA) =
     (f.rowpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor) ||
     (f.columnpivoting isa AdaptiveCrossApproximation.TreeMimicryPivotingFunctor)
 
-# A representor has already reduced/capped Fidcs to the achievable representative count,
-# so its resolved length is authoritative regardless of factorization type or Ft's shape.
+# A representor has already reduced the far field to points.
 _effective_far_count(
     factorization, tree, Ft, representor::Representor, Fidcs::Vector{Int}
 ) = length(Fidcs)
 
-# Pre-resolved Ft is always point-level by construction, regardless of factorization
-# type, so its effective count is always just its length (bypasses the tree-mimicry
-# per-cluster counting below, which only makes sense for genuinely node-level Ft).
 _effective_far_count(
     factorization, tree, ::PreResolvedIndices, ::Nothing, Fidcs::Vector{Int}
 ) = length(Fidcs)
@@ -100,10 +86,7 @@ adapt_farfield_indices(
     factorization, ::Nothing, tree, t::Vector{Int}, Ft::PreResolvedIndices
 ) = Ft.idcs
 
-# MimicryRep needs node-level Ft so it can walk the tree top-down from a coherent cluster.
-# PreResolvedIndices is already a flattened, multi-origin point set (TopDown's own
-# far-field node merged with inherited parent pivots) with no single node to walk from,
-# so it isn't supported there - only with BottomUp, which always passes raw node ids.
+# MimicryRep descends the tree from the far nodes, which a point-level far field lacks.
 function adapt_farfield_indices(
     factorization, ::MimicryRepFunctor, tree, t::Vector{Int}, Ft::PreResolvedIndices
 )
@@ -122,8 +105,6 @@ function adapt_farfield_indices(
     return representor(t, Ft, npivots)
 end
 
-# RandomRep/ChebyshevRep operate on flat point indices regardless of origin, so they work
-# uniformly for raw node-level Ft (BottomUp) and pre-resolved point-level Ft (TopDown).
 function adapt_farfield_indices(
     factorization, representor::Representor, tree, t::Vector{Int}, Ft::PreResolvedIndices
 )
@@ -184,6 +165,37 @@ _trial_colbuffer_for_rawpivots(
     ranklimit::Int,
 ) = colbuffer
 
+"""
+    compute_test_pivots!(factorization, representor, farmatrix, tree, tidcs, Ft,
+        colbuffer, rowbuffer; maxrank=40)
+    compute_trial_pivots!(factorization, representor, farmatrix, tree, Fs, sidcs,
+        colbuffer, rowbuffer; maxrank=40)
+
+Select the pivots of a cluster by a low-rank factorization of the block of the cluster
+against its far field.
+
+# Arguments
+
+  - `factorization`: `ACA` or `IACA` prepared for the block
+  - `representor`: [`Representor`](@ref) that reduces the far field, or `nothing`
+  - `farmatrix`: kernel matrix for the evaluation of far-field entries
+  - `tree`: block tree
+  - `tidcs`, `sidcs`: candidates for the pivots of the cluster
+  - `Ft`, `Fs`: far field of the cluster as nodes of the other tree, or as points wrapped
+    in `PreResolvedIndices`
+  - `colbuffer`, `rowbuffer`: buffers of the factorization
+
+# Returns
+
+  - `rows`, `cols`: row and column pivots. On the test side `rows` are the pivots of the
+    cluster and `cols` those in the far field, on the trial side vice versa.
+
+# Notes
+
+On return the buffer of the cluster side (`colbuffer` on the test side) holds the pivot
+columns (rows) of the cluster as required by [`nestedtestbasis`](@ref) and
+[`testtransfer`](@ref); the other buffer is reset to zero.
+"""
 function compute_test_pivots!(
     factorization,
     representor,
@@ -228,7 +240,7 @@ function compute_test_pivots!(
     return rows[1:npivots], cols[1:npivots]
 end
 
-function compute_trial_pivots!(
+@doc (@doc compute_test_pivots!) function compute_trial_pivots!(
     factorization,
     representor,
     farmatrix::AbstractKernelMatrix{T},

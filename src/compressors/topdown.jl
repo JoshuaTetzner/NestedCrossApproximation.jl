@@ -1,5 +1,28 @@
 import H2Trees: levels, LevelIterator
 
+"""
+    TopDown{LowRankFactorizationType,RepresentorType}
+
+Compressor that constructs the nested bases from the root to the leaves.
+
+For each cluster the block of the cluster against its far field is factorized. The far
+field consists of the points of the admissible clusters and of the far-field pivots of the
+parent, through which the far field of all ancestors is taken into account. The selected
+pivots of the cluster define its basis and transfer matrices.
+
+# Fields
+
+  - `factorization::LowRankFactorizationType`: low-rank factorization that selects the
+    pivots, an `ACA` or an `IACA` of AdaptiveCrossApproximation.jl
+  - `representor::RepresentorType`: [`Representor`](@ref) that reduces the far field before
+    the factorization, or `nothing`
+
+# Notes
+
+The far field is a set of points. Hence `TreeMimicryPivoting` in an `IACA` and
+[`MimicryRep`](@ref) are not supported; use `MimicryPivoting` instead. Directional
+H²-matrices require [`BottomUp`](@ref).
+"""
 mutable struct TopDown{LowRankFactorizationType,RepresentorType}
     factorization::LowRankFactorizationType
     representor::RepresentorType
@@ -9,6 +32,16 @@ mutable struct TopDown{LowRankFactorizationType,RepresentorType}
     end
 end
 
+"""
+    TopDown(; factorization=ACA(), representor=nothing)
+
+Build a [`TopDown`](@ref) compressor from keyword arguments.
+
+# Keyword Arguments
+
+  - `factorization = ACA()`: low-rank factorization that selects the pivots
+  - `representor = nothing`: [`Representor`](@ref) that reduces the far field
+"""
 function TopDown(; factorization=AdaptiveCrossApproximation.ACA(), representor=nothing)
     return TopDown(factorization, representor)
 end

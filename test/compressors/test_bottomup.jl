@@ -28,7 +28,6 @@ using AdaptiveCrossApproximation
         @test NestedCrossApproximation.BottomUp(; factorization=factorization).representor ===
             nothing
 
-        # Mutable, but the field types are fixed by the constructor.
         compressor.factorization = ACA(; convergence=FNormEstimator(1e-6))
         @test compressor.factorization !== factorization
         @test_throws MethodError compressor.representor = nothing

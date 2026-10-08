@@ -3,19 +3,29 @@ import H2Trees: levels, LevelIterator
 """
     BatchedBottomUp{PivotSelectorType,CompressorType}
 
-Bottom-up nested-basis compressor that processes a whole tree level as one
-batch, unlike `BottomUp`'s single interleaved per-node ACA/IACA pass.
+Compressor that constructs the nested bases from the leaves to the root and evaluates
+the matrix entries of a whole level in one batch.
 
-  - `pivotselector`: purely geometric far-field candidate selection, touching
-    no matrix entries (e.g. `AdaptiveCrossApproximation.TreeMimicryPivoting`).
-  - `compressor`: dense-block factorization run on the batch-assembled block
-    (e.g. fully pivoted ACA).
+The construction has three phases:
 
-No `representor` field: geometric selection isn't an optional pre-reduction
-layered on an on-the-fly factorization (as in `BottomUp`) — it's what decides
-what gets batch-evaluated in the first place. Backend-agnostic: only the
-concrete `pivotselector`/`compressor` objects and the `farmatrix` type passed
-to `testbases`/`trialbases` determine CPU vs GPU.
+ 1. The far-field pivots of every cluster are selected from the geometry alone, without
+    matrix entries.
+ 2. For each cluster of a level one dense block against its far-field pivots is evaluated.
+    Its other indices are all points of a leaf, or the pivots of the children.
+ 3. The pivots of the cluster are selected in this block, and its basis or transfer
+    matrices are computed from it.
+
+# Fields
+
+  - `pivotselector::PivotSelectorType`: geometric pivoting strategy for the first phase,
+    e.g. `AdaptiveCrossApproximation.TreeMimicryPivoting`
+  - `compressor::CompressorType`: factorization of a dense block for the third phase, e.g.
+    a fully pivoted `ACA`
+
+# Notes
+
+The batched evaluation leaves the choice between CPU and GPU to the kernel matrix.
+Directional H²-matrices require [`BottomUp`](@ref).
 """
 mutable struct BatchedBottomUp{PivotSelectorType,CompressorType}
     pivotselector::PivotSelectorType
@@ -26,39 +36,21 @@ mutable struct BatchedBottomUp{PivotSelectorType,CompressorType}
     end
 end
 
+"""
+    BatchedBottomUp(; pivotselector, compressor)
+
+Build a [`BatchedBottomUp`](@ref) compressor from keyword arguments.
+
+# Keyword Arguments
+
+  - `pivotselector`: geometric pivoting strategy that selects the far-field pivots
+  - `compressor`: factorization of a dense block
+"""
 function BatchedBottomUp(; pivotselector, compressor)
     return BatchedBottomUp(pivotselector, compressor)
 end
 
-# Per level, leaf → root (like BottomUp):
-#   Phase 1 — geometric far-field pivot selection (`pivotselector`). Runs over
-#             all nodes at once rather than per level, since it only needs
-#             far-side candidates. Own-side reference is always the full
-#             leaf-level point set, even for non-leaf nodes — a known,
-#             separate limitation from Phase 2/3 below (fixing it needs
-#             restructuring this phase to run per level too).
-#   Phase 2 — batched dense-block evaluation via `farmatrix`, one block per
-#             active node. Own-side indices are the full leaf point set for
-#             leaves, but the children's already-selected pivots for non-leaf
-#             nodes (available since levels run leaf → root) — this is what
-#             makes the result a genuine nested (H2-style) basis. Filling is
-#             delegated to `assemble_blocks`, so CPU/GPU dispatch safety (e.g.
-#             the forced-serial GPU path - concurrent CUDA launches from
-#             multiple threads corrupt results without device/stream
-#             coordination) lives there rather than being duplicated here.
-#   Phase 3 — `compressor.compressor` (e.g. fully pivoted ACA) selects each
-#             node's own pivots from the Phase 2 block, then builds its leaf
-#             basis or transfer matrices via BottomUp's
-#             `nestedtestbasis`/`testtransfer`/`nestedtrialbasis`/
-#             `trialtransfer`, unchanged — those only index into a buffer, so
-#             local block indices work the same as BottomUp's global dof
-#             indices. `compressor.compressor` mutates its input in place and
-#             `blocks` must survive for the slicing below, so one scratch
-#             buffer is reused per level instead of copying every block.
-
-# One node's Phase 1: up to `maxrank` far-field candidates from `idcs` (raw
-# far-tree node ids), mimicking `refidcs` (point-level own indices). `fartree`
-# only bounds how many point-level pivots the candidate nodes can provide.
+# Phase 1 for one node: up to `maxrank` points out of the far nodes `idcs`.
 function _selectfarpivots(
     pivotselector, refidcs::Vector{Int}, idcs::Vector{Int}, fartree, maxrank::Int
 )
@@ -107,14 +99,8 @@ function testbases(
         )
         isempty(activeclusters) && continue
 
-        # Own-side reference indices for block assembly: leaves use the full
-        # leaf-level point set, non-leaf nodes use the pivots already
-        # selected for their children. `childranges[i][j]` records where
-        # child j's rows land within `tvalues[i]`/`blocks[i]`'s local
-        # indexing, since (unlike BottomUp's tree-wide buffer) a child's
-        # global pivot indices aren't valid row indices into a node-local
-        # block. `nodechildren[i]` is cached so the child order here matches
-        # what Phase 3 consumes below.
+        # Rows of each block: the points of a leaf, the pivots of the children otherwise.
+        # `childranges[i][j]` is the range of child j in `tvalues[i]`.
         tvalues = Vector{Vector{Int}}(undef, length(activeclusters))
         childranges = Vector{Vector{UnitRange{Int}}}(undef, length(activeclusters))
         nodechildren = Vector{Vector{Int}}(undef, length(activeclusters))
@@ -139,15 +125,14 @@ function testbases(
         end
         blockpivots = [farpivots[t] for t in activeclusters]
 
-        # Phase 2 — one block per active node (own tvalues × its farpivots).
+        # Phase 2: one block per active node.
         blocks = [
             zeros(T, length(tvalues[i]), length(blockpivots[i])) for
             i in eachindex(activeclusters)
         ]
         assemble_blocks(farmatrix, blocks, tvalues, blockpivots; scheduler=scheduler)
 
-        # Phase 3 — select pivots, then build the leaf basis or transfer
-        # matrices straight from the block above.
+        # Phase 3: the compressor works in place, so each block is copied to `scratch`.
         scratch = Matrix{T}(undef, maximum(length, tvalues), maximum(length, blockpivots))
         for i in eachindex(activeclusters)
             t = activeclusters[i]
@@ -220,10 +205,7 @@ function trialbases(
         )
         isempty(activeclusters) && continue
 
-        # Own-side reference indices, mirroring testbases: leaves use the
-        # full leaf-level point set, non-leaf nodes use the pivots already
-        # selected for their children. `childranges[i][j]`/`nodechildren[i]`
-        # play the same role as in testbases.
+        # Columns of each block, as the rows in testbases.
         svalues = Vector{Vector{Int}}(undef, length(activeclusters))
         childranges = Vector{Vector{UnitRange{Int}}}(undef, length(activeclusters))
         nodechildren = Vector{Vector{Int}}(undef, length(activeclusters))
@@ -248,17 +230,14 @@ function trialbases(
         end
         blockpivots = [farpivots[s] for s in activeclusters]
 
-        # Phase 2 — one block per active node (its farpivots × own svalues): the far
-        # pivots are test indices and index the rows of `farmatrix`.
+        # Phase 2: the far pivots are test indices, the rows of the block.
         blocks = [
             zeros(T, length(blockpivots[i]), length(svalues[i])) for
             i in eachindex(activeclusters)
         ]
         assemble_blocks(farmatrix, blocks, blockpivots, svalues; scheduler=scheduler)
 
-        # Phase 3 — mirrors testbases with rows and columns exchanged: the node's own
-        # pivots are the column pivots, and `nestedtrialbasis`/`trialtransfer` take the
-        # pivot rows of the block as their (far-pivot-rank × own-trial-dofs) buffer.
+        # Phase 3: as in testbases with rows and columns exchanged.
         scratch = Matrix{T}(undef, maximum(length, blockpivots), maximum(length, svalues))
         for i in eachindex(activeclusters)
             s = activeclusters[i]

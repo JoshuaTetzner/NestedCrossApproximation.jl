@@ -5,11 +5,7 @@ using ParallelKMeans
 using StaticArrays
 using Random
 
-# Near/far classification itself lives in AdaptiveCrossApproximation; what this package
-# owns is the wideband predicate and its low-frequency classifier.
-
-# Single-node trees carrying a prescribed effective radius - the box circumradius for
-# TwoNTree, the ball radius for BoundingBallTree - at distance `c` along x.
+# Single-node trees with a prescribed radius at distance `c` along x.
 twontreeat(F, r, c) = H2Trees.TwoNTree(SVector{3,F}(c, 0, 0), F(r / sqrt(3)))
 balltreeat(F, r, c) = H2Trees.BoundingBallTree(SVector{3,F}(c, 0, 0), F(r))
 
@@ -30,8 +26,7 @@ balltreeat(F, r, c) = H2Trees.BoundingBallTree(SVector{3,F}(c, 0, 0), F(r))
         @test f(tree, 4)
     end
 
-    # The node method derives its diameter from `_bbgenradius`, which averages over
-    # siblings so that a whole sibling group is classified alike.
+    # `_bbgenradius` averages over siblings, so a sibling group is classified alike.
     @testset "islf (BoundingBallTree nodes)" begin
         Random.seed!(3)
         points = [SVector{3,Float64}(rand(3)) for _ in 1:600]
@@ -39,8 +34,7 @@ balltreeat(F, r, c) = H2Trees.BoundingBallTree(SVector{3,F}(c, 0, 0), F(r))
         ttree = KMeansTree(
             points; builder=KMeansTreeBuilder(; numberofclusters=2, minvalues=4)
         )
-        # k is picked so that a sibling-group mean radius straddles the regime threshold,
-        # which is where the minimum against the parent is load bearing.
+        # k is picked so that a sibling-group mean radius straddles the threshold.
         f = NestedCrossApproximation.islf(1.0, 4.4)
         regimes = [f(ttree, node) for node in 1:H2Trees.numberofnodes(ttree)]
 
@@ -50,8 +44,7 @@ balltreeat(F, r, c) = H2Trees.BoundingBallTree(SVector{3,F}(c, 0, 0), F(r))
             node in 1:H2Trees.numberofnodes(ttree) if !H2Trees.isleaf(ttree, node)
         )
 
-        # Taking the minimum against the parent keeps the generalized radius from growing
-        # downwards, so a low-frequency node can have no high-frequency descendant.
+        # A low-frequency node has no high-frequency descendant.
         @test all(
             !regimes[node] || all([regimes[c] for c in H2Trees.children(ttree, node)]) for
             node in 1:H2Trees.numberofnodes(ttree) if !H2Trees.isleaf(ttree, node)
@@ -102,9 +95,7 @@ balltreeat(F, r, c) = H2Trees.BoundingBallTree(SVector{3,F}(c, 0, 0), F(r))
         @test !isnear(hf, 1, 1, 40)
         @test isnear(wb(60, 1), 1, 1, 40)
 
-        # The smaller node picks the branch. At k = 40 a radius-0.01 node is low frequency
-        # and a radius-1 node is not, and here the two criteria disagree: the low-frequency
-        # one calls the pair far, the high-frequency one would call it near.
+        # The smaller node picks the branch; here the two criteria disagree.
         @test !isnear(hf, 1, 0.01, 4)
         @test isnear(hf, 1, 1, 4)
 
@@ -119,9 +110,7 @@ balltreeat(F, r, c) = H2Trees.BoundingBallTree(SVector{3,F}(c, 0, 0), F(r))
         end
     end
 
-    # Float32 in, Float32 out: nothing inside the predicates may reach for a Float64
-    # literal. `optimize=false` keeps the IR to the method itself, before Base internals
-    # (Float32^Int among them) are inlined.
+    # Float32 in, Float32 out; `optimize=false` keeps Base internals out of the IR.
     let f = NestedCrossApproximation.isnearwideband(2.0f0),
         boxes = typeof.((twontreeat(Float32, 1, 0), twontreeat(Float32, 1, 4))),
         balls = typeof.((balltreeat(Float32, 1, 0), balltreeat(Float32, 1, 4)))
