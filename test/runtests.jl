@@ -26,7 +26,12 @@ Random.seed!(1234)
     include("compressors/test_topdown.jl")
     include("compressors/test_bottomup.jl")
     include("compressors/test_batchedbottomup.jl")
+    include("compressors/test_trialassembly.jl")
     include("compressors/test_buffer.jl")
+    # GPU tests are disabled until the BEAST GPU extension is released and
+    # NestedCrossApproximationCUDAExt is declared again in Project.toml.
+    # include("gpu/test_compresslevel.jl")
+    # include("gpu/test_trialassembly.jl")
 
     include("pivoting/test_representor.jl")
     include("pivoting/test_pivots.jl")
@@ -34,6 +39,7 @@ Random.seed!(1234)
     include("test_couplingmatrices.jl")
 
     include("nca/test_abstractnca.jl")
+    include("nca/test_schedulers.jl")
     # nca/{aggregate,couple,disaggregate}.jl covered by test_petrovgalerkinnca.jl
     include("nca/test_petrovgalerkinnca.jl")
 end

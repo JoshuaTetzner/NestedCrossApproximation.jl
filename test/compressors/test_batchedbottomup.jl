@@ -40,11 +40,41 @@ using Random
         )
     end
 
+    @testset "Sampled residual stopping" begin
+        A = zeros(5, 3)
+        A[1, 1], A[2, 2], A[3, 3] = 1, 0.009, 0.001
+        cfg = ACA(FullPivoting(), FullPivoting(), FNormEstimator(1e-2))
+        @test first(cfg(copy(A), 3)) == 1
+        @test first(NestedCrossApproximation._compressblock(cfg, copy(A), 3)) == 2
+        # Dense compressors without the sampled keyword retain their interface.
+        other = (block, ranklimit) -> (ranklimit, [1], [1])
+        @test NestedCrossApproximation._compressblock(other, A, 3) == (3, [1], [1])
+    end
+
     # At most `maxrank` points of the far tree, and no more than cluster or far field hold.
     @testset "_selectfarpivots" begin
         cluster = H2Trees.values(ttree, H2Trees.root(ttree))
         farnodes = collect(H2Trees.children(stree, H2Trees.root(stree)))
         farvalues = H2Trees.values(stree, farnodes)
+
+        @testset "Capped subtree counts" begin
+            for node in 1:H2Trees.numberofnodes(stree), cap in (0, 1, 7, 30, 300)
+                @test NestedCrossApproximation._clustersize(stree, node, cap) ==
+                    min(cap, length(H2Trees.values(stree, node)))
+            end
+            # Several small far clusters must still cap the pivot count at
+            # their actual total, rather than assuming maxrank points exist.
+            small = [
+                n for n in 1:H2Trees.numberofnodes(stree) if
+                H2Trees.isleaf(stree, n) && 0 < length(H2Trees.values(stree, n)) <= 7
+            ][1:2]
+            actual = H2Trees.values(stree, small)
+            @test sort(
+                NestedCrossApproximation._selectfarpivots(
+                    pivotselector, cluster, small, stree, 25
+                ),
+            ) == sort(actual)
+        end
 
         pivots = @inferred NestedCrossApproximation._selectfarpivots(
             pivotselector, cluster, farnodes, stree, 25

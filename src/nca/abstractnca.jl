@@ -203,17 +203,43 @@ function assemblefars(
     partition=interactions(tree, isnear),
     verbose::Bool=false,
 )
-    testfardata, trialfardata = fardata(tree, isnear, partition)
-    return _buildbases_and_coupling(
+    return _assemblefars(
+        fardata(tree, isnear, partition),
         testcompressor,
         trialcompressor,
         farmatrix,
-        tree,
-        testfardata,
-        trialfardata;
+        tree;
         ntasks=ntasks,
         maxrank=maxrank,
         verbose=verbose,
+    )
+end
+
+# The type of `fardata(tree, isnear)` depends on `isnear`; one method per pair type keeps
+# the call of `_buildbases_and_coupling` concretely typed.
+function _assemblefars(
+    data::Tuple{FarData,FarData},
+    testcompressor,
+    trialcompressor,
+    farmatrix,
+    tree;
+    kwargs...,
+)
+    return _buildbases_and_coupling(
+        testcompressor, trialcompressor, farmatrix, tree, data[1], data[2]; kwargs...
+    )
+end
+
+function _assemblefars(
+    data::Tuple{DirectionalData,DirectionalData},
+    testcompressor,
+    trialcompressor,
+    farmatrix,
+    tree;
+    kwargs...,
+)
+    return _buildbases_and_coupling(
+        testcompressor, trialcompressor, farmatrix, tree, data[1], data[2]; kwargs...
     )
 end
 

@@ -1,9 +1,25 @@
-# Number of points of a node, without collecting them.
+# Per-node point count without materializing the full point-id array or the leaf
+# list (H2Trees.leaves collects a fully flattened Vector via an allocating
+# stack-based DFS iterator; recursing over children directly needs none of that).
 function _clustersize(tree, node::Int)
     isleaf(tree, node) && return length(H2Trees.values(H2Trees.data(tree, node)))
     n = 0
-    for leaf in H2Trees.leaves(tree, node)
-        n += length(H2Trees.values(H2Trees.data(tree, Int(leaf))))
+    for child in H2Trees.children(tree, node)
+        n += _clustersize(tree, child)
+    end
+    return n
+end
+
+# Rank selection only needs to know whether enough points are available.
+# Stop descending as soon as the cap is reached, including within a subtree.
+function _clustersize(tree, node::Int, limit::Int)
+    limit <= 0 && return 0
+    isleaf(tree, node) &&
+        return min(limit, length(H2Trees.values(H2Trees.data(tree, node))))
+    n = 0
+    for child in H2Trees.children(tree, node)
+        n += _clustersize(tree, child, limit - n)
+        n == limit && break
     end
     return n
 end
@@ -283,6 +299,33 @@ end
     return rows[1:npivots], cols[1:npivots]
 end
 
+# Kernel matrix prepared for the repeated row and column sampling of one block. ACA samples
+# rows and columns; IACA samples only the side with value-based pivoting, the indices of
+# the geometric side are never used as an index list (and may be nodes instead of points).
+function _localfarmatrix(::AdaptiveCrossApproximation.ACA, farmatrix, rowidcs, colidcs)
+    return AdaptiveCrossApproximation.localkernelmatrix(farmatrix, rowidcs, colidcs)
+end
+
+function _localfarmatrix(
+    ::AdaptiveCrossApproximation.IACA{RP,CP}, farmatrix, rowidcs, colidcs
+) where {
+    RP<:AdaptiveCrossApproximation.GeoPivStratFunctor,
+    CP<:AdaptiveCrossApproximation.MaximumValueFunctor,
+}
+    return AdaptiveCrossApproximation.localkernelmatrix(farmatrix, nothing, colidcs)
+end
+
+function _localfarmatrix(
+    ::AdaptiveCrossApproximation.IACA{RP,CP}, farmatrix, rowidcs, colidcs
+) where {
+    RP<:AdaptiveCrossApproximation.MaximumValueFunctor,
+    CP<:AdaptiveCrossApproximation.GeoPivStratFunctor,
+}
+    return AdaptiveCrossApproximation.localkernelmatrix(farmatrix, rowidcs, nothing)
+end
+
+_localfarmatrix(factorization, farmatrix, rowidcs, colidcs) = farmatrix
+
 function _compute_raw_pivots!(
     factorization::AdaptiveCrossApproximation.ACA,
     farmatrix,
@@ -295,8 +338,9 @@ function _compute_raw_pivots!(
     ranklimit,
 )
     AdaptiveCrossApproximation.reset!(factorization, rowidcs, colidcs)
+    localmatrix = _localfarmatrix(factorization, farmatrix, rowidcs, colidcs)
     npivots = factorization(
-        farmatrix, colbuffer, rowbuffer, rowpivs, colpivs, rowidcs, colidcs, ranklimit
+        localmatrix, colbuffer, rowbuffer, rowpivs, colpivs, rowidcs, colidcs, ranklimit
     )
     return npivots, rowpivs, colpivs
 end
@@ -312,8 +356,9 @@ function _compute_raw_pivots!(
     colpivs,
     ranklimit,
 )
+    localmatrix = _localfarmatrix(factorization, farmatrix, rowidcs, colidcs)
     npivots, rowpivs, colpivs = factorization(
-        farmatrix, colbuffer, rowbuffer, rowpivs, colpivs, rowidcs, colidcs, ranklimit
+        localmatrix, colbuffer, rowbuffer, rowpivs, colpivs, rowidcs, colidcs, ranklimit
     )
     return npivots, rowpivs, colpivs
 end

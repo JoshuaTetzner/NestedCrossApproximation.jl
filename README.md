@@ -2,7 +2,7 @@
 
 [![Docs-stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://JoshuaTetzner.github.io/NestedCrossApproximation.jl/stable/)
 [![Docs-dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://JoshuaTetzner.github.io/NestedCrossApproximation.jl/dev/)
-[![CI](https://github.com/JoshuaTetzner/NestedCrossApproximation.jl/actions/workflows/CI.yml/badge.svg?branch=dev)](https://github.com/JoshuaTetzner/NestedCrossApproximation.jl/actions/workflows/CI.yml)
+[![CI](https://github.com/JoshuaTetzner/NestedCrossApproximation.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/JoshuaTetzner/NestedCrossApproximation.jl/actions/workflows/CI.yml)
 [![codecov](https://codecov.io/gh/JoshuaTetzner/NestedCrossApproximation.jl/graph/badge.svg)](https://codecov.io/gh/JoshuaTetzner/NestedCrossApproximation.jl)
 
 ## Introduction
