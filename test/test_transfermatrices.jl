@@ -2,7 +2,6 @@ using Test
 using H2Trees
 using NestedCrossApproximation
 using LinearAlgebra
-using OhMyThreads
 using Random
 using StaticArrays
 
@@ -108,14 +107,7 @@ using StaticArrays
             serial = Vector{Vector{Matrix{T}}}(undef, nnodes)
             for level in eachindex(levelnodes)
                 transfermatrices!(tree, transfer, levelnodes[level], pivots, buf)
-                transfermatrices!(
-                    tree,
-                    serial,
-                    levelnodes[level],
-                    pivots,
-                    buf;
-                    scheduler=SerialScheduler(),
-                )
+                transfermatrices!(tree, serial, levelnodes[level], pivots, buf; ntasks=1)
             end
 
             @test [node for node in 1:nnodes if isassigned(transfer, node)] == sort(nodes)

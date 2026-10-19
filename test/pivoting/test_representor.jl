@@ -3,7 +3,6 @@ using H2Trees
 using NestedCrossApproximation
 using AdaptiveCrossApproximation
 using LinearAlgebra
-using OhMyThreads
 using StaticArrays
 using Random
 
@@ -159,7 +158,7 @@ using Random
         reduced = compressor(; representor=representor)
         if compressor === NestedCrossApproximation.TopDown && name == "MimicryRep"
             @test_throws ArgumentError NestedCrossApproximation.testbases(
-                reduced, countingmatrix, tree, testfardata; scheduler=SerialScheduler()
+                reduced, countingmatrix, tree, testfardata; ntasks=1
             )
             continue
         end
@@ -172,7 +171,7 @@ using Random
             )
 
             nevals[] = 0
-            bases(comp, countingmatrix, tree, fardata; scheduler=SerialScheduler())
+            bases(comp, countingmatrix, tree, fardata; ntasks=1)
             push!(counts, nevals[])
         end
         @test counts[3] < counts[1] / 5

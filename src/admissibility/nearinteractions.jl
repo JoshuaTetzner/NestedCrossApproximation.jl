@@ -1,6 +1,5 @@
 import H2Trees: halfsize, radius, center, isleaf
-import AdaptiveCrossApproximation:
-    IsNearFunctor, isnear, nearinteractions, assemblenears, PreserveSpaceOrder
+import AdaptiveCrossApproximation: isnear, interactions
 
 """
     IsNearWidebandFunctor{F,LF}

@@ -118,10 +118,68 @@ function plan_from_pivots(pivots::AbstractVector)
     return CoefficientPlan(globalidxtocoeffptr)
 end
 
-# One method per `isnear` type keeps the type of `fardata(tree, isnear)` inferable.
+"""
+    assemblenears(operator, testspace, trialspace, tree; isnear, ntasks, matrixdata,
+        partition=interactions(tree, isnear), verbose=false)
+
+Assemble the near field of an H²-matrix.
+
+Evaluates the near-field blocks of `tree` (see `interactions`) densely, one block row
+per test cluster with near blocks, in the original order of the spaces.
+
+# Returns
+
+A `BlockSparseMatrix` of size `(length(testspace), length(trialspace))`.
+"""
+function assemblenears(
+    operator,
+    testspace,
+    trialspace,
+    tree;
+    isnear,
+    ntasks,
+    matrixdata,
+    partition=interactions(tree, isnear),
+    verbose::Bool=false,
+)
+    nearmatrix = AbstractKernelMatrix(
+        operator, testspace, trialspace; matrixdata=matrixdata
+    )
+    (; nearptr, nearnodes) = partition
+    nblocks = count(τ -> nearptr[τ + 1] > nearptr[τ], 1:(length(nearptr) - 1))
+    # BlockSparseMatrices does not set up the threaded products of an empty matrix.
+    iszero(nblocks) && return BlockSparseMatrix(
+        Matrix{eltype(nearmatrix)}[], Vector{Int}[], Vector{Int}[], size(nearmatrix)
+    )
+    ttree, stree = testtree(tree), trialtree(tree)
+    rows = Vector{Vector{Int}}(undef, nblocks)
+    cols = Vector{Vector{Int}}(undef, nblocks)
+    blocks = Vector{Matrix{eltype(nearmatrix)}}(undef, nblocks)
+    i = 0
+    for τ in 1:(length(nearptr) - 1)
+        first, last = nearptr[τ], nearptr[τ + 1] - 1
+        first > last && continue
+        i += 1
+        rows[i] = H2Trees.values(ttree, τ)
+        ncols = sum(k -> H2Trees.numberofvalues(stree, nearnodes[k]), first:last)
+        columns = sizehint!(Int[], ncols)
+        for k in first:last
+            H2Trees.appendvalues!(columns, stree, nearnodes[k])
+        end
+        cols[i] = columns
+        blocks[i] = zeros(eltype(nearmatrix), length(rows[i]), ncols)
+    end
+    pbar = Progress(length(blocks); desc="Assembling near interactions: ", enabled=verbose)
+    assemble_blocks(nearmatrix, blocks, rows, cols; ntasks=ntasks, pbar=pbar)
+    finish!(pbar)
+    return BlockSparseMatrix(
+        blocks, rows, cols, size(nearmatrix); scheduler=_scheduler(ntasks)
+    )
+end
+
 """
     assemblefars(tree, isnear, testcompressor, trialcompressor, farmatrix;
-        scheduler, maxrank, verbose=false)
+        ntasks, maxrank, partition=interactions(tree, isnear), verbose=false)
 
 Assemble the far field of an H²-matrix.
 
@@ -136,15 +194,16 @@ A named tuple with `nestedtestbases`, `testtransfermats`, `testpivots`, `nestedt
 """
 function assemblefars(
     tree,
-    isnear::IsNearWidebandFunctor,
+    isnear,
     testcompressor,
     trialcompressor,
     farmatrix;
-    scheduler,
+    ntasks,
     maxrank,
+    partition=interactions(tree, isnear),
     verbose::Bool=false,
 )
-    testfardata, trialfardata = fardata(tree, isnear)
+    testfardata, trialfardata = fardata(tree, isnear, partition)
     return _buildbases_and_coupling(
         testcompressor,
         trialcompressor,
@@ -152,31 +211,7 @@ function assemblefars(
         tree,
         testfardata,
         trialfardata;
-        scheduler=scheduler,
-        maxrank=maxrank,
-        verbose=verbose,
-    )
-end
-
-function assemblefars(
-    tree,
-    isnear::IsNearFunctor,
-    testcompressor,
-    trialcompressor,
-    farmatrix;
-    scheduler,
-    maxrank,
-    verbose::Bool=false,
-)
-    testfardata, trialfardata = fardata(tree, isnear)
-    return _buildbases_and_coupling(
-        testcompressor,
-        trialcompressor,
-        farmatrix,
-        tree,
-        testfardata,
-        trialfardata;
-        scheduler=scheduler,
+        ntasks=ntasks,
         maxrank=maxrank,
         verbose=verbose,
     )
@@ -189,7 +224,7 @@ function _buildbases_and_coupling(
     tree,
     testfardata::FarData,
     trialfardata::FarData;
-    scheduler,
+    ntasks,
     maxrank,
     verbose::Bool=false,
 )
@@ -201,7 +236,7 @@ function _buildbases_and_coupling(
         farmatrix,
         tree,
         testfardata;
-        scheduler=scheduler,
+        ntasks=ntasks,
         maxrank=maxrank,
         pbar=basespbar,
     )
@@ -210,7 +245,7 @@ function _buildbases_and_coupling(
         farmatrix,
         tree,
         trialfardata;
-        scheduler=scheduler,
+        ntasks=ntasks,
         maxrank=maxrank,
         pbar=basespbar,
     )
@@ -223,7 +258,7 @@ function _buildbases_and_coupling(
         trialpivots,
         testfardata,
         trialfardata;
-        scheduler=scheduler,
+        ntasks=ntasks,
         pbar=couplingpbar,
     )
     finish!(couplingpbar)
@@ -245,7 +280,7 @@ function _buildbases_and_coupling(
     tree,
     testfardata::DirectionalData,
     trialfardata::DirectionalData;
-    scheduler,
+    ntasks,
     maxrank,
     verbose::Bool=false,
 )
@@ -260,7 +295,7 @@ function _buildbases_and_coupling(
         farmatrix,
         tree,
         testfardata;
-        scheduler=scheduler,
+        ntasks=ntasks,
         maxrank=maxrank,
         pbar=basespbar,
     )
@@ -269,7 +304,7 @@ function _buildbases_and_coupling(
         farmatrix,
         tree,
         trialfardata;
-        scheduler=scheduler,
+        ntasks=ntasks,
         maxrank=maxrank,
         pbar=basespbar,
     )
@@ -282,7 +317,7 @@ function _buildbases_and_coupling(
         trialpivots,
         testfardata,
         trialfardata;
-        scheduler=scheduler,
+        ntasks=ntasks,
         pbar=couplingpbar,
     )
     finish!(couplingpbar)

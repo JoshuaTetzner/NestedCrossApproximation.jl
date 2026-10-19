@@ -102,10 +102,12 @@ function _finalize_directionaldata(
     )
 end
 
-function fardata(tree::BlockTree, isnear::IsNearWidebandFunctor)
+function fardata(
+    tree::BlockTree, isnear::IsNearWidebandFunctor, partition=interactions(tree, isnear)
+)
     ttree = H2Trees.testtree(tree)
     stree = H2Trees.trialtree(tree)
-    testfardata, trialfardata = farinteractions(tree; isnear=isnear)
+    testfardata, trialfardata = farinteractions(tree, partition)
 
     testdirdata = directionalfardata(testfardata, ttree, stree, isnear)
     trialdirdata = directionalfardata(trialfardata, stree, ttree, isnear)

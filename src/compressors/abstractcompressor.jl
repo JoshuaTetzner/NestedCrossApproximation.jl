@@ -1,6 +1,6 @@
 """
-    testbases(compressor, farmatrix, tree, fardata; scheduler, maxrank, pbar)
-    trialbases(compressor, farmatrix, tree, fardata; scheduler, maxrank, pbar)
+    testbases(compressor, farmatrix, tree, fardata; ntasks, maxrank, pbar)
+    trialbases(compressor, farmatrix, tree, fardata; ntasks, maxrank, pbar)
 
 Build the nested bases and transfer matrices of the test or the trial side.
 
@@ -17,7 +17,7 @@ also for [`DirectionalData`](@ref).
 
 # Keyword Arguments
 
-  - `scheduler`: `OhMyThreads` scheduler
+  - `ntasks::Integer`: number of parallel tasks; `ntasks = 1` runs on the calling task
   - `maxrank::Int`: maximum number of pivots of a cluster
   - `pbar`: progress bar
 

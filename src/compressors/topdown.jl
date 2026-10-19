@@ -53,10 +53,11 @@ function testbases(
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
     fardata::FarData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     maxrank=40,
     pbar=Progress(0; enabled=false),
 ) where {T}
+    scheduler = _scheduler(ntasks)
     buffer = testbuffer(compressor, farmatrix, maxrank)
 
     tpivots = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
@@ -117,7 +118,7 @@ function testbases(
             level_transfer_nodes[level - 1],
             tpivots,
             buffer[bufferidx(level - 1)];
-            scheduler=scheduler,
+            ntasks=ntasks,
         )
     end
     basis_store = _build_basis_storage(bases)
@@ -130,10 +131,11 @@ function trialbases(
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
     fardata::FarData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     maxrank=40,
     pbar=Progress(0; enabled=false),
 ) where {T}
+    scheduler = _scheduler(ntasks)
     buffer = trialbuffer(compressor, farmatrix, maxrank)
 
     Fspivots = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
@@ -193,7 +195,7 @@ function trialbases(
             level_transfer_nodes[level - 1],
             spivots,
             buffer[bufferidx(level - 1)];
-            scheduler=scheduler,
+            ntasks=ntasks,
         )
     end
     basis_store = _build_basis_storage(bases)

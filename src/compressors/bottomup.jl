@@ -50,10 +50,11 @@ function testbases(
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
     fardata::FarData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     maxrank=40,
     pbar=Progress(0; enabled=false),
 ) where {T}
+    scheduler = _scheduler(ntasks)
     buffer = testbuffer(compressor, farmatrix, maxrank)
 
     tpivots = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
@@ -129,10 +130,11 @@ function trialbases(
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
     fardata::FarData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     maxrank=40,
     pbar=Progress(0; enabled=false),
 ) where {T}
+    scheduler = _scheduler(ntasks)
     buffer = trialbuffer(compressor, farmatrix, maxrank)
 
     spivots = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
@@ -214,10 +216,11 @@ function testbases(
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
     fardata::DirectionalData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     maxrank=40,
     pbar=Progress(0; enabled=false),
 ) where {T}
+    scheduler = _scheduler(ntasks)
     buffer = testbuffer(compressor, farmatrix, maxrank)
 
     tpivots = Vector{Vector{Int}}(undef, length(fardata.dirs))
@@ -318,10 +321,11 @@ function trialbases(
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
     fardata::DirectionalData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     maxrank=40,
     pbar=Progress(0; enabled=false),
 ) where {T}
+    scheduler = _scheduler(ntasks)
     buffer = trialbuffer(compressor, farmatrix, maxrank)
 
     spivots = Vector{Vector{Int}}(undef, length(fardata.dirs))

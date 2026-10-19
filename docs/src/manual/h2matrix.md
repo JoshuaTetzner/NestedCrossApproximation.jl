@@ -342,13 +342,12 @@ The principal keywords of `PetrovGalerkinNCA` are:
 | `trialcompressor` | `TopDown()` | construction of the trial basis |
 | `isnear` | `isnear()` | separation of near and far interactions |
 | `maxrank` | `50` | upper bound for every local basis rank |
-| `scheduler` | `DynamicScheduler()` | OhMyThreads scheduler used for assembly and products |
+| `ntasks` | `Threads.nthreads()` | number of parallel tasks for assembly and products |
 | `verbose` | `false` | display assembly progress |
 
 Reaching `maxrank` can indicate that the requested local tolerance was not attained.
-Assembly and matrix-vector products use Julia threads through OhMyThreads.jl. A
-different scheduler can be supplied explicitly, for example
-`scheduler=OhMyThreads.SerialScheduler()`.
+Assembly and matrix-vector products run on `ntasks` parallel tasks;
+`ntasks=1` runs on the calling task. The scheduling itself is chosen internally.
 
 For the nested representation and the construction of its bases, transfer matrices,
 and coupling matrices, see the [$\mathcal{H}^2$-matrix theory](@ref nca_theory).

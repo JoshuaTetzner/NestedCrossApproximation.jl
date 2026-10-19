@@ -47,7 +47,12 @@ using Random
         rootsfar = !isnear(ttree, stree, H2Trees.root(ttree), H2Trees.root(stree))
         @test rootsfar == (name == "admissible roots")
 
-        testdata, trialdata = NestedCrossApproximation.farinteractions(tree; isnear=isnear)
+        partition = NestedCrossApproximation.interactions(tree, isnear)
+        testdata, trialdata = @inferred NestedCrossApproximation.fardata(
+            tree, isnear, partition
+        )
+        @test NestedCrossApproximation.farptr(testdata) === partition.farptr
+        @test NestedCrossApproximation.farnodes(testdata) === partition.farnodes
         testfars = [NestedCrossApproximation.farnodes(testdata, t) for t in 1:nt]
         trialfars = [NestedCrossApproximation.farnodes(trialdata, s) for s in 1:ns]
         testpairs = [(t, s) for t in 1:nt for s in testfars[t]]
@@ -65,9 +70,9 @@ using Random
 
         # Near and far blocks together cover every matrix entry exactly once.
         covered = zeros(Int, H2Trees.numberofvalues(ttree), H2Trees.numberofvalues(stree))
-        values, nearvalues = NestedCrossApproximation.nearinteractions(tree; isnear=isnear)
-        for i in eachindex(values)
-            covered[values[i], nearvalues[i]] .+= 1
+        (; nearptr, nearnodes) = partition
+        for t in 1:(length(nearptr) - 1), k in nearptr[t]:(nearptr[t + 1] - 1)
+            covered[H2Trees.values(ttree, t), H2Trees.values(stree, nearnodes[k])] .+= 1
         end
         for (t, s) in testpairs
             covered[H2Trees.values(ttree, t), H2Trees.values(stree, s)] .+= 1
