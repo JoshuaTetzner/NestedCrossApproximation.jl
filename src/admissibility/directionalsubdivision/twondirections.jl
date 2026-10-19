@@ -1,0 +1,296 @@
+using LinearAlgebra: dot, norm
+using StaticArrays: SVector
+import H2Trees: TwoNTree
+
+mutable struct DirectionNode{N,T}
+    level::Int
+    axis::Int
+    dir::SVector{N,T}
+    parent::Int
+    firstchild::Int
+    nchildren::Int
+end
+
+struct DirectionTree{N,T}
+    level::Int       # max depth of direction tree
+    dirroot::Int     # coarsest cluster tree level that is HF (direction tree root)
+    rootcount::Int
+    branching::Int
+    nodes::Vector{DirectionNode{N,T}}
+end
+
+@inline _rootcount(::Val{N}) where {N} = 2 * N
+@inline _branching(::Val{N}) where {N} = Int(1) << (N - 1)
+
+function _total_nodes(rootcount::Int, branching::Int, maxlevel::Int)
+    return rootcount * ((branching^maxlevel - 1) ÷ (branching - 1))
+end
+
+function _root_directions(::Val{N}, ::Type{T}) where {N,T}
+    dirs = Vector{Tuple{Int,SVector{N,T}}}(undef, _rootcount(Val(N)))
+    idx = 1
+    for axis in 1:N
+        pos = SVector{N,T}(ntuple(i -> i == axis ? one(T) : zero(T), N))
+        neg = SVector{N,T}(ntuple(i -> i == axis ? -one(T) : zero(T), N))
+        dirs[idx] = (axis, pos)
+        idx += 1
+        dirs[idx] = (axis, neg)
+        idx += 1
+    end
+    return dirs
+end
+
+function _child_offsets(::Val{N}, axis::Int, ::Type{T}) where {N,T}
+    nchildren = _branching(Val(N))
+    offsets = Vector{SVector{N,T}}(undef, nchildren)
+    for mask in 0:(nchildren - 1)
+        offsets[mask + 1] = SVector{N,T}(
+            ntuple(N) do d
+                if d == axis
+                    return zero(T)
+                end
+                bitpos = d < axis ? d : d - 1
+                return ((mask >>> (bitpos - 1)) & 0x1) == 0x0 ? -one(T) : one(T)
+            end,
+        )
+    end
+    return offsets
+end
+
+function DirectionTree(
+    ::Val{N}, maxlevel::Int, dirroot::Int=1, ::Type{T}=Float64
+) where {N,T<:Real}
+    N < 2 && error("TwoN directional subdivision requires dimension N >= 2.")
+    maxlevel < 1 && error("Directional tree maxlevel must be >= 1.")
+
+    rootcount = _rootcount(Val(N))
+    branching = _branching(Val(N))
+    nnodes = _total_nodes(rootcount, branching, maxlevel)
+    nodes = Vector{DirectionNode{N,T}}(undef, nnodes)
+    childoffsets = [_child_offsets(Val(N), axis, T) for axis in 1:N]
+
+    rootdirs = _root_directions(Val(N), T)
+    nextidx = 1
+    for (axis, dirvec) in rootdirs
+        nodes[nextidx] = DirectionNode{N,T}(1, axis, dirvec, 0, 0, 0)
+        nextidx += 1
+    end
+
+    levelstart = 1
+    levelcount = rootcount
+    scale = one(T) / T(2)
+    for level in 1:(maxlevel - 1)
+        levelend = levelstart + levelcount - 1
+        for nodeidx in levelstart:levelend
+            node = nodes[nodeidx]
+            node.firstchild = nextidx
+            node.nchildren = branching
+            for offset in childoffsets[node.axis]
+                nodes[nextidx] = DirectionNode{N,T}(
+                    level + 1, node.axis, node.dir + scale * offset, nodeidx, 0, 0
+                )
+                nextidx += 1
+            end
+        end
+        levelstart = levelend + 1
+        levelcount *= branching
+        scale /= T(2)
+    end
+
+    @assert nextidx == nnodes + 1
+
+    # Children are patch centres on the cube face, `parent.dir + scale * offset`, so their
+    # norms drift apart with depth (1.06 to 1.46 at level 3 in 3D). `_descend_direction`
+    # compares raw dot products, which orders candidates by angle only if they are unit
+    # norm; otherwise it prefers the longer corner directions and the worst-case cone
+    # *widens* with refinement (measured in 3D: 0.95, 0.61, 0.81, 0.89, 0.92 rad by depth)
+    # instead of halving (0.95, 0.61, 0.33, 0.17, 0.10). Rescaling after the loop, once
+    # every child has been generated from its parent's patch centre, leaves the
+    # subdivision geometry untouched and keeps the descent free of any norm.
+    @inbounds for node in nodes
+        node.dir /= norm(node.dir)
+    end
+
+    return DirectionTree{N,T}(maxlevel, dirroot, rootcount, branching, nodes)
+end
+
+# Returns (dirroot, maxlevel) where:
+#   dirroot  = lflevel - 1: finest HF level, where the direction tree is rooted
+#              (clusters at this level use the 2N root directions)
+#   maxlevel = dirroot - firsthflevel + 1: depth of the direction tree, determined
+#              by the coarsest HF level that has a far interaction
+function _dirroot_and_maxlevel(tree::TwoNTree, ptr::AbstractVector{<:Integer}, islf)
+    nnodes = H2Trees.numberofnodes(tree)
+    length(ptr) == nnodes + 1 ||
+        error("Invalid ptr length: expected $(nnodes + 1), got $(length(ptr)).")
+
+    # Find the first LF level (going coarse→fine, level numbers increase)
+    lflevel = H2Trees.minimumlevel(tree)
+    while !islf(tree, lflevel)
+        lflevel += 1
+    end
+    # Direction tree root lives at the finest HF level, just above LF
+    dirroot = lflevel - 1
+
+    # Find the coarsest HF level that has a far interaction to bound the tree depth
+    firsthflevel = dirroot  # sentinel; will be updated below
+    @inbounds for node in 1:nnodes
+        if ptr[node + 1] > ptr[node]
+            lev = H2Trees.level(tree, node)
+            !islf(tree, lev) && lev < firsthflevel && (firsthflevel = lev)
+        end
+    end
+
+    return dirroot, dirroot - firsthflevel + 1
+end
+
+function DirectionTree(
+    tree::TwoNTree{N,D,T}, ptr::AbstractVector{<:Integer}, islf
+) where {N,D,T}
+    dirroot, maxlvl = _dirroot_and_maxlevel(tree, ptr, islf)
+    return DirectionTree(Val(N), maxlvl, dirroot, T)
+end
+
+@inline numberofnodes(tree::DirectionTree) = length(tree.nodes)
+@inline rootnodes(tree::DirectionTree) = 1:(tree.rootcount)
+@inline parent(tree::DirectionTree, node::Int) = tree.nodes[node].parent
+@inline directionvector(tree::DirectionTree, node::Int) = tree.nodes[node].dir
+@inline isleaf(tree::DirectionTree, node::Int) = tree.nodes[node].nchildren == 0
+
+function children(tree::DirectionTree, node::Int)
+    node == 0 && return rootnodes(tree)
+    nchildren = tree.nodes[node].nchildren
+    nchildren == 0 && return 1:0
+    firstchild = tree.nodes[node].firstchild
+    return firstchild:(firstchild + nchildren - 1)
+end
+
+# Find the direction node in `tree` that best matches `interaction`.
+# `clusterlevel` is the level of the cluster in the cluster tree; the direction
+# tree depth is derived as  min(tree.dirroot-clusterlevel + 1, tree.level),
+# so finer cluster levels use finer directions, clamped to the direction tree depth.
+function direction(
+    interaction::SVector{N,T}, tree::DirectionTree{N}, clusterlevel::Int
+) where {N,T}
+    maxdepth = min(tree.dirroot - clusterlevel + 1, tree.level)
+    return _descend_direction(interaction, tree, maxdepth)
+end
+
+# Variant without a cluster level: descend to full depth of the direction tree.
+function direction(interaction::SVector{N,T}, tree::DirectionTree{N}) where {N,T}
+    return _descend_direction(interaction, tree, tree.level)
+end
+
+# Minimizing angle(interaction, dir) over unit-norm `dir` candidates is equivalent to
+# maximizing dot(interaction, dir), which skips the norm/acos work.
+function _descend_direction(
+    interaction::SVector{N,T}, tree::DirectionTree{N}, maxdepth::Int
+) where {N,T}
+    current = 0
+    @inbounds for _ in 1:maxdepth
+        nextnodes = children(tree, current)
+        isempty(nextnodes) && break
+
+        bestnode = first(nextnodes)
+        bestdot = typemin(T)
+        for candidate in nextnodes
+            newdot = dot(interaction, tree.nodes[candidate].dir)
+            if newdot > bestdot
+                bestdot = newdot
+                bestnode = candidate
+            end
+        end
+        current = bestnode
+    end
+    return current
+end
+
+function directionalfardata(fardata::FarData, tree::TwoNTree, fartree::TwoNTree, isnear)
+    ptr = farptr(fardata)
+    nodes = farnodes(fardata)
+    dirtree = DirectionTree(tree, ptr, isnear.islf)
+    nnodes = length(ptr) - 1
+    dirs = Vector{Vector{Int}}(undef, nnodes)
+    dircount = [Int[] for _ in 1:nnodes]
+    partochddirmap = [Int[] for _ in 1:nnodes]
+    partochddircount = zeros(Int, nnodes)
+
+    for level in H2Trees.levels(tree)
+        for node in H2Trees.LevelIterator(tree, level)
+            pnode = H2Trees.parent(tree, node)
+            hasfars = ptr[node + 1] > ptr[node]
+            hasparentdirs = pnode != 0 && !isempty(dirs[pnode])
+
+            # LF nodes do not use directional subdivision.
+            # Store [0] for direct LF far nodes, or when inheriting from an LF parent with dirs.
+            if isnear.islf(tree, level)
+                inheritlf = hasparentdirs && level > 1 && isnear.islf(tree, level - 1)
+                dirs[node] = (hasfars || inheritlf) ? Int[0] : Int[]
+                partochddirmap[node] = inheritlf ? [1] : Int[]
+                continue
+            end
+
+            (!hasfars && !hasparentdirs) && (dirs[node]=Int[]; continue)
+
+            nfar = Int(ptr[node + 1] - ptr[node])
+            nodedirs = Vector{Int}(undef, nfar)
+            for (i, faridx) in enumerate(ptr[node]:(ptr[node + 1] - 1))
+                vec = interaction(node, nodes[faridx], tree, fartree)
+                nodedirs[i] = direction(vec, dirtree, level)
+            end
+
+            perm = sortperm(nodedirs)
+            permute!(view(nodes, ptr[node]:(ptr[node + 1] - 1)), perm)
+            uniquenodedirs = sort!(unique(nodedirs))
+            noriginal = length(uniquenodedirs)
+
+            # Inherit child-directions from parent.
+            partochddir = iszero(pnode) ? Int[] : zeros(Int, length(dirs[pnode]))
+            if hasparentdirs
+                for (i, pardir) in enumerate(dirs[pnode])
+                    partochddir[i] = parent(dirtree, pardir)
+                end
+
+                for (idx, cdir) in enumerate(partochddir)
+                    !(cdir in uniquenodedirs) && push!(uniquenodedirs, cdir)
+                    partochddir[idx] = findfirst(==(cdir), uniquenodedirs)
+                end
+            end
+            # nodedirs[perm] is sorted to match uniquenodedirs[1:noriginal]; run-length
+            # count over that shared order gives the same per-direction counts as
+            # matching every unique direction against every far node, for less work.
+            # Directions appended above (beyond noriginal) come only from parent
+            # inheritance and have no own far nodes, so they correctly stay at 0.
+            localdircount = zeros(Int, length(uniquenodedirs))
+            sortednodedirs = view(nodedirs, perm)
+            n = length(sortednodedirs)
+            i = 1
+            for uidx in 1:noriginal
+                c = 0
+                while i <= n && sortednodedirs[i] == uniquenodedirs[uidx]
+                    c += 1
+                    i += 1
+                end
+                localdircount[uidx] = c
+            end
+
+            partochddirmap[node] = partochddir
+            partochddircount[node] = count(!iszero, partochddir)
+            dirs[node] = uniquenodedirs
+            dircount[node] = localdircount
+        end
+    end
+
+    # Fill dircount for LF sentinel nodes: the pass above stores dirs=[0] for them
+    # but leaves dircount empty, since they have no per-direction split.
+    for node in eachindex(dirs)
+        if !isempty(dirs[node]) && isempty(dircount[node])
+            dircount[node] = [max(0, Int(ptr[node + 1] - ptr[node]))]
+            partochddircount[node] = length(partochddirmap[node])
+        end
+    end
+
+    return _finalize_directionaldata(
+        fardata, dirs, dircount, partochddirmap, partochddircount, isnear
+    )
+end
