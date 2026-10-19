@@ -18,7 +18,8 @@ the test and the trial space may differ.
   - `couplingmatrices`: coupling matrices, see [`CouplingStore`](@ref)
   - `aggregationplan`, `disaggregationplan`: position of the coefficients of each trial and
     test cluster in the coefficient vectors of the matrix-vector product
-  - `scheduler`: scheduler of the matrix-vector product
+  - `scheduler`: scheduler of the matrix-vector product, created from `ntasks` by the
+    constructor
   - `dim::Tuple{Int,Int}`: matrix dimensions `(m, n)`
 
 # Notes
@@ -118,8 +119,8 @@ the coupling matrices are computed.
   - `maxrank::Int = 50`: maximum number of pivots of a cluster
   - `matrixdata`: data for the evaluation of the near field, e.g. a quadrature strategy
   - `farmatrixdata`: data for the evaluation of the far field
-  - `scheduler = DynamicScheduler()`: `OhMyThreads` scheduler for the assembly and the
-    matrix-vector product
+  - `ntasks::Integer = Threads.nthreads()`: number of parallel tasks for the assembly and
+    the matrix-vector product; `ntasks = 1` runs on the calling task
   - `verbose::Bool = false`: show progress bars during the assembly
 
 # Returns
@@ -139,20 +140,21 @@ function PetrovGalerkinNCA(
     ),
     testcompressor=TopDown(),
     trialcompressor=TopDown(),
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     isnear=isnear(),
     maxrank=50,
     verbose::Bool=false,
 )
+    partition = interactions(tree, isnear)
     nears = assemblenears(
         operator,
         testspace,
         trialspace,
-        tree,
-        PreserveSpaceOrder();
+        tree;
         isnear=isnear,
-        scheduler=scheduler,
+        ntasks=ntasks,
         matrixdata=matrixdata,
+        partition=partition,
         verbose=verbose,
     )
 
@@ -165,8 +167,9 @@ function PetrovGalerkinNCA(
         testcompressor,
         trialcompressor,
         farmatrix;
-        scheduler=scheduler,
+        ntasks=ntasks,
         maxrank=maxrank,
+        partition=partition,
         verbose=verbose,
     )
     aggregationplan = plan_from_pivots(fars.trialpivots)
@@ -182,7 +185,7 @@ function PetrovGalerkinNCA(
         fars.couplingmatrices,
         aggregationplan,
         disaggregationplan,
-        scheduler,
+        _scheduler(ntasks),
         (length(testspace), length(trialspace)),
     )
 end

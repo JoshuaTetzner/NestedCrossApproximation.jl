@@ -13,7 +13,6 @@ using ParallelKMeans
 using StaticArrays
 using Random
 using LinearAlgebra
-using OhMyThreads
 
 # Reuse HelmholtzTestKernel from testutils.jl
 include(joinpath(@__DIR__, "..", "test", "testutils.jl"))
@@ -40,7 +39,7 @@ hmat = NestedCrossApproximation.PetrovGalerkinNCA(
     tree;
     testcompressor  = NestedCrossApproximation.BottomUp(; factorization=ACA()),
     trialcompressor = NestedCrossApproximation.BottomUp(; factorization=ACA()),
-    scheduler       = SerialScheduler(),
+    ntasks          = 1,
     maxrank         = 30,
 )
 

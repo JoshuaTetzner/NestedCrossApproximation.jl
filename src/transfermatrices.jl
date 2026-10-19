@@ -95,8 +95,9 @@ function _build_dirtransfer_storage(
 end
 
 function testtransfermatrices!(
-    tree, transfer, levelnodes, pivots, buf; scheduler=DynamicScheduler()
+    tree, transfer, levelnodes, pivots, buf; ntasks::Integer=Threads.nthreads()
 )
+    scheduler = _scheduler(ntasks)
     @tasks for nodeidx in eachindex(levelnodes)
         @set scheduler = scheduler
         node = levelnodes[nodeidx]
@@ -129,8 +130,9 @@ function testtransfer(rows, childrows, buf)
 end
 
 function trialtransfermatrices!(
-    tree, transfer, levelnodes, pivots, buf; scheduler=DynamicScheduler()
+    tree, transfer, levelnodes, pivots, buf; ntasks::Integer=Threads.nthreads()
 )
+    scheduler = _scheduler(ntasks)
     @tasks for nodeidx in eachindex(levelnodes)
         @set scheduler = scheduler
         node = levelnodes[nodeidx]

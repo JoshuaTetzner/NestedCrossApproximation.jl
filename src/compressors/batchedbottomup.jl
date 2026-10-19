@@ -71,10 +71,11 @@ function testbases(
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
     fardata::FarData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     maxrank=40,
     pbar=Progress(0; enabled=false),
 ) where {T}
+    scheduler = _scheduler(ntasks)
     farpivots = Vector{Vector{Int}}(undef, numberofnodes(testtree(tree)))
     @tasks for t in eachindex(farpivots)
         @set scheduler = scheduler
@@ -130,7 +131,7 @@ function testbases(
             zeros(T, length(tvalues[i]), length(blockpivots[i])) for
             i in eachindex(activeclusters)
         ]
-        assemble_blocks(farmatrix, blocks, tvalues, blockpivots; scheduler=scheduler)
+        assemble_blocks(farmatrix, blocks, tvalues, blockpivots; ntasks=ntasks)
 
         # Phase 3: the compressor works in place, so each block is copied to `scratch`.
         scratch = Matrix{T}(undef, maximum(length, tvalues), maximum(length, blockpivots))
@@ -177,10 +178,11 @@ function trialbases(
     farmatrix::AbstractKernelMatrix{T},
     tree::BlockTree,
     fardata::FarData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     maxrank=40,
     pbar=Progress(0; enabled=false),
 ) where {T}
+    scheduler = _scheduler(ntasks)
     farpivots = Vector{Vector{Int}}(undef, numberofnodes(trialtree(tree)))
     @tasks for s in eachindex(farpivots)
         @set scheduler = scheduler
@@ -235,7 +237,7 @@ function trialbases(
             zeros(T, length(blockpivots[i]), length(svalues[i])) for
             i in eachindex(activeclusters)
         ]
-        assemble_blocks(farmatrix, blocks, blockpivots, svalues; scheduler=scheduler)
+        assemble_blocks(farmatrix, blocks, blockpivots, svalues; ntasks=ntasks)
 
         # Phase 3: as in testbases with rows and columns exchanged.
         scratch = Matrix{T}(undef, maximum(length, blockpivots), maximum(length, svalues))

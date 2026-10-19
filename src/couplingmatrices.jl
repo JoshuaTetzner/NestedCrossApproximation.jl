@@ -1,6 +1,6 @@
 """
     assemble_couplingstore(farmatrix, testpivots, trialpivots, testfardata, trialfardata;
-        scheduler, pbar)
+        ntasks, pbar)
 
 Evaluate the coupling matrix `A[testpivots, trialpivots]` of every admissible cluster pair
 and return them as a [`CouplingStore`](@ref).
@@ -14,7 +14,7 @@ function assemble_couplingstore(
     trialpivots::AbstractVector{<:AbstractVector{Int}},
     testfardata::FarData,
     trialfardata::FarData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     pbar=Progress(0; enabled=false),
 ) where {T}
     ptr = farptr(testfardata)
@@ -44,7 +44,7 @@ function assemble_couplingstore(
         couplingmatrices[active],
         rowidcs[active],
         colidcs[active];
-        scheduler=scheduler,
+        ntasks=ntasks,
         pbar=pbar,
     )
     next!(pbar; step=nfars - length(active))
@@ -58,9 +58,10 @@ function assemble_couplingstore(
     trialpivots::AbstractVector{<:AbstractVector{Int}},
     testfardata::DirectionalData,
     trialfardata::DirectionalData;
-    scheduler=DynamicScheduler(),
+    ntasks::Integer=Threads.nthreads(),
     pbar=Progress(0; enabled=false),
 ) where {T}
+    scheduler = _scheduler(ntasks)
     testptr = farptr(testfardata)
     trialptr = farptr(trialfardata)
     testnodes = farnodes(testfardata)
@@ -98,7 +99,7 @@ function assemble_couplingstore(
         couplingmatrices[active],
         rowidcs[active],
         colidcs[active];
-        scheduler=scheduler,
+        ntasks=ntasks,
         pbar=pbar,
     )
     next!(pbar; step=nfars - length(active))

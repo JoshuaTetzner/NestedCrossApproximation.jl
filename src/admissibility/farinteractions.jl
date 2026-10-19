@@ -1,4 +1,4 @@
-import H2Trees: testtree, trialtree, root, children, numberofnodes
+import H2Trees: testtree, trialtree, children, numberofnodes
 
 """
     FarData{I<:Integer}
@@ -59,87 +59,52 @@ function farfield(tree, fardata::FarData, node::Int)
     return result
 end
 
-function farnodesfrompairs(
-    farpairs::AbstractVector{<:Tuple{Int,Int}},
-    ptr::AbstractVector{<:Integer},
-    nodeidx::Int,
-    farnodeidx::Int,
-)
-    nodes = Vector{Int}(undef, length(farpairs))
-    writeptr = Int.(ptr)
-    @inbounds for pair in farpairs
-        n = pair[nodeidx]
-        nodes[writeptr[n]] = pair[farnodeidx]
-        writeptr[n] += 1
-    end
-    return nodes
+function farinteractions(tree::BlockTree; isnear=isnear())
+    return farinteractions(tree, interactions(tree, isnear))
 end
 
-function farpairs!(
-    ttree,
-    stree,
-    tcounts,
-    scounts,
-    farpairs::Vector{Tuple{Int,Int}},
-    tnode::Int,
-    snode::Int;
-    isnear=isnear(),
-)
-    if !isnear(ttree, stree, tnode, snode)
-        push!(farpairs, (tnode, snode))
-        tcounts[tnode] += 1
-        scounts[snode] += 1
-    else
-        for tchild in children(ttree, tnode)
-            for schild in children(stree, snode)
-                farpairs!(
-                    ttree, stree, tcounts, scounts, farpairs, tchild, schild; isnear=isnear
-                )
-            end
+function farinteractions(tree::BlockTree, partition)
+    testptr, testnodes = partition.farptr, partition.farnodes
+    ntrial = numberofnodes(trialtree(tree))
+    trialptr = zeros(eltype(testptr), ntrial + 1)
+    @inbounds for node in testnodes
+        trialptr[node + 1] += 1
+    end
+    trialptr[1] = 1
+    @inbounds for node in 1:ntrial
+        trialptr[node + 1] += trialptr[node]
+    end
+
+    # Use the row starts as write cursors, then restore them without a scratch array.
+    trialnodes = similar(testnodes)
+    @inbounds for node in 1:(length(testptr) - 1)
+        for k in testptr[node]:(testptr[node + 1] - 1)
+            trialnode = testnodes[k]
+            trialnodes[trialptr[trialnode]] = node
+            trialptr[trialnode] += 1
         end
     end
-end
-
-function farinteractions(tree::BlockTree; isnear=isnear())
-    testcounts = zeros(Int, numberofnodes(testtree(tree)))
-    trialcounts = zeros(Int, numberofnodes(trialtree(tree)))
-    if !isnear(testtree(tree), trialtree(tree), root(testtree(tree)), root(trialtree(tree)))
-        testcounts[root(testtree(tree))] += 1
-        trialcounts[root(trialtree(tree))] += 1
-        testptr = ptrfromcounts(testcounts)
-        trialptr = ptrfromcounts(trialcounts)
-        return FarData(testptr, [root(trialtree(tree))]),
-        FarData(trialptr, [root(testtree(tree))])
+    @inbounds for node in ntrial:-1:1
+        trialptr[node + 1] = trialptr[node]
     end
-    farpairs = Tuple{Int,Int}[]
-    farpairs!(
-        testtree(tree),
-        trialtree(tree),
-        testcounts,
-        trialcounts,
-        farpairs,
-        root(testtree(tree)),
-        root(trialtree(tree));
-        isnear=isnear,
-    )
-    testptr = ptrfromcounts(testcounts)
-    trialptr = ptrfromcounts(trialcounts)
-    testfarnodes = farnodesfrompairs(farpairs, testptr, 1, 2)
-    trialfarnodes = farnodesfrompairs(farpairs, trialptr, 2, 1)
-    return FarData(testptr, testfarnodes), FarData(trialptr, trialfarnodes)
+    trialptr[1] = 1
+    return FarData(testptr, testnodes), FarData(trialptr, trialnodes)
 end
 
 """
-    fardata(tree::BlockTree, isnear)
+    fardata(tree::BlockTree, isnear, partition=interactions(tree, isnear))
 
 Determine the admissible cluster pairs of `tree` and return the far interactions of the
 test and of the trial tree.
+
+An existing ACA interaction partition can be reused. The test-side far arrays are
+shared with it; directional subdivision may reorder its far nodes in place.
 
 # Returns
 
   - Two [`FarData`](@ref) for the standard admissibility condition, two
     [`DirectionalData`](@ref) for [`isnearwideband`](@ref).
 """
-function fardata(tree::BlockTree, isnear::IsNearFunctor)
-    return farinteractions(tree; isnear=isnear)
+function fardata(tree::BlockTree, isnear, partition=interactions(tree, isnear))
+    return farinteractions(tree, partition)
 end

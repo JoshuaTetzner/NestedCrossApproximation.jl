@@ -78,3 +78,15 @@ function _crossfactorization(X::AbstractMatrix{T}, kind::Symbol) where {T}
     end
     return throw(SingularCrossMatrixError(kind, k, rank))
 end
+
+"""
+    _scheduler(ntasks)
+
+Scheduler of the parallel loops on `ntasks` tasks: a `DynamicScheduler` with `ntasks`
+chunks, or serial execution on the calling task for `ntasks = 1`. The public functions take
+only `ntasks`.
+"""
+function _scheduler(ntasks::Integer)
+    ntasks >= 1 || throw(ArgumentError("ntasks must be positive, got $ntasks"))
+    return ntasks == 1 ? SerialScheduler() : DynamicScheduler(; ntasks)
+end
