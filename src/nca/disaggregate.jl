@@ -14,7 +14,9 @@ function _disaggregate_coefficients!(
             for cidx in idxtochdsptr[idx]:(idxtochdsptr[idx + 1] - 1)
                 childidx = chdsidcs[cidx]
                 childyhat = view(yhat, coeffptr[childidx]:(coeffptr[childidx + 1] - 1))
-                @views childyhat .+= transferop(transfer_store.blocks[cidx]) * idxyhat
+                mul!(
+                    childyhat, transferop(transfer_store.blocks[cidx]), idxyhat, true, true
+                )
             end
         end
     end
@@ -44,7 +46,13 @@ function _disaggregate_coefficients!(
                 for cidx in idxtochdsptr[idx]:(idxtochdsptr[idx + 1] - 1)
                     childidx = chdsidcs[cidx]
                     childyhat = view(yhat, coeffptr[childidx]:(coeffptr[childidx + 1] - 1))
-                    @views childyhat .+= transferop(transfer_store.blocks[cidx]) * idxyhat
+                    mul!(
+                        childyhat,
+                        transferop(transfer_store.blocks[cidx]),
+                        idxyhat,
+                        true,
+                        true,
+                    )
                 end
             end
         end
@@ -67,7 +75,7 @@ function _project_to_output!(
         ptr1 = plan.globalidxtocoeffptr[node + 1] - 1
         ynode = @view y[valuesfun(node)]
         yhat_node = @view yhat[ptr0:ptr1]
-        @views ynode .+= basisop(basis_store.blocks[i]) * yhat_node
+        mul!(ynode, basisop(basis_store.blocks[i]), yhat_node, true, true)
     end
 end
 
@@ -89,7 +97,7 @@ function _project_to_output!(
             diridx = basis_store.plan.diridx[ldiridx]
             y_node = @view y[valuesfun(node)]
             yhat_node = @view yhat[coeffptr[diridx]:(coeffptr[diridx + 1] - 1)]
-            @views y_node .+= basisop(basis_store.blocks[ldiridx]) * yhat_node
+            mul!(y_node, basisop(basis_store.blocks[ldiridx]), yhat_node, true, true)
         end
     end
 end

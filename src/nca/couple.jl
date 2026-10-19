@@ -18,7 +18,7 @@ function _couple_forward!(
             sidx = coupling_store.plan.farnodes[cidx]
             yhat_test = @view yhat[testcoeffptr[tidx]:(testcoeffptr[tidx + 1] - 1)]
             xhat_trial = @view xhat[trialcoeffptr[sidx]:(trialcoeffptr[sidx + 1] - 1)]
-            @views yhat_test .+= couplingop(coupling_store.blocks[cidx]) * xhat_trial
+            mul!(yhat_test, couplingop(coupling_store.blocks[cidx]), xhat_trial, true, true)
         end
     end
 end
@@ -44,7 +44,7 @@ function _couple_forward!(
             sidx = coupling_store.plan.sidcs[idx]
             yhat_test = @view yhat[testcoeffptr[tidx]:(testcoeffptr[tidx + 1] - 1)]
             xhat_trial = @view xhat[trialcoeffptr[sidx]:(trialcoeffptr[sidx + 1] - 1)]
-            @views yhat_test .+= couplingop(coupling_store.blocks[idx]) * xhat_trial
+            mul!(yhat_test, couplingop(coupling_store.blocks[idx]), xhat_trial, true, true)
         end
     end
 end
@@ -69,7 +69,7 @@ function _couple_reverse!(
             sidx = coupling_store.plan.farnodes[cidx]
             yhat_trial = @view yhat[trialcoeffptr[sidx]:(trialcoeffptr[sidx + 1] - 1)]
             xhat_test = @view xhat[testcoeffptr[tidx]:(testcoeffptr[tidx + 1] - 1)]
-            @views yhat_trial .+= couplingop(coupling_store.blocks[cidx]) * xhat_test
+            mul!(yhat_trial, couplingop(coupling_store.blocks[cidx]), xhat_test, true, true)
         end
     end
 end
@@ -94,7 +94,7 @@ function _couple_reverse!(
             sidx = coupling_store.plan.sidcs[idx]
             yhat_trial = @view yhat[trialcoeffptr[sidx]:(trialcoeffptr[sidx + 1] - 1)]
             xhat_test = @view xhat[testcoeffptr[tidx]:(testcoeffptr[tidx + 1] - 1)]
-            @views yhat_trial .+= couplingop(coupling_store.blocks[idx]) * xhat_test
+            mul!(yhat_trial, couplingop(coupling_store.blocks[idx]), xhat_test, true, true)
         end
     end
 end

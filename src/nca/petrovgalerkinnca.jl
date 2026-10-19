@@ -1,7 +1,7 @@
 """
-    PetrovGalerkinNCA{T} <: LinearMaps.LinearMap{T}
+    PetrovGalerkinNCACore{T}
 
-H²-matrix constructed with the nested cross approximation.
+Read-only part of an H²-matrix constructed with the nested cross approximation.
 
 Near interactions are stored as dense blocks. Far interactions are stored in nested form:
 a basis for each leaf cluster, a transfer matrix for each cluster and child, and a coupling
@@ -18,21 +18,29 @@ the test and the trial space may differ.
   - `couplingmatrices`: coupling matrices, see [`CouplingStore`](@ref)
   - `aggregationplan`, `disaggregationplan`: position of the coefficients of each trial and
     test cluster in the coefficient vectors of the matrix-vector product
-  - `scheduler`: scheduler of the matrix-vector product, created from `ntasks` by the
-    constructor
+  - `scheduler`: default scheduler of a workspace, created from `ntasks` by the constructor
   - `dim::Tuple{Int,Int}`: matrix dimensions `(m, n)`
 
 # Notes
 
-A `PetrovGalerkinNCA` is a linear map that supports `*`, `mul!`, `transpose`, and `adjoint`.
-It is created through the constructor
-`PetrovGalerkinNCA(operator, testspace, trialspace, tree; kwargs...)`.
+A core is not a linear map. Wrap it in an [`H2Workspace`](@ref), which owns the buffers of
+the matrix-vector product and is the `LinearMap`:
+
+```julia
+core = PetrovGalerkinNCACore(operator, testspace, trialspace, tree)
+h2mat = H2Workspace(core)
+mul!(y, h2mat, x)
+```
+
+A matrix-vector product does not write to the core, so several workspaces may share one
+core and run concurrently. [`PetrovGalerkinNCA`](@ref) builds a core and one workspace
+in a single call.
 
 # See also
 
-[`farmatrix`](@ref), [`nearmatrix`](@ref), [`storage`](@ref)
+[`H2Workspace`](@ref), [`PetrovGalerkinNCA`](@ref)
 """
-struct PetrovGalerkinNCA{
+struct PetrovGalerkinNCACore{
     T,
     TreeType,
     NearInteractionType,
@@ -41,7 +49,7 @@ struct PetrovGalerkinNCA{
     CouplingMatrixType,
     PlanType,
     SchedulerType,
-} <: LinearMaps.LinearMap{T}
+}
     tree::TreeType
     nearinteractions::NearInteractionType
     nestedtestbases::NestedBasesDict
@@ -54,7 +62,7 @@ struct PetrovGalerkinNCA{
     scheduler::SchedulerType
     dim::Tuple{Int,Int}
 
-    function PetrovGalerkinNCA{T}(
+    function PetrovGalerkinNCACore{T}(
         tree,
         nearinteractions,
         nestedtestbases,
@@ -93,9 +101,9 @@ struct PetrovGalerkinNCA{
 end
 
 """
-    PetrovGalerkinNCA(operator, testspace, trialspace, tree; kwargs...)
+    PetrovGalerkinNCACore(operator, testspace, trialspace, tree; kwargs...)
 
-Assemble an H²-matrix of `operator` with the nested cross approximation.
+Assemble the read-only part of an H²-matrix of `operator` with the nested cross approximation.
 
 The near field is assembled densely. For the far field the test and the trial compressor
 select pivots for every cluster, from which the nested bases, the transfer matrices and
@@ -125,9 +133,9 @@ the coupling matrices are computed.
 
 # Returns
 
-  - [`PetrovGalerkinNCA`](@ref)
+  - [`PetrovGalerkinNCACore`](@ref)
 """
-function PetrovGalerkinNCA(
+function PetrovGalerkinNCACore(
     operator,
     testspace,
     trialspace,
@@ -174,8 +182,7 @@ function PetrovGalerkinNCA(
     )
     aggregationplan = plan_from_pivots(fars.trialpivots)
     disaggregationplan = plan_from_pivots(fars.testpivots)
-
-    return PetrovGalerkinNCA{eltype(farmatrix)}(
+    return PetrovGalerkinNCACore{eltype(farmatrix)}(
         tree,
         nears,
         fars.nestedtestbases,
@@ -190,22 +197,155 @@ function PetrovGalerkinNCA(
     )
 end
 
+Base.size(A::PetrovGalerkinNCACore) = A.dim
+Base.size(A::PetrovGalerkinNCACore, dim::Int) = A.dim[dim]
+Base.eltype(::PetrovGalerkinNCACore{T}) where {T} = T
+
+"""
+    ConcurrentWorkspaceError
+
+Thrown when a matrix-vector product starts on an [`H2Workspace`](@ref) that is in use by
+another product.
+"""
+struct ConcurrentWorkspaceError <: Exception end
+
+function Base.showerror(io::IO, ::ConcurrentWorkspaceError)
+    return print(
+        io,
+        "ConcurrentWorkspaceError: the workspace is in use by another matrix-vector ",
+        "product. Create one H2Workspace per task; they can share the core.",
+    )
+end
+
+"""
+    H2Workspace(core; scheduler=core.scheduler)
+    H2Workspace(core, T; scheduler=core.scheduler)
+
+H²-matrix as a linear map: a read-only `core` and the buffers of the matrix-vector product
+for vectors of element type `T` (default `eltype(core)`).
+
+# Fields
+
+  - `core`: read-only part, e.g. a [`PetrovGalerkinNCACore`](@ref)
+  - `trialcoeffs`, `testcoeffs`: coefficients of the trial and the test clusters
+  - `scheduler`: `OhMyThreads` scheduler of the matrix-vector product
+  - `busy`: set during a matrix-vector product
+
+# Notes
+
+A workspace supports `*`, `mul!`, `transpose`, and `adjoint`. The fields of the core are
+also available as properties of the workspace, e.g. `h2mat.nearinteractions`.
+
+One workspace runs one matrix-vector product at a time: a second product on the same
+workspace throws a [`ConcurrentWorkspaceError`](@ref). To multiply with the same matrix
+from several tasks, give each task its own workspace over the shared core:
+
+```julia
+workspaces = [H2Workspace(core; scheduler=OhMyThreads.SerialScheduler()) for _ in 1:4]
+```
+
+For vectors of an element type other than `T` the buffers are allocated in every product.
+
+# See also
+
+[`core`](@ref), [`PetrovGalerkinNCACore`](@ref), [`PetrovGalerkinNCA`](@ref)
+"""
+struct H2Workspace{T,CoreType,BufferType,SchedulerType} <: LinearMaps.LinearMap{T}
+    core::CoreType
+    trialcoeffs::Vector{BufferType}
+    testcoeffs::Vector{BufferType}
+    scheduler::SchedulerType
+    busy::Threads.Atomic{Bool}
+end
+
+function H2Workspace(
+    core::PetrovGalerkinNCACore, ::Type{T}=eltype(core); scheduler=core.scheduler
+) where {T}
+    return H2Workspace{eltype(core),typeof(core),T,typeof(scheduler)}(
+        core,
+        zeros(T, core.aggregationplan.globalidxtocoeffptr[end] - 1),
+        zeros(T, core.disaggregationplan.globalidxtocoeffptr[end] - 1),
+        scheduler,
+        Threads.Atomic{Bool}(false),
+    )
+end
+
+"""
+    core(h2mat::H2Workspace)
+
+Return the read-only part of `h2mat`, which can be shared with further workspaces.
+"""
+core(h2mat::H2Workspace) = getfield(h2mat, :core)
+core(A::LinearMaps.TransposeMap{<:Any,<:H2Workspace}) = core(A.lmap)
+core(A::LinearMaps.AdjointMap{<:Any,<:H2Workspace}) = core(A.lmap)
+
+function Base.getproperty(h2mat::H2Workspace, name::Symbol)
+    hasfield(H2Workspace, name) && return getfield(h2mat, name)
+    return getproperty(getfield(h2mat, :core), name)
+end
+
+function Base.propertynames(h2mat::H2Workspace)
+    return (fieldnames(H2Workspace)..., propertynames(core(h2mat))...)
+end
+
+# Run `f` as the only matrix-vector product on `h2mat`. Fails instead of waiting: a
+# workspace shared between tasks is a bug of the caller.
+function withworkspace(f, h2mat::H2Workspace)
+    Threads.atomic_cas!(h2mat.busy, false, true) && throw(ConcurrentWorkspaceError())
+    try
+        return f()
+    finally
+        h2mat.busy[] = false
+    end
+end
+
+# Zeroed coefficient vector: the buffer of the workspace if its element type fits.
+_coefficients(buffer::Vector{T}, ::Type{T}) where {T} = fill!(buffer, zero(T))
+_coefficients(buffer::Vector, ::Type{T}) where {T} = zeros(T, length(buffer))
+
+"""
+    PetrovGalerkinNCA{T}
+
+[`H2Workspace`](@ref) over a [`PetrovGalerkinNCACore`](@ref): an H²-matrix constructed with
+the nested cross approximation, as a linear map.
+"""
+const PetrovGalerkinNCA{T} = H2Workspace{T,<:PetrovGalerkinNCACore}
+
+"""
+    PetrovGalerkinNCA(operator, testspace, trialspace, tree; kwargs...)
+
+Assemble an H²-matrix of `operator` with the nested cross approximation and return it as a
+linear map: a [`PetrovGalerkinNCACore`](@ref) and one [`H2Workspace`](@ref) over it.
+
+The keyword arguments are those of [`PetrovGalerkinNCACore`](@ref).
+
+# Notes
+
+The returned workspace runs one matrix-vector product at a time. For concurrent products
+build further workspaces over `core(h2mat)`, see [`H2Workspace`](@ref).
+"""
+function PetrovGalerkinNCA(operator, testspace, trialspace, tree; kwargs...)
+    return H2Workspace(
+        PetrovGalerkinNCACore(operator, testspace, trialspace, tree; kwargs...)
+    )
+end
+
 Base.size(A::PetrovGalerkinNCA) = A.dim
 Base.size(A::PetrovGalerkinNCA, dim::Int) = A.dim[dim]
-Base.eltype(::PetrovGalerkinNCA{T}) where {T} = T
 
 """
     farmatrix(h2mat::PetrovGalerkinNCA)
 
 Return the far field of `h2mat` as a [`PetrovGalerkinNCA`](@ref) with an empty near field.
 
-The nested bases, transfer and coupling matrices are shared with `h2mat`.
+The nested bases, transfer and coupling matrices are shared with `h2mat`, the buffers of
+the matrix-vector product are not.
 """
 function farmatrix(h2mat::PetrovGalerkinNCA)
     blocks = Matrix{eltype(h2mat)}[]
     nears = BlockSparseMatrix(blocks, Vector{Int}[], Vector{Int}[], h2mat.dim)
 
-    return PetrovGalerkinNCA{eltype(h2mat)}(
+    farcore = PetrovGalerkinNCACore{eltype(h2mat)}(
         h2mat.tree,
         nears,
         h2mat.nestedtestbases,
@@ -215,9 +355,10 @@ function farmatrix(h2mat::PetrovGalerkinNCA)
         h2mat.couplingmatrices,
         h2mat.aggregationplan,
         h2mat.disaggregationplan,
-        h2mat.scheduler,
+        core(h2mat).scheduler,
         h2mat.dim,
     )
+    return H2Workspace(farcore, eltype(h2mat.trialcoeffs); scheduler=h2mat.scheduler)
 end
 
 """
@@ -269,14 +410,29 @@ function storage(h2mat::PetrovGalerkinNCA)
     return matsize * sizeof(eltype(h2mat)) * 10^-9
 end
 
-@views function LinearAlgebra.mul!(
-    y::AbstractVector, A::PetrovGalerkinNCA, x::AbstractVector
+# `_unsafe_mul!` and not `mul!`: this is what `LinearMaps` calls for a map inside a sum or
+# a product of maps, where a method of `mul!` alone is bypassed.
+function LinearMaps._unsafe_mul!(
+    y::AbstractVector,
+    A::Union{
+        PetrovGalerkinNCA,
+        LinearMaps.TransposeMap{<:Any,<:PetrovGalerkinNCA},
+        LinearMaps.AdjointMap{<:Any,<:PetrovGalerkinNCA},
+    },
+    x::AbstractVector,
 )
-    LinearMaps.check_dim_mul(y, A, x)
+    return withworkspace(() -> _mul!(y, A, x), _workspace(A))
+end
+
+_workspace(A::PetrovGalerkinNCA) = A
+_workspace(A::LinearMaps.TransposeMap) = A.lmap
+_workspace(A::LinearMaps.AdjointMap) = A.lmap
+
+@views function _mul!(y::AbstractVector, A::PetrovGalerkinNCA, x::AbstractVector)
     fill!(y, zero(eltype(y)))
 
-    xhat = zeros(eltype(y), A.aggregationplan.globalidxtocoeffptr[end] - 1)
-    yhat = zeros(eltype(y), A.disaggregationplan.globalidxtocoeffptr[end] - 1)
+    xhat = _coefficients(A.trialcoeffs, eltype(y))
+    yhat = _coefficients(A.testcoeffs, eltype(y))
 
     _project_to_coefficients!(
         xhat,
@@ -320,16 +476,15 @@ end
     return y
 end
 
-@views function LinearAlgebra.mul!(
+@views function _mul!(
     y::AbstractVector,
     A::LinearMaps.TransposeMap{<:Any,<:PetrovGalerkinNCA},
     x::AbstractVector,
 )
-    LinearMaps.check_dim_mul(y, A, x)
     fill!(y, zero(eltype(y)))
 
-    xhat = zeros(eltype(y), A.lmap.disaggregationplan.globalidxtocoeffptr[end] - 1)
-    yhat = zeros(eltype(y), A.lmap.aggregationplan.globalidxtocoeffptr[end] - 1)
+    xhat = _coefficients(A.lmap.testcoeffs, eltype(y))
+    yhat = _coefficients(A.lmap.trialcoeffs, eltype(y))
 
     _project_to_coefficients!(
         xhat,
@@ -377,16 +532,15 @@ end
     return y
 end
 
-@views function LinearAlgebra.mul!(
+@views function _mul!(
     y::AbstractVector,
     A::LinearMaps.AdjointMap{<:Any,<:PetrovGalerkinNCA},
     x::AbstractVector,
 )
-    LinearMaps.check_dim_mul(y, A, x)
     fill!(y, zero(eltype(y)))
 
-    xhat = zeros(eltype(y), A.lmap.disaggregationplan.globalidxtocoeffptr[end] - 1)
-    yhat = zeros(eltype(y), A.lmap.aggregationplan.globalidxtocoeffptr[end] - 1)
+    xhat = _coefficients(A.lmap.testcoeffs, eltype(y))
+    yhat = _coefficients(A.lmap.trialcoeffs, eltype(y))
 
     _project_to_coefficients!(
         xhat,

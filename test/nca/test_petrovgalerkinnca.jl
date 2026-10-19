@@ -233,4 +233,127 @@ end
             end
         end
     end
+    @testset "workspace" begin
+        _, h, testpts, trialpts = geometries[3]
+        kernel = HelmholtzKernel(2π / (500h))
+        tol = 1e-4
+
+        reference = Matrix{ComplexF64}(undef, length(testpts), length(trialpts))
+        Threads.@threads for j in eachindex(trialpts)
+            for i in eachindex(testpts)
+                reference[i, j] = kernel(testpts[i], trialpts[j])
+            end
+        end
+
+        kmeansbuilder = KMeansTreeBuilder(; minvalues=50)
+        tree = BlockTree(
+            KMeansTree(testpts; builder=kmeansbuilder),
+            KMeansTree(trialpts; builder=kmeansbuilder),
+        )
+        convergence = FNormExtrapolator(tol)
+        nca = NestedCrossApproximation.PetrovGalerkinNCA(
+            kernel,
+            testpts,
+            trialpts,
+            tree;
+            testcompressor=NestedCrossApproximation.TopDown(;
+                factorization=IACA(
+                    MaximumValue(), MimicryPivoting(testpts, trialpts), convergence
+                ),
+            ),
+            trialcompressor=NestedCrossApproximation.TopDown(;
+                factorization=IACA(
+                    MimicryPivoting(trialpts, testpts), MaximumValue(), convergence
+                ),
+            ),
+        )
+        core = NestedCrossApproximation.core(nca)
+        H2Workspace = NestedCrossApproximation.H2Workspace
+        modes(A, x, u) = [A * x, transpose(A) * u, adjoint(A) * u]
+        x = randn(ComplexF64, size(nca, 2))
+        u = randn(ComplexF64, size(nca, 1))
+        expected = modes(nca, x, u)
+
+        @testset "products agree with the dense matrix" begin
+            dense = [reference * x, transpose(reference) * u, adjoint(reference) * u]
+            for (y, ref) in zip(expected, dense)
+                @test norm(y - ref) / norm(ref) < 10tol
+            end
+        end
+
+        @testset "a second workspace over the same core agrees exactly" begin
+            other = H2Workspace(core)
+            @test NestedCrossApproximation.core(other) === core
+            @test NestedCrossApproximation.core(transpose(other)) === core
+            @test other.nearinteractions === nca.nearinteractions
+            @test other.trialcoeffs !== nca.trialcoeffs
+            @test other.testcoeffs !== nca.testcoeffs
+            @test modes(other, x, u) == expected
+            serial = H2Workspace(core; scheduler=NestedCrossApproximation.SerialScheduler())
+            @test modes(serial, x, u) ≈ expected
+        end
+
+        @testset "repeated products on one workspace are stable" begin
+            @test modes(nca, x, u) == expected
+            @test modes(nca, x, u) == expected
+        end
+
+        @testset "far and near field" begin
+            far = NestedCrossApproximation.farmatrix(nca)
+            near = NestedCrossApproximation.nearmatrix(nca)
+            @test far.trialcoeffs !== nca.trialcoeffs
+            @test far * x + near * x ≈ expected[1]
+        end
+
+        @testset "linear maps" begin
+            y = randn(ComplexF64, size(nca, 1))
+            y0 = copy(y)
+            α, β = 0.3 + 0.2im, -1.1
+            @test mul!(y, nca, x, α, β) ≈ α * expected[1] + β * y0
+            @test (nca + 2nca) * x ≈ 3expected[1]
+            @test (nca' * nca) * x ≈ adjoint(nca) * expected[1]
+            @test (transpose(nca) - nca') * u ≈ expected[2] - expected[3]
+            X = randn(ComplexF64, size(nca, 2), 3)
+            Y = zeros(ComplexF64, size(nca, 1), 3)
+            @test mul!(Y, nca, X) ≈ reduce(hcat, [nca * X[:, j] for j in 1:3])
+            xreal = randn(size(nca, 2))
+            @test nca * xreal ≈ nca * complex(xreal)
+            # Element type of the buffers differs from the vectors: allocating fallback.
+            single = H2Workspace(core, ComplexF32)
+            @test single * x ≈ expected[1]
+            @test !nca.busy[]
+        end
+
+        @testset "concurrent workspaces, independent inputs" begin
+            workspaces = [H2Workspace(core) for _ in 1:4]
+            inputs = [randn(ComplexF64, size(nca, 2)) for _ in 1:4]
+            serials = [nca * xi for xi in inputs]
+            for _ in 1:3
+                tasks = map(zip(workspaces, inputs)) do (ws, xi)
+                    return Threads.@spawn ws * xi
+                end
+                @test fetch.(tasks) == serials
+            end
+        end
+
+        @testset "one product at a time" begin
+            y = similar(expected[1])
+            busyerror = NestedCrossApproximation.ConcurrentWorkspaceError
+            @test_throws ErrorException NestedCrossApproximation.withworkspace(nca) do
+                return error("boom")
+            end
+            @test !nca.busy[]
+            @test_throws DimensionMismatch mul!(y, nca, x[1:(end - 1)])
+            @test !nca.busy[]
+
+            NestedCrossApproximation.withworkspace(nca) do
+                @test nca.busy[]
+                @test_throws busyerror mul!(y, nca, x)
+                @test_throws busyerror mul!(similar(x), transpose(nca), u)
+                @test_throws busyerror mul!(similar(x), adjoint(nca), u)
+            end
+            @test !nca.busy[]
+            @test nca * x == expected[1]
+        end
+    end
 end

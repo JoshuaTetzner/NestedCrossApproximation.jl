@@ -58,7 +58,9 @@ function _aggregate_coefficients!(
             for cidx in idxtochdsptr[idx]:(idxtochdsptr[idx + 1] - 1)
                 childidx = chdsidcs[cidx]
                 childxhat = view(xhat, coeffptr[childidx]:(coeffptr[childidx + 1] - 1))
-                @views idxxhat .+= transferop(transfer_store.blocks[cidx]) * childxhat
+                mul!(
+                    idxxhat, transferop(transfer_store.blocks[cidx]), childxhat, true, true
+                )
             end
         end
     end

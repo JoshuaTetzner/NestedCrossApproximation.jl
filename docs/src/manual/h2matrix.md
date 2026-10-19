@@ -139,6 +139,29 @@ near = nearmatrix(h2mat)
 norm(far * x + near * x - h2mat * x) / norm(h2mat * x)
 ```
 
+### Concurrent Products
+
+`h2mat` consists of a read-only core, which holds the near field and the nested far-field
+representation, and a workspace with the buffers of the matrix-vector product. The
+workspace is the `LinearMap`, so the buffers are allocated once and reused by every
+product. One workspace runs one product at a time; a second product on the same workspace
+throws a `ConcurrentWorkspaceError`. To multiply with the same matrix from several tasks,
+create one workspace per task over the shared core:
+
+```@example manual-h2
+using NestedCrossApproximation: H2Workspace, core
+using OhMyThreads: SerialScheduler
+
+workspaces = [H2Workspace(core(h2mat); scheduler=SerialScheduler()) for _ in 1:2]
+inputs = [randn(ComplexF64, length(trialpoints)) for _ in workspaces]
+tasks = [Threads.@spawn ws * xi for (ws, xi) in zip(workspaces, inputs)]
+
+maximum(norm(fetch(t) - h2mat * xi) / norm(h2mat * xi) for (t, xi) in zip(tasks, inputs))
+```
+
+The core alone is assembled with `PetrovGalerkinNCACore`, which takes the arguments of
+`PetrovGalerkinNCA`.
+
 ## Choosing a Compressor
 
 A compressor combines the tree traversal with a low-rank factorization from
