@@ -1,7 +1,14 @@
-# NestedCrossApproximation.jl
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/src/assets/logoREADME.svg" height="160">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/src/assets/logoREADME_darkmode.svg" height="160">
+  <img alt="" src="" height="160">
+</picture>
+</p>
 
 [![Docs-stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://JoshuaTetzner.github.io/NestedCrossApproximation.jl/stable/)
 [![Docs-dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://JoshuaTetzner.github.io/NestedCrossApproximation.jl/dev/)
+[![MIT license](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/JoshuaTetzner/NestedCrossApproximation.jl/blob/main/LICENSE)
 [![CI](https://github.com/JoshuaTetzner/NestedCrossApproximation.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/JoshuaTetzner/NestedCrossApproximation.jl/actions/workflows/CI.yml)
 [![codecov](https://codecov.io/gh/JoshuaTetzner/NestedCrossApproximation.jl/graph/badge.svg)](https://codecov.io/gh/JoshuaTetzner/NestedCrossApproximation.jl)
 

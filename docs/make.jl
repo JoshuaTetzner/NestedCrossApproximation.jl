@@ -31,6 +31,6 @@ makedocs(;
 deploydocs(;
     repo="github.com/JoshuaTetzner/NestedCrossApproximation.jl.git",
     target="build",
-    devbranch="dev",
+    devbranch="main",
     versions=["stable" => "v^", "dev" => "dev"],
 )

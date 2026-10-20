@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="249.25" height="249.25" viewBox="-82 -82 249.25 249.25">
+<title>NestedCrossApproximation.jl</title>
+<rect x="0" y="0" width="40" height="40" fill="#4063d8"/>
+<rect x="40" y="40" width="40" height="40" fill="#4063d8"/>
+<rect x="80" y="80" width="40" height="40" fill="#4063d8"/>
+<rect x="120" y="120" width="40" height="40" fill="#4063d8"/>
+<rect x="81.25" y="1.25" width="12" height="12" fill="#cb3c33"/>
+<rect x="1.25" y="81.25" width="12" height="12" fill="#cb3c33"/>
+<rect x="41.25" y="1.25" width="12" height="12" fill="#cb3c33"/>
+<rect x="1.25" y="41.25" width="12" height="12" fill="#cb3c33"/>
+<rect x="121.25" y="81.25" width="12" height="12" fill="#cb3c33"/>
+<rect x="81.25" y="121.25" width="12" height="12" fill="#cb3c33"/>
+<g fill="none" stroke="#111111" stroke-width="2.5"><rect x="80" y="0" width="80" height="80"/><rect x="0" y="80" width="80" height="80"/><rect x="40" y="0" width="40" height="40"/><rect x="0" y="40" width="40" height="40"/><rect x="120" y="80" width="40" height="40"/><rect x="80" y="120" width="40" height="40"/><rect x="0" y="0" width="40" height="40"/><rect x="40" y="40" width="40" height="40"/><rect x="80" y="80" width="40" height="40"/><rect x="120" y="120" width="40" height="40"/></g>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="80,0 80,-8"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="40,-16 40,-8 120,-8 120,-16"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="40,-28 40,-36"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="20,-44 20,-36 60,-36 60,-44"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="120,-28 120,-36"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="100,-44 100,-36 140,-36 140,-44"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="20,-56 20,-64"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="60,-56 60,-64"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="100,-56 100,-64"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="140,-56 140,-64"/>
+<rect x="34" y="-28" width="12" height="12" fill="#389826"/>
+<rect x="114" y="-28" width="12" height="12" fill="#389826"/>
+<rect x="14" y="-56" width="12" height="12" fill="#389826"/>
+<rect x="54" y="-56" width="12" height="12" fill="#389826"/>
+<rect x="94" y="-56" width="12" height="12" fill="#389826"/>
+<rect x="134" y="-56" width="12" height="12" fill="#389826"/>
+<rect x="1.5" y="-76" width="37" height="12" fill="#9558b2"/>
+<rect x="41.5" y="-76" width="37" height="12" fill="#9558b2"/>
+<rect x="81.5" y="-76" width="37" height="12" fill="#9558b2"/>
+<rect x="121.5" y="-76" width="37" height="12" fill="#9558b2"/>
+<g transform="matrix(0,1,1,0,0,0)">
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="80,0 80,-8"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="40,-16 40,-8 120,-8 120,-16"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="40,-28 40,-36"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="20,-44 20,-36 60,-36 60,-44"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="120,-28 120,-36"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="100,-44 100,-36 140,-36 140,-44"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="20,-56 20,-64"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="60,-56 60,-64"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="100,-56 100,-64"/>
+<polyline fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="butt" points="140,-56 140,-64"/>
+<rect x="34" y="-28" width="12" height="12" fill="#389826"/>
+<rect x="114" y="-28" width="12" height="12" fill="#389826"/>
+<rect x="14" y="-56" width="12" height="12" fill="#389826"/>
+<rect x="54" y="-56" width="12" height="12" fill="#389826"/>
+<rect x="94" y="-56" width="12" height="12" fill="#389826"/>
+<rect x="134" y="-56" width="12" height="12" fill="#389826"/>
+<rect x="1.5" y="-76" width="37" height="12" fill="#9558b2"/>
+<rect x="41.5" y="-76" width="37" height="12" fill="#9558b2"/>
+<rect x="81.5" y="-76" width="37" height="12" fill="#9558b2"/>
+<rect x="121.5" y="-76" width="37" height="12" fill="#9558b2"/>
+</g>
+</svg>
