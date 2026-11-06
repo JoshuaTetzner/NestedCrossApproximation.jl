@@ -85,7 +85,7 @@ println("MVP:")
 @time ycpu = Acpu * x;
 ##
 ## GPU: BatchedBottomUp + GPUBEASTKernelMatrix far matrix
-ndevices=4
+ndevices = 4
 println("=== GPU (BatchedBottomUp) with $ndevices devices===")
 testcompressor_gpu, trialcompressor_gpu = buildcompressors();
 ##

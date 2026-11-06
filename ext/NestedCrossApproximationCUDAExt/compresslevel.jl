@@ -72,7 +72,7 @@ function _gather_solve_tensors!(A, B, buffer, offsets, ranks, rowpivots, colpivo
             pivot = mod(localindex, mr) + 1
             row = div(localindex, mr) + 1
             @inbounds B[pivot, row, block] =
-                if pivot <= r && row <= offsets[block + 1]-offset
+                if pivot <= r && row <= offsets[block + 1] - offset
                     buffer[offset + row, colpivots[pivot, block]]
                 else
                     zero(eltype(B))
@@ -105,7 +105,7 @@ function _solve_transposed_factors(
     rows_d = _deviceindices(rowpivots)
     cols_d = _deviceindices(colpivots)
     total = length(A) + length(B)
-    @cuda threads=256 blocks=cld(total, 256) _gather_solve_tensors!(
+    @cuda threads = 256 blocks = cld(total, 256) _gather_solve_tensors!(
         A, B, stack.buffer, offsets_d, ranks_d, rows_d, cols_d
     )
 
@@ -140,7 +140,7 @@ end
 function _compress(cfg, stacks::AbstractVector{<:DistributedBlockStack})
     tasks = Task[]
     @sync for stack in stacks
-        let stack=stack
+        let stack = stack
             push!(tasks, Threads.@spawn _compress(cfg, stack))
         end
     end

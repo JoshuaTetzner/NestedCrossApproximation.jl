@@ -39,7 +39,7 @@ using LinearAlgebra
         trialspace = raviartthomas(trialmesh)
         @test length(testspace) == 120
         @test length(trialspace) == 270
-        op = Maxwell3D.singlelayer(; wavenumber=2π/8)
+        op = Maxwell3D.singlelayer(; wavenumber=2π / 8)
         quadrature = BEAST.DoubleNumQStrat(2, 3)
         cpu = AbstractKernelMatrix(op, testspace, trialspace; matrixdata=quadrature)
         owntrial = [collect(241:270), collect(11:60), collect(70:149)]

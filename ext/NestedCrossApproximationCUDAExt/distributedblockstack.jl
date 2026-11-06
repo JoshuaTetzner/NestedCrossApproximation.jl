@@ -68,9 +68,9 @@ function _assemble_level_resident(
     tasks = Task[]
     @sync for g in 1:ng
         idcs = (div((g - 1) * nb, ng) + 1):div(g * nb, ng)
-        let functor=farmatrix.functors[g],
-            rows=view(rowidcs, idcs),
-            cols=view(colidcs, idcs)
+        let functor = farmatrix.functors[g],
+            rows = view(rowidcs, idcs),
+            cols = view(colidcs, idcs)
 
             push!(
                 tasks,
