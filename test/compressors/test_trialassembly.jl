@@ -10,7 +10,7 @@ using OhMyThreads
 
 struct TrialAssemblyKernel end
 Base.eltype(::TrialAssemblyKernel) = ComplexF64
-(::TrialAssemblyKernel)(x, y) = (1 + im*x[1] + x[2]^2) * (exp(2y[2]) + im*y[3])
+(::TrialAssemblyKernel)(x, y) = (1 + im * x[1] + x[2]^2) * (exp(2y[2]) + im * y[3])
 
 @testset "Trial assembly for nonsymmetric and rectangular operators" begin
     for (nt, ns) in ((160, 160), (96, 160), (160, 96))
@@ -20,8 +20,8 @@ Base.eltype(::TrialAssemblyKernel) = ComplexF64
         kernel = TrialAssemblyKernel()
         dense = [kernel(x, y) for x in testpts, y in trialpts]
         matrix = AbstractKernelMatrix(kernel, testpts, trialpts)
-        owntrial = [[ns-4, ns-3, ns-2, ns-1, ns], [2, 4, 6, 8]]
-        fartest = [[1, 3, 5], [nt-1, nt]]
+        owntrial = [[ns - 4, ns - 3, ns - 2, ns - 1, ns], [2, 4, 6, 8]]
+        fartest = [[1, 3, 5], [nt - 1, nt]]
         blocks = NestedCrossApproximation.assemble_level(
             matrix, owntrial, fartest; maxrank=10, transposed=true
         )
@@ -69,7 +69,7 @@ Base.eltype(::TrialAssemblyKernel) = ComplexF64
         )
         x = randn(rng, ComplexF64, ns)
         y = randn(rng, ComplexF64, nt)
-        @test norm(A*x - dense*x) / norm(dense*x) < 1e-10
-        @test norm(adjoint(A)*y - adjoint(dense)*y) / norm(adjoint(dense)*y) < 1e-10
+        @test norm(A * x - dense * x) / norm(dense * x) < 1e-10
+        @test norm(adjoint(A) * y - adjoint(dense) * y) / norm(adjoint(dense) * y) < 1e-10
     end
 end

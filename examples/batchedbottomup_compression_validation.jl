@@ -155,7 +155,7 @@ function compare_backends(; nrefine=8, minvalues=80, maxrank=30, device=0, devic
         ng = min(length(selected), length(rows))
         @assert length(shards) == ng
         @assert [stack.device for stack in shards] == selected[1:ng]
-        @assert [extension.nblocks(stack) for stack in shards] == [div(g * 3, ng) - div((g-1) * 3, ng) for g in 1:ng]
+        @assert [extension.nblocks(stack) for stack in shards] == [div(g * 3, ng) - div((g - 1) * 3, ng) for g in 1:ng]
         packed = Matrix{ComplexF64}[]
         for stack in shards
             CUDA.device!(stack.device)
